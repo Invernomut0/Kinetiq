@@ -153,6 +153,12 @@ final class Settings {
         set { defaults.set(newValue, forKey: "glideOnFlick") }
     }
 
+    /// The window leans in perspective into its movement while it is dragged.
+    var tiltOnDrag: Bool {
+        get { defaults.object(forKey: "tiltOnDrag") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "tiltOnDrag") }
+    }
+
     /// Effect played when a window is closed (a Burn-My-Windows shader), a random one, or none.
     var closeEffect: CloseEffectChoice {
         get { CloseEffectChoice(rawValue: defaults.string(forKey: "closeEffect")) }
@@ -185,6 +191,7 @@ final class Settings {
         maximizeEffect = true
         resizeEffect = false
         glideOnFlick = true
+        tiltOnDrag = true
         closeEffect = Self.defaultCloseEffect
         openEffect = .off
         closeDuration = 1

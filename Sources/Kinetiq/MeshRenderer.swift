@@ -62,6 +62,8 @@ final class MeshRenderer: OverlayContent {
     /// 0 while the real window (with its own shadow) is still underneath, so the two don't add up;
     /// in between while handing over to or from it.
     var shadowOpacity: Float = 1
+    /// Perspective lean `(pitch, yaw)` in radians around the window's center; zero draws the window flat.
+    var tilt = SIMD2<Float>.zero
     private(set) var hasScene = false
     /// Bounding box of the scene (shadow included), in global CG coordinates.
     private(set) var sceneBounds = CGRect.null
@@ -150,6 +152,14 @@ final class MeshRenderer: OverlayContent {
         prepareIndices(tilesX: tilesX + 2, tilesY: tilesY + 2)
         let outset = (Float(shadowInsets.left), Float(shadowInsets.top), Float(shadowInsets.right), Float(shadowInsets.bottom))
         deformer.fillVertices(tilesX: tilesX, tilesY: tilesY, outset: outset, into: &vertices)
+        if tilt != .zero {
+            let pivot = deformer.origin + deformer.size / 2
+            for index in vertices.indices {
+                let projected = Tilt.project(SIMD2(vertices[index].x, vertices[index].y), pivot: pivot, angles: tilt)
+                vertices[index].x = projected.x
+                vertices[index].y = projected.y
+            }
+        }
         // A fresh buffer every frame: the GPU may still be reading the previous frame's.
         vertexBuffer = device.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<SIMD4<Float>>.stride,
                                          options: .storageModeShared)

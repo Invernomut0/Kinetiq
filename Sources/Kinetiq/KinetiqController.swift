@@ -31,6 +31,8 @@ private final class DragSession {
     var cursor: CGPoint
     /// Recent cursor positions, to measure how fast the window is let go.
     var samples: [(time: CFTimeInterval, point: CGPoint)] = []
+    /// Current perspective lean `(pitch, yaw)`.
+    var tilt = SIMD2<Float>.zero
     /// Top-left corner of the rigid frame (where the window would be without deformation).
     var origin: CGPoint
     var deformer: WindowDeformer?
@@ -287,15 +289,19 @@ final class KinetiqController: NSObject {
         return true
     }
 
+    /// Cursor velocity in points per second over the last `window` seconds, or nil if there is no recent movement.
+    private func cursorVelocity(_ session: DragSession, over window: CFTimeInterval, maxAge: CFTimeInterval) -> SIMD2<Float>? {
+        let now = CACurrentMediaTime()
+        let recent = session.samples.filter { now - $0.time <= window }
+        guard let first = recent.first, let last = recent.last, recent.count >= 2,
+              last.time - first.time > 0.01, now - last.time < maxAge else { return nil }
+        let dt = last.time - first.time
+        return SIMD2(Float((last.point.x - first.point.x) / dt), Float((last.point.y - first.point.y) / dt))
+    }
+
     /// Release speed in points per second if the window was let go while moving fast, else nil.
     private func flingVelocity(_ session: DragSession) -> SIMD2<Float>? {
-        guard settings.glideOnFlick else { return nil }
-        let now = CACurrentMediaTime()
-        let recent = session.samples.filter { now - $0.time <= 0.1 }
-        guard let first = recent.first, let last = recent.last, recent.count >= 2,
-              last.time - first.time > 0.01, now - last.time < 0.06 else { return nil }
-        let dt = last.time - first.time
-        var velocity = SIMD2(Float((last.point.x - first.point.x) / dt), Float((last.point.y - first.point.y) / dt))
+        guard settings.glideOnFlick, var velocity = cursorVelocity(session, over: 0.1, maxAge: 0.06) else { return nil }
         let speed = simd_length(velocity)
         guard speed >= Self.flingSpeed else { return nil }
         if speed > Self.maxFlingSpeed { velocity *= Self.maxFlingSpeed / speed }
@@ -617,8 +623,28 @@ final class KinetiqController: NSObject {
         }
 
         renderer.shadowOpacity = session.overlayShadow && settings.shadow ? 1 : 0
+        renderer.tilt = updateTilt(session, dt: Float(dt))
         if renderer.hasScene { updateScene(session, deformer) }
         overlays.forEach { $0.render() }
+    }
+
+    /// Leans the window into its movement while it is dragged or glides, and flattens it at rest.
+    private func updateTilt(_ session: DragSession, dt: Float) -> SIMD2<Float> {
+        guard settings.tiltOnDrag, let model = session.model else {
+            session.tilt = .zero
+            return .zero
+        }
+        var target = SIMD2<Float>.zero
+        switch session.phase {
+        case .dragging:
+            target = Tilt.target(for: cursorVelocity(session, over: 0.08, maxAge: 0.05) ?? .zero)
+        case .settling:
+            target = Tilt.target(for: model.glideSpeed)
+        default:
+            break
+        }
+        session.tilt = Tilt.follow(session.tilt, target: target, dt: dt)
+        return session.tilt
     }
 
     private func hideRealWindowIfDue(_ session: DragSession) {
@@ -640,6 +666,8 @@ final class KinetiqController: NSObject {
 
     private func beginRestore(_ session: DragSession) {
         session.hideCountdown = nil
+        session.tilt = .zero
+        renderer.tilt = .zero
         session.phase = .restoring(deadline: CACurrentMediaTime() + 0.5)
         let target = session.origin
         if let axWindow = session.axWindow {
@@ -742,6 +770,7 @@ final class KinetiqController: NSObject {
     private func clearOverlays() {
         watcher?.cancel()
         watcher = nil
+        renderer.tilt = .zero
         renderer.clearScene()
         overlays.forEach {
             $0.render()

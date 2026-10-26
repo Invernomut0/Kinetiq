@@ -5,6 +5,13 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11]
+
+### Added
+
+- **3D tilt while dragging.** The window leans in perspective into its movement (up to about 22° at high speed) and
+  flattens again at rest; it also follows the glide after a flick. Toggle **3D Tilt while Dragging** in Setup.
+
 ## [0.1.10]
 
 ### Added

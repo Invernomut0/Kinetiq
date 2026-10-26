@@ -97,6 +97,8 @@ public final class KinetiqModel: WindowDeformer {
     private var anchor: Int?
     private var lastGrabPoint = SIMD2<Float>.zero
     private var glideVelocity = SIMD2<Float>.zero
+    /// Current speed of the window while it glides (zero otherwise), in points per second.
+    public var glideSpeed: SIMD2<Float> { isGliding ? glideVelocity : .zero }
     private var glideBounds: (min: SIMD2<Float>, max: SIMD2<Float>)?
     /// The window keeps travelling after a fast release, bouncing off the bounds.
     public private(set) var isGliding = false

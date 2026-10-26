@@ -23,6 +23,10 @@ The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from
 
 Let go of a window while moving it fast and it keeps travelling, slows down and bounces off the edges of the usable screen area, squashing like jelly. Grab it again at any time to stop it. Turn it off with **Glide and Bounce on Flick** in Setup.
 
+### 3D tilt
+
+While you drag, the window leans in perspective into its movement and flattens again when you stop. Turn it off with **3D Tilt while Dragging** in Setup.
+
 ### Close effects
 
 When a window closes, it is replaced by an animation drawn on the GPU. Pick the effect in the Setup window under **Window Effects › Close**: one of the 30 effects below, **Random** (a different one every time) or **Off**. The **Duration** slider scales the animation time of every effect (0.25× to 3×). Fire is the default.

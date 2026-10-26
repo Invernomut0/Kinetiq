@@ -123,6 +123,8 @@ struct SetupView: View {
                 Toggle("Shadow", isOn: model.binding({ settings.shadow }, { settings.shadow = $0 }))
                 Toggle("Glide and Bounce on Flick",
                        isOn: model.binding({ settings.glideOnFlick }, { settings.glideOnFlick = $0 }))
+                Toggle("3D Tilt while Dragging",
+                       isOn: model.binding({ settings.tiltOnDrag }, { settings.tiltOnDrag = $0 }))
             }
 
             Section("Window Effects") {
