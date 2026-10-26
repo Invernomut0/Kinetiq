@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = KinetiqController(settings: settings)
+        DockGenie.sync(enabled: settings.minimizeEffect != .off)
         setUpStatusItem()
         installSignalHandlers()
 

@@ -5,6 +5,17 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.16]
+
+### Changed
+
+- **Open effects hide the new window sooner.** The window is moved off-screen first and checked afterwards (it is put
+  back if it turns out to be a full-screen or tiny window), so it is on screen for as short a time as possible before
+  the effect starts.
+- **Minimize effects turn the genie animation off.** Choosing a Minimize effect sets the Dock's minimize animation to
+  *scale* (so ⌘M and the Dock don't play the genie either) and restarts the Dock; choosing **Off** puts your original
+  animation back.
+
 ## [0.1.15]
 
 ### Added

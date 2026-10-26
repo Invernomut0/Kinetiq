@@ -40,13 +40,18 @@ final class OpenEffectTrigger {
         let park = NSScreen.parkingPoint
         AXBridge.queue(for: pid).async { [weak self] in
             AXUIElementSetMessagingTimeout(element, 0.25)
-            guard AXBridge.isStandardWindow(element), !AXBridge.isFullScreen(element),
-                  let id = AXBridge.windowID(of: element), let frame = AXBridge.frame(of: element),
-                  frame.width >= 200, frame.height >= 120 else {
+            // Park first, check after: every call before the move is time during which the new window can be seen.
+            guard AXBridge.isStandardWindow(element), let frame = AXBridge.frame(of: element) else {
                 Task { @MainActor in self?.inProgress = false }
                 return
             }
             AXBridge.setPosition(element, park)
+            guard !AXBridge.isFullScreen(element), let id = AXBridge.windowID(of: element),
+                  frame.width >= 200, frame.height >= 120 else {
+                AXBridge.setPosition(element, frame.origin)
+                Task { @MainActor in self?.inProgress = false }
+                return
+            }
             Task { @MainActor in self?.begin(element, WindowInfo(id: id, pid: pid, frame: frame)) }
         }
     }

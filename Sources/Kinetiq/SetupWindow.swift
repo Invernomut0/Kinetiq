@@ -53,12 +53,14 @@ final class SetupModel: ObservableObject {
 
     func selectMinimizeEffect(_ raw: String) {
         settings.minimizeEffect = CloseEffectChoice(rawValue: raw)
+        DockGenie.sync(enabled: settings.minimizeEffect != .off)
         closeEffectChanged()
         refresh()
     }
 
     func resetToDefaults() {
         settings.resetToDefaults()
+        DockGenie.sync(enabled: settings.minimizeEffect != .off)
         closeEffectChanged()
         refresh()
     }
