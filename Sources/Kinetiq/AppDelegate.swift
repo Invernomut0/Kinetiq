@@ -4,8 +4,6 @@
 
 import AppKit
 import ApplicationServices
-import KinetiqCore
-import KinetiqEffects
 
 enum Permissions {
     static func accessibilityGranted(prompt: Bool) -> Bool {
@@ -29,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var permissionTimer: Timer?
     private var signalSources: [DispatchSourceSignal] = []
-    private weak var presetItem: NSMenuItem?
+    private var setupWindow: SetupWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = KinetiqController(settings: settings)
@@ -92,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
     }
 
+    /// Only the everyday controls live in the menu; everything else is in the detached Setup window.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
@@ -121,104 +120,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(NSMenuItem(title: "Metal Unavailable", action: nil, keyEquivalent: ""))
         }
 
-        let setup = NSMenu()
-        setup.addItem(NSMenuItem.sectionHeader(title: "Compiz Effect"))
-
-        let presetMenu = NSMenu()
-        for preset in WobblePreset.allCases {
-            let entry = NSMenuItem(title: preset.title, action: #selector(selectPreset(_:)), keyEquivalent: "")
-            entry.representedObject = preset.rawValue
-            entry.state = settings.preset == preset ? .on : .off
-            entry.target = self
-            presetMenu.addItem(entry)
-        }
-        let presetItem = NSMenuItem(title: "Preset: \(settings.preset.title)", action: nil, keyEquivalent: "")
-        presetItem.submenu = presetMenu
-        setup.addItem(presetItem)
-        self.presetItem = presetItem
-
-        let physics = settings.physics
-        addSlider(to: setup, "Friction", Double(physics.friction), Settings.frictionRange, decimals: 1) { [unowned self] value in
-            updatePhysics { $0.friction = Float(value) }
-        }
-        addSlider(to: setup, "Spring", Double(physics.spring), Settings.springRange, decimals: 1) { [unowned self] value in
-            updatePhysics { $0.spring = Float(value) }
-        }
-        addSlider(to: setup, "Speedup", Double(physics.speedup), Settings.speedupRange, decimals: 1) { [unowned self] value in
-            updatePhysics { $0.speedup = Float(value) }
-        }
-        addSlider(to: setup, "Mass", Double(physics.mass), Settings.massRange, decimals: 0) { [unowned self] value in
-            updatePhysics { $0.mass = Float(value) }
-        }
-        addSlider(to: setup, "Tiles X", Double(settings.tilesX), Settings.tilesRange, decimals: 0) { [unowned self] value in
-            settings.tilesX = Int(value)
-        }
-        addSlider(to: setup, "Tiles Y", Double(settings.tilesY), Settings.tilesRange, decimals: 0) { [unowned self] value in
-            settings.tilesY = Int(value)
-        }
-
-        let maximize = NSMenuItem(title: "Effect on Maximize", action: #selector(toggleMaximizeEffect), keyEquivalent: "")
-        maximize.state = settings.maximizeEffect ? .on : .off
-        setup.addItem(maximize)
-        let resize = NSMenuItem(title: "Effect on Resize", action: #selector(toggleResizeEffect), keyEquivalent: "")
-        resize.state = settings.resizeEffect ? .on : .off
-        setup.addItem(resize)
-        let shadow = NSMenuItem(title: "Shadow", action: #selector(toggleShadow), keyEquivalent: "")
-        shadow.state = settings.shadow ? .on : .off
-        setup.addItem(shadow)
-
-        setup.addItem(.separator())
-        setup.addItem(NSMenuItem.sectionHeader(title: "Close Effect"))
-        let closeMenu = NSMenu()
-        let currentClose = settings.closeEffect
-        func addCloseEntry(_ title: String, _ choice: CloseEffectChoice) {
-            let entry = NSMenuItem(title: title, action: #selector(selectCloseEffect(_:)), keyEquivalent: "")
-            entry.representedObject = choice.rawValue
-            entry.state = currentClose == choice ? .on : .off
-            entry.target = self
-            closeMenu.addItem(entry)
-        }
-        addCloseEntry("Off", .off)
-        addCloseEntry("Random", .random)
-        closeMenu.addItem(.separator())
-        for effect in CloseEffect.allCases {
-            addCloseEntry(effect.title, .effect(effect))
-        }
-        let closeTitle: String
-        switch currentClose {
-        case .off: closeTitle = "Off"
-        case .random: closeTitle = "Random"
-        case .effect(let effect): closeTitle = effect.title
-        }
-        let closeItem = NSMenuItem(title: "Effect: \(closeTitle)", action: nil, keyEquivalent: "")
-        closeItem.submenu = closeMenu
-        setup.addItem(closeItem)
-        addSlider(to: setup, "Duration", settings.closeDuration, Settings.closeSpeedRange, decimals: 2) { [unowned self] value in
-            settings.closeDuration = value
-        }
-
-        setup.addItem(.separator())
-        setup.addItem(NSMenuItem(title: "Reset to Defaults", action: #selector(resetToDefaults), keyEquivalent: ""))
-        setup.addItem(.separator())
-
-        setup.addItem(NSMenuItem.sectionHeader(title: "Permissions"))
-        let accessibility = Permissions.accessibilityGranted(prompt: false)
-        setup.addItem(NSMenuItem(
-            title: accessibility ? "Accessibility: Granted" : "Grant Accessibility…",
-            action: accessibility ? nil : #selector(openAccessibility), keyEquivalent: ""))
-        let screenCapture = Permissions.screenCaptureGranted
-        setup.addItem(NSMenuItem(
-            title: screenCapture ? "Screen Recording: Granted" : "Grant Screen Recording…",
-            action: screenCapture ? nil : #selector(openScreenCapture), keyEquivalent: ""))
-
         menu.addItem(.separator())
-        let setupItem = NSMenuItem(title: "Setup", action: nil, keyEquivalent: "")
-        setupItem.submenu = setup
-        menu.addItem(setupItem)
+        menu.addItem(NSMenuItem(title: "Setup…", action: #selector(showSetup), keyEquivalent: ","))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Kinetiq", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
-        for item in menu.items + setup.items where item.action != nil && item.action != #selector(NSApplication.terminate(_:)) && item.target == nil {
+        for item in menu.items where item.action != nil && item.action != #selector(NSApplication.terminate(_:)) && item.target == nil {
             item.target = self
         }
     }
@@ -228,47 +135,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !settings.enabled { controller?.cancelAll() }
     }
 
-    private func addSlider(to menu: NSMenu, _ title: String, _ value: Double, _ range: ClosedRange<Double>,
-                           decimals: Int, onChange: @escaping (Double) -> Void) {
-        let item = NSMenuItem()
-        item.view = SliderMenuView(title: title, value: value, range: range, decimals: decimals, onChange: onChange)
-        menu.addItem(item)
-    }
-
-    /// Moving a physics slider switches the preset to "Custom", like the GNOME extension does.
-    private func updatePhysics(_ change: (inout KinetiqSettings) -> Void) {
-        var physics = settings.physics
-        change(&physics)
-        settings.physics = physics
-        settings.preset = .custom
-        presetItem?.title = "Preset: \(WobblePreset.custom.title)"
-    }
-
-    @objc private func toggleMaximizeEffect() {
-        settings.maximizeEffect.toggle()
-    }
-
-    @objc private func toggleResizeEffect() {
-        settings.resizeEffect.toggle()
-    }
-
-    @objc private func resetToDefaults() {
-        settings.resetToDefaults()
-        controller?.closeEffectChanged()
-    }
-
-    @objc private func selectCloseEffect(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String else { return }
-        settings.closeEffect = CloseEffectChoice(rawValue: raw)
-        controller?.closeEffectChanged()
-    }
-
     @objc private func toggleTitleBarDrag() {
         settings.titleBarDrag.toggle()
-    }
-
-    @objc private func toggleShadow() {
-        settings.shadow.toggle()
     }
 
     @objc private func selectModifier(_ sender: NSMenuItem) {
@@ -277,18 +145,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func selectPreset(_ sender: NSMenuItem) {
-        if let raw = sender.representedObject as? String, let preset = WobblePreset(rawValue: raw) {
-            settings.preset = preset
+    @objc private func showSetup() {
+        if setupWindow == nil {
+            setupWindow = SetupWindowController(settings: settings) { [weak self] in
+                self?.controller?.closeEffectChanged()
+            }
         }
-    }
-
-    @objc private func openAccessibility() {
-        Permissions.openPrivacySettings("Privacy_Accessibility")
-    }
-
-    @objc private func openScreenCapture() {
-        CGRequestScreenCaptureAccess()
-        Permissions.openPrivacySettings("Privacy_ScreenCapture")
+        setupWindow?.show()
     }
 }

@@ -17,11 +17,11 @@ Download the DMG from Releases and drag Kinetiq to `/Applications`. The app is n
 - **Drag from the title bar** as usual, or
 - **Hold the shortcut** (⌃⌘ by default) and drag a window from anywhere.
 
-The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from Title Bar** and the **Shortcut** modifier. Everything else lives in the **Setup** submenu: pick a preset (Subtle, Realistic, Exaggerated, Extreme), fine-tune friction, spring, speedup, mass and mesh density, toggle the shadow and the maximize and resize effects, choose the close effect and its duration, reset to defaults and check the permissions status.
+The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from Title Bar** and the **Shortcut** modifier. Everything else lives in a separate **Setup** window (menu item **Setup…**, ⌘,): pick a preset (Subtle, Realistic, Exaggerated, Extreme), fine-tune friction, spring, speedup, mass and mesh density, toggle the shadow and the maximize and resize effects, choose the close effect and its duration, check the permissions and reset to defaults. Changes apply immediately and the window can stay open next to your work.
 
 ### Close effects
 
-When a window closes, it is replaced by an animation drawn on the GPU. Pick the effect in the menu bar under **Setup › Close Effect**: one of the 30 effects below, **Random** (a different one every time) or **Off**. The **Duration** slider scales the animation time of every effect (0.25× to 3×). Fire is the default.
+When a window closes, it is replaced by an animation drawn on the GPU. Pick the effect in the Setup window under **Close Effect**: one of the 30 effects below, **Random** (a different one every time) or **Off**. The **Duration** slider scales the animation time of every effect (0.25× to 3×). Fire is the default.
 
 Aperture Panels, Apparition, Aura Glow, Broken Glass, Doom, Energize A, Energize B, Fire, Focus, Glide, Glitch, Hexagon, Incinerate, Materialize, Matrix, Morph, Mushroom, Paint Brush, Pixelate, Pixel Wheel, Pixel Wipe, Portal, RGB Warp, Snap of Disintegration, Team Rocket, T-Rex Attack, TV Effect, TV Glitch, Wisps and Wormhole.
 
