@@ -28,9 +28,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var permissionTimer: Timer?
     private var signalSources: [DispatchSourceSignal] = []
     private var setupWindow: SetupWindowController?
+    private var chaosSaver: ChaosSaver?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = KinetiqController(settings: settings)
+        let saver = ChaosSaver(settings: settings)
+        saver.startIdleWatching()
+        chaosSaver = saver
+        if ProcessInfo.processInfo.environment["KINETIQ_CHAOS"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saver.start() }
+        }
         DockGenie.sync(enabled: settings.minimizeEffect != .off)
         setUpStatusItem()
         installSignalHandlers()
@@ -148,9 +155,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showSetup() {
         if setupWindow == nil {
-            setupWindow = SetupWindowController(settings: settings) { [weak self] in
+            setupWindow = SetupWindowController(settings: settings, closeEffectChanged: { [weak self] in
                 self?.controller?.closeEffectChanged()
-            }
+            }, startChaos: { [weak self] in
+                self?.chaosSaver?.start()
+            })
         }
         setupWindow?.show()
     }

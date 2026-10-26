@@ -12,6 +12,8 @@ Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (imple
 | 6 | Focus highlight (pulse / glow on the window that gets focus) | Review | v0.1.14. Accent-colored glow (Core Animation overlay, no capture) on app activation and focused-window changes; off by default. Dimming of the other windows not done. |
 | 7 | Ripple at the drop point | Review | v0.1.15. Radial wave in `KinetiqModel` (unit-tested); settling waits for it to finish; off by default. |
 
+| 8 | Screen saver: the desktop falls apart (letters, exploding buttons, triangular window pieces, pile at the bottom) | Review | v0.1.23. `ChaosWorld` in KinetiqCore (unit-tested), Metal renderer, Setup section. Verified on screen through frame dumps (`KINETIQ_CHAOS_DUMP`); the idle start was not waited for. |
+
 ## Done
 
 - Rename to Kinetiq, Setup window, app exclusions (v0.1.4 - v0.1.8).

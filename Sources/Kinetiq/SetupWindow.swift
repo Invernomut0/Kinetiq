@@ -13,13 +13,17 @@ import UniformTypeIdentifiers
 final class SetupModel: ObservableObject {
     let settings: Settings
     private let closeEffectChanged: () -> Void
+    private let startChaos: () -> Void
 
-    init(settings: Settings, closeEffectChanged: @escaping () -> Void) {
+    init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void) {
         self.settings = settings
         self.closeEffectChanged = closeEffectChanged
+        self.startChaos = startChaos
     }
 
     func refresh() { objectWillChange.send() }
+
+    func startScreenSaver() { startChaos() }
 
     func binding<T>(_ get: @escaping () -> T, _ set: @escaping (T) -> Void) -> Binding<T> {
         Binding(get: get, set: { [weak self] value in
@@ -197,6 +201,31 @@ struct SetupView: View {
             }
 
             Section {
+                Toggle("Start after Inactivity",
+                       isOn: model.binding({ settings.chaosEnabled }, { settings.chaosEnabled = $0 }))
+                SliderRow(title: "Start after (min)",
+                          value: model.binding({ Double(settings.chaosIdleMinutes) }, { settings.chaosIdleMinutes = Int($0.rounded()) }),
+                          range: Double(Settings.chaosIdleRange.lowerBound)...Double(Settings.chaosIdleRange.upperBound), decimals: 0)
+                SliderRow(title: "Event every (ms)",
+                          value: model.binding({ settings.chaosEventInterval }, { settings.chaosEventInterval = $0.rounded() }),
+                          range: ChaosSettings.intervalRange, decimals: 0)
+                SliderRow(title: "Pieces vanish after (s)",
+                          value: model.binding({ settings.chaosLifetime }, { settings.chaosLifetime = $0.rounded() }),
+                          range: ChaosSettings.lifetimeRange, decimals: 0)
+                SliderRow(title: "Speed",
+                          value: model.binding({ settings.chaosSpeed }, { settings.chaosSpeed = $0 }),
+                          range: ChaosSettings.speedRange, decimals: 2)
+                SliderRow(title: "Intensity",
+                          value: model.binding({ settings.chaosIntensity }, { settings.chaosIntensity = $0 }),
+                          range: ChaosSettings.intensityRange, decimals: 1)
+                Button("Start Now") { model.startScreenSaver() }
+            } header: {
+                Text("Screen Saver")
+            } footer: {
+                Text("Your desktop falls apart: letters drop, buttons explode, windows break into pieces, and everything piles up at the bottom of the screen and fades away. Nothing real is touched; any key press, click or mouse movement ends it. Needs Screen Recording.")
+            }
+
+            Section {
                 if settings.appCloseEffects.isEmpty {
                     Text("No per-app effects").foregroundStyle(.secondary)
                 }
@@ -342,8 +371,8 @@ final class SetupWindowController {
     private let model: SetupModel
     private var window: NSWindow?
 
-    init(settings: Settings, closeEffectChanged: @escaping () -> Void) {
-        model = SetupModel(settings: settings, closeEffectChanged: closeEffectChanged)
+    init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void) {
+        model = SetupModel(settings: settings, closeEffectChanged: closeEffectChanged, startChaos: startChaos)
     }
 
     func show() {

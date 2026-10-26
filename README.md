@@ -54,6 +54,12 @@ The effect plays when you close a window with:
 
 Minimizing, hiding, switching Spaces, closing a tab with ⌘W, or a close that the app refuses (an unsaved-changes sheet) don't play it. Effects that start at the pointer (Incinerate, Pixel Wipe) use the position of the mouse when the window closes. The effects that need the desktop behind the window (Aperture Panels, Morph, Wormhole) only animate the window: the real desktop shows through instead of being warped.
 
+### Screen saver
+
+**Setup › Screen Saver** can start a screen saver after a number of minutes without input (or right away with *Start Now*). It saves a picture of everything on the desktop (windows, Dock, menu bar, wallpaper) and lets it fall apart, slowly: every so often (*Event every*, 100–5000 ms) something happens: a blast breaks the windows into irregular triangular pieces and throws letters and icons around, the letters of a few lines or an area come loose and drop, a button or an icon blinks red and explodes (neighbouring buttons chain-react), a crack runs through a window and pieces of it fall. Everything that comes loose falls, bounces and piles up at the bottom of the screen, and fades away after *Pieces vanish after* seconds, so the screen never fills up. *Speed* slows the whole simulation down (0.55 by default) and *Intensity* sets the size of the blasts. When most of the desktop is gone it fades out and is rebuilt. Nothing real is touched; any key press, click or mouse movement ends it and the untouched desktop is back.
+
+The objects are found in the pictures of the windows without any extra permission: the background of every tile is its most common colour, what differs is foreground, and connected regions are classified by size and shape into letters, window buttons, buttons and icons. What remains is cut into irregular triangles, so the pieces of a window are not rectangles. Pieces hidden behind another window are not touched until the window in front has broken away. It needs the Screen Recording permission.
+
 ## Permissions
 
 | Permission | Why |

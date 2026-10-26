@@ -124,6 +124,7 @@ final class Settings {
     static let tilesRange: ClosedRange<Double> = 3...20
     /// Multiplies the default animation time of the close effects.
     static let closeSpeedRange: ClosedRange<Double> = 0.25...3
+    static let chaosIdleRange = 1...60
     static let defaultCloseEffect = CloseEffectChoice.effect(.fire)
     /// Kinetiq's own windows (the Setup window) start excluded, like before exclusions were configurable.
     static let defaultExcludedApps = ["io.github.invernomut0.Kinetiq"]
@@ -265,7 +266,51 @@ final class Settings {
         set { defaults.set(newValue, forKey: "excludedApps") }
     }
 
+    /// The screen saver that makes the desktop fall apart starts after `chaosIdleMinutes` without input.
+    var chaosEnabled: Bool {
+        get { defaults.object(forKey: "chaosEnabled") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "chaosEnabled") }
+    }
+
+    var chaosIdleMinutes: Int {
+        get { min(max(defaults.object(forKey: "chaosIdleMinutes") as? Int ?? 5, Self.chaosIdleRange.lowerBound), Self.chaosIdleRange.upperBound) }
+        set { defaults.set(newValue, forKey: "chaosIdleMinutes") }
+    }
+
+    /// Milliseconds between two things breaking.
+    var chaosEventInterval: Double {
+        get { defaults.object(forKey: "chaosEventInterval") as? Double ?? 1500 }
+        set { defaults.set(newValue, forKey: "chaosEventInterval") }
+    }
+
+    /// Seconds a fallen piece stays before it fades away.
+    var chaosLifetime: Double {
+        get { defaults.object(forKey: "chaosLifetime") as? Double ?? 15 }
+        set { defaults.set(newValue, forKey: "chaosLifetime") }
+    }
+
+    var chaosIntensity: Double {
+        get { defaults.object(forKey: "chaosIntensity") as? Double ?? 1 }
+        set { defaults.set(newValue, forKey: "chaosIntensity") }
+    }
+
+    var chaosSettings: ChaosSettings {
+        ChaosSettings(eventInterval: chaosEventInterval, lifetime: chaosLifetime, intensity: chaosIntensity, speed: chaosSpeed)
+    }
+
+    /// 1 = real time; lower values make everything fall in slow motion.
+    var chaosSpeed: Double {
+        get { defaults.object(forKey: "chaosSpeed") as? Double ?? 0.55 }
+        set { defaults.set(newValue, forKey: "chaosSpeed") }
+    }
+
     func resetToDefaults() {
+        chaosEnabled = false
+        chaosIdleMinutes = 5
+        chaosEventInterval = 1500
+        chaosLifetime = 15
+        chaosIntensity = 1
+        chaosSpeed = 0.55
         preset = .realistic
         excludedApps = Self.defaultExcludedApps
         tilesX = Self.defaultTilesX

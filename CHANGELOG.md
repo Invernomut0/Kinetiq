@@ -5,6 +5,17 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.23]
+
+### Added
+
+- **Screen saver** (Setup › Screen Saver): after a number of minutes without input (or with *Start Now*) the desktop
+  falls apart in slow motion. Letters come loose and drop, buttons blink and explode, blasts break windows into
+  irregular triangular pieces, cracks run through windows. Everything piles up at the bottom of the screen and
+  fades after a configurable time. Settings: start after, event interval, vanish time, speed, intensity.
+- `KinetiqCore`: `UIObjectExtractor` (letters, buttons and icons cut out of window pictures), `ChaosTiling`,
+  `ChaosScene` and `ChaosWorld` (circle physics at 120 Hz with stacking, sleeping and fading), all unit-tested.
+
 ## [0.1.22]
 
 ### Added
