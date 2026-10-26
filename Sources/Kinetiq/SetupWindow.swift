@@ -109,7 +109,7 @@ struct SetupView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 440)
+        .frame(minWidth: 440, idealWidth: 440, minHeight: 480, idealHeight: 680)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refresh()
         }
@@ -167,8 +167,9 @@ final class SetupWindowController {
             let hosting = NSHostingController(rootView: SetupView(model: model))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Kinetiq Setup"
-            window.styleMask = [.titled, .closable, .miniaturizable]
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.isReleasedWhenClosed = false
+            window.setContentSize(NSSize(width: 440, height: 680))
             window.center()
             self.window = window
         }
