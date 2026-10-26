@@ -19,6 +19,26 @@
             "target": "Wobbly",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release Wobbly"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Wobbly}",
+            "name": "Debug wobbly-effects-preview",
+            "target": "wobbly-effects-preview",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug wobbly-effects-preview"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Wobbly}",
+            "name": "Release wobbly-effects-preview",
+            "target": "wobbly-effects-preview",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release wobbly-effects-preview"
         }
     ]
 }
