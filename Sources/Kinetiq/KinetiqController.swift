@@ -5,6 +5,7 @@
 import AppKit
 @preconcurrency import ApplicationServices
 import KinetiqCore
+import simd
 
 @MainActor
 private final class DragSession {
@@ -28,6 +29,8 @@ private final class DragSession {
     var axWindow: AXUIElement?
     var grabLocal: CGPoint
     var cursor: CGPoint
+    /// Recent cursor positions, to measure how fast the window is let go.
+    var samples: [(time: CFTimeInterval, point: CGPoint)] = []
     /// Top-left corner of the rigid frame (where the window would be without deformation).
     var origin: CGPoint
     var deformer: WindowDeformer?
@@ -66,6 +69,9 @@ final class KinetiqController: NSObject {
     private static let replayMarker: Int64 = 0x574F_4242
     /// Window edge strip macOS uses for resizing: clicks there are never hijacked.
     private static let resizeBorder: CGFloat = 5
+    /// Release speed (points per second) from which the window keeps gliding, and the most it may start with.
+    private static let flingSpeed: Float = 900
+    private static let maxFlingSpeed: Float = 6000
 
     /// Title bar click held back until we know whether it's a drag or a plain click.
     private struct PendingClick {
@@ -236,6 +242,8 @@ final class KinetiqController: NSObject {
 
         guard let session, session.mouseDown else { return false }
         session.cursor = point
+        session.samples.append((CACurrentMediaTime(), point))
+        if session.samples.count > 12 { session.samples.removeFirst() }
         guard !session.isAborted else { return true }
 
         session.origin = CGPoint(x: point.x - session.grabLocal.x, y: point.y - session.grabLocal.y)
@@ -268,12 +276,38 @@ final class KinetiqController: NSObject {
         session.phase = .settling
         if let model = session.model {
             model.release(origin: SIMD2(session.origin))
+            if let velocity = flingVelocity(session) {
+                model.fling(velocity: velocity, bounds: glideBounds(for: session, at: point))
+            }
         } else if let axWindow = session.axWindow {
             mover.move(axWindow, to: session.origin)
             self.session = nil
         }
         // If AX hasn't answered yet, `axResolved` will place the window when it does.
         return true
+    }
+
+    /// Release speed in points per second if the window was let go while moving fast, else nil.
+    private func flingVelocity(_ session: DragSession) -> SIMD2<Float>? {
+        guard settings.glideOnFlick else { return nil }
+        let now = CACurrentMediaTime()
+        let recent = session.samples.filter { now - $0.time <= 0.1 }
+        guard let first = recent.first, let last = recent.last, recent.count >= 2,
+              last.time - first.time > 0.01, now - last.time < 0.06 else { return nil }
+        let dt = last.time - first.time
+        var velocity = SIMD2(Float((last.point.x - first.point.x) / dt), Float((last.point.y - first.point.y) / dt))
+        let speed = simd_length(velocity)
+        guard speed >= Self.flingSpeed else { return nil }
+        if speed > Self.maxFlingSpeed { velocity *= Self.maxFlingSpeed / speed }
+        return velocity
+    }
+
+    /// Where the window's top-left corner may go while gliding: the usable area of the screen, so it stays in view.
+    private func glideBounds(for session: DragSession, at point: CGPoint) -> (min: SIMD2<Float>, max: SIMD2<Float>)? {
+        guard let visible = NSScreen.containing(cgPoint: point)?.cgVisibleFrame else { return nil }
+        let size = session.window.frame.size
+        return (SIMD2(Float(visible.minX), Float(visible.minY)),
+                SIMD2(Float(visible.maxX - size.width), Float(visible.maxY - size.height)))
     }
 
     /// Replays mouse down and up in order; the original `clickState` preserves double clicks.
@@ -556,7 +590,11 @@ final class KinetiqController: NSObject {
 
         switch session.phase {
         case .dragging, .settling:
+            let wasGliding = session.model?.isGliding ?? false
             deformer.step(Float(dt))
+            if let model = session.model, wasGliding || model.isGliding {
+                session.origin = CGPoint(x: CGFloat(model.origin.x).rounded(), y: CGFloat(model.origin.y).rounded())
+            }
             if case .settling = session.phase, deformer.isSettled {
                 deformer.snapToRest()
                 beginRestore(session)

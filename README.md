@@ -19,6 +19,10 @@ Download the DMG from Releases and drag Kinetiq to `/Applications`. The app is n
 
 The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from Title Bar** and the **Shortcut** modifier. Everything else lives in a separate **Setup** window (menu item **Setup…**, ⌘,): pick a preset (Subtle, Realistic, Exaggerated, Extreme), fine-tune friction, spring, speedup, mass and mesh density, toggle the shadow and the maximize and resize effects, choose the close effect and its duration, check the permissions and reset to defaults. The **Exclusions** list there holds the apps whose windows get no effect at all: add a running app or pick one from disk, and remove it with the minus button (Kinetiq's own Setup window is excluded by default; remove it to make it wobble). Changes apply immediately and the window can stay open next to your work.
 
+### Glide and bounce
+
+Let go of a window while moving it fast and it keeps travelling, slows down and bounces off the edges of the usable screen area, squashing like jelly. Grab it again at any time to stop it. Turn it off with **Glide and Bounce on Flick** in Setup.
+
 ### Close effects
 
 When a window closes, it is replaced by an animation drawn on the GPU. Pick the effect in the Setup window under **Window Effects › Close**: one of the 30 effects below, **Random** (a different one every time) or **Off**. The **Duration** slider scales the animation time of every effect (0.25× to 3×). Fire is the default.

@@ -147,6 +147,12 @@ final class Settings {
         set { defaults.set(newValue, forKey: "resizeEffect") }
     }
 
+    /// A window let go while moving fast keeps gliding and bounces off the edges of the screen.
+    var glideOnFlick: Bool {
+        get { defaults.object(forKey: "glideOnFlick") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "glideOnFlick") }
+    }
+
     /// Effect played when a window is closed (a Burn-My-Windows shader), a random one, or none.
     var closeEffect: CloseEffectChoice {
         get { CloseEffectChoice(rawValue: defaults.string(forKey: "closeEffect")) }
@@ -178,6 +184,7 @@ final class Settings {
         tilesY = Self.defaultTilesY
         maximizeEffect = true
         resizeEffect = false
+        glideOnFlick = true
         closeEffect = Self.defaultCloseEffect
         openEffect = .off
         closeDuration = 1

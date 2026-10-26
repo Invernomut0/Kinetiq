@@ -5,6 +5,14 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10]
+
+### Added
+
+- **Glide and bounce on flick.** Releasing a window while moving it fast (900 pt/s or more) makes it keep travelling,
+  slow down and bounce off the edges of the usable screen area, squashing like jelly. Toggle **Glide and Bounce on
+  Flick** in Setup.
+
 ## [0.1.9]
 
 ### Added

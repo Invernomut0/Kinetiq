@@ -121,6 +121,8 @@ struct SetupView: View {
                 Toggle("Effect on Resize",
                        isOn: model.binding({ settings.resizeEffect }, { settings.resizeEffect = $0 }))
                 Toggle("Shadow", isOn: model.binding({ settings.shadow }, { settings.shadow = $0 }))
+                Toggle("Glide and Bounce on Flick",
+                       isOn: model.binding({ settings.glideOnFlick }, { settings.glideOnFlick = $0 }))
             }
 
             Section("Window Effects") {

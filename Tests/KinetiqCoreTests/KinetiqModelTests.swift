@@ -155,4 +155,45 @@ final class KinetiqModelTests: XCTestCase {
         XCTAssertNil(ResizeEdges.between(old, (10, 0, 810, 600)), "that's a move, not a resize")
         XCTAssertNil(ResizeEdges.between(old, old))
     }
+
+    func testFlungWindowBouncesOffTheBoundsAndSettlesInside() {
+        let bounds = (min: SIMD2<Float>(0, 25), max: SIMD2<Float>(1000, 400))
+        let model = KinetiqModel(size: SIMD2(600, 400), origin: SIMD2(100, 100), settings: .realistic)
+        model.grab(at: SIMD2(300, 110))
+        model.release(origin: SIMD2(100, 100))
+        model.fling(velocity: SIMD2(4000, 0), bounds: bounds)
+        XCTAssertTrue(model.isGliding)
+        XCTAssertFalse(model.isSettled)
+
+        var bounced = false
+        var elapsed: Float = 0
+        repeat {
+            model.step(frame)
+            elapsed += frame
+            XCTAssertLessThanOrEqual(model.origin.x, bounds.max.x + 0.001)
+            XCTAssertGreaterThanOrEqual(model.origin.x, bounds.min.x - 0.001)
+            if model.origin.x >= bounds.max.x - 0.001 { bounced = true }
+        } while !model.isSettled && elapsed < 15
+        XCTAssertTrue(bounced, "the window never reached the right bound")
+        XCTAssertTrue(model.isSettled)
+        XCTAssertFalse(model.isGliding)
+        XCTAssertEqual(model.origin.y, 100, accuracy: 0.001, "a horizontal fling must not move the window vertically")
+    }
+
+    func testSlowReleaseDoesNotGlide() {
+        let model = KinetiqModel(size: SIMD2(600, 400), origin: SIMD2(100, 100), settings: .realistic)
+        model.grab(at: SIMD2(300, 110))
+        model.fling(velocity: SIMD2(10, 0), bounds: nil)
+        XCTAssertFalse(model.isGliding)
+    }
+
+    func testGrabbingAgainStopsTheGlide() {
+        let model = KinetiqModel(size: SIMD2(600, 400), origin: SIMD2(100, 100), settings: .realistic)
+        model.grab(at: SIMD2(300, 110))
+        model.fling(velocity: SIMD2(2000, 0), bounds: nil)
+        model.step(frame)
+        model.grab(at: model.positions[5])
+        XCTAssertFalse(model.isGliding)
+        XCTAssertTrue(model.isGrabbed)
+    }
 }

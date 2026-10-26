@@ -96,7 +96,14 @@ public final class KinetiqModel: WindowDeformer {
     private var accumulator: Float = 0
     private var anchor: Int?
     private var lastGrabPoint = SIMD2<Float>.zero
-
+    private var glideVelocity = SIMD2<Float>.zero
+    private var glideBounds: (min: SIMD2<Float>, max: SIMD2<Float>)?
+    /// The window keeps travelling after a fast release, bouncing off the bounds.
+    public private(set) var isGliding = false
+    /// How fast a glide loses speed (1/s) and how much speed is kept when bouncing off a bound.
+    private static let glideDamping: Float = 3.2
+    private static let glideRestitution: Float = 0.6
+    private static let glideStopSpeed: Float = 30
     public init(size: SIMD2<Float>, origin: SIMD2<Float>, settings: KinetiqSettings = .realistic) {
         self.size = size
         self.origin = origin
@@ -152,6 +159,7 @@ public final class KinetiqModel: WindowDeformer {
         velocities[a] = .zero
         lastGrabPoint = point
         isGrabbed = true
+        isGliding = false
     }
 
     public func moveGrab(to point: SIMD2<Float>, origin: SIMD2<Float>) {
@@ -167,6 +175,51 @@ public final class KinetiqModel: WindowDeformer {
         if let anchor { positions[anchor] += newOrigin - origin }
         origin = newOrigin
         isGrabbed = false
+    }
+
+    /// Lets go of the grabbed node and keeps the window moving at `velocity` (points per second) after a fast release.
+    /// `bounds` limits where `origin` may go (nil: free); the window bounces off them and loses speed over time.
+    public func fling(velocity: SIMD2<Float>, bounds: (min: SIMD2<Float>, max: SIMD2<Float>)?) {
+        if let anchor { immobile[anchor] = false }
+        anchor = nil
+        isGrabbed = false
+        glideVelocity = velocity
+        glideBounds = bounds
+        isGliding = simd_length(velocity) > Self.glideStopSpeed
+    }
+
+    private func advanceGlide(_ dt: Float) {
+        var velocity = glideVelocity
+        var newOrigin = origin + velocity * dt
+        if let bounds = glideBounds {
+            for axis in 0..<2 {
+                // A bound only counts if the window fits between them on that axis.
+                guard bounds.max[axis] >= bounds.min[axis] else { continue }
+                let below = newOrigin[axis] < bounds.min[axis], above = newOrigin[axis] > bounds.max[axis]
+                guard below || above else { continue }
+                newOrigin[axis] = below ? bounds.min[axis] : bounds.max[axis]
+                let incoming = velocity[axis]
+                velocity[axis] = -incoming * Self.glideRestitution
+                squash(axis: axis, towards: below ? -1 : 1, speed: abs(incoming))
+            }
+        }
+        velocity *= exp(-Self.glideDamping * dt)
+        let delta = newOrigin - origin
+        for i in positions.indices { positions[i] += delta }
+        origin = newOrigin
+        glideVelocity = velocity
+        if simd_length(velocity) < Self.glideStopSpeed { isGliding = false }
+    }
+
+    /// Hitting a bound: the nodes far from it keep going for a moment and the near ones give way, so the window
+    /// squashes like jelly. The impulses add up to zero: nothing but the origin may carry the window away.
+    private func squash(axis: Int, towards side: Float, speed: Float) {
+        let impulse = speed / stepsPerSecond * 0.6
+        for i in positions.indices {
+            let column = Float(axis == 0 ? i % Self.gridWidth : i / Self.gridWidth) / Float(Self.gridWidth - 1)
+            let distance = side < 0 ? column : 1 - column
+            velocities[i][axis] += side * impulse * (distance - 0.5)
+        }
     }
 
     /// Maximize effect: corners pinned and an inward kick on their neighbours.
@@ -207,6 +260,7 @@ public final class KinetiqModel: WindowDeformer {
     // MARK: - Simulation
 
     public func step(_ dt: Float) {
+        if isGliding { advanceGlide(min(max(dt, 0), 1.0 / 15.0)) }
         accumulator += min(max(dt, 0), 1.0 / 15.0) * stepsPerSecond
         guard accumulator >= 1 else { return }
         var moving = false
@@ -240,11 +294,12 @@ public final class KinetiqModel: WindowDeformer {
     /// Compiz stops as soon as no force exceeds 1, but at that point a few points of deformation are
     /// left and vanish abruptly. We keep going until every node is within half a point of rest.
     public var isSettled: Bool {
-        guard !isGrabbed, !movement else { return false }
+        guard !isGrabbed, !isGliding, !movement else { return false }
         return positions.indices.allSatisfy { simd_length(positions[$0] - restPosition($0)) < 0.5 }
     }
 
     public func snapToRest() {
+        isGliding = false
         for i in positions.indices {
             positions[i] = restPosition(i)
             velocities[i] = .zero
