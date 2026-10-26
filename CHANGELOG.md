@@ -1,9 +1,17 @@
 # Changelog
 
-All notable changes to Wobbly are documented in this file.
+All notable changes to Kinetiq are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.4]
+
+### Changed
+
+- **Project renamed from Wobbly to Kinetiq.** Swift targets (`Kinetiq`, `KinetiqCore`, `KinetiqEffects`),
+  `kinetiq-effects-preview`, the app bundle (`Kinetiq.app`) and its identifier (`io.github.invernomut0.Kinetiq`) were
+  renamed. macOS treats it as a new app: grant Accessibility and Screen Recording again.
 
 ## [0.1.3]
 
@@ -19,14 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     near the close button or ⌘ is pressed, and the effect starts as soon as macOS fades the window out or removes it.
     Minimizing, hiding and switching Spaces are ignored.
   - Aperture Panels, Morph and Wormhole animate only the window: the real desktop shows through.
-- `wobbly-effects-preview`, a command-line tool that renders the effects headlessly, checks every shader, texture
-  and seed, and writes a contact sheet per effect (`swift run wobbly-effects-preview --check`).
+- `kinetiq-effects-preview`, a command-line tool that renders the effects headlessly, checks every shader, texture
+  and seed, and writes a contact sheet per effect (`swift run kinetiq-effects-preview --check`).
 
 ## [0.1.2]
 
 ### Changed
 
-- **Menu bar menu reorganized.** The top level only keeps Wobbly Enabled, Drag from Title Bar and the
+- **Menu bar menu reorganized.** The top level only keeps Kinetiq Enabled, Drag from Title Bar and the
   shortcut modifier. Presets, sliders, effect toggles, reset and permissions moved to a new **Setup** submenu.
 
 ## [0.1.1]

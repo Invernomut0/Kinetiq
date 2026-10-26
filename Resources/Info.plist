@@ -5,23 +5,23 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>Wobbly</string>
+	<string>Kinetiq</string>
 	<key>CFBundleIconFile</key>
-	<string>Wobbly</string>
+	<string>Kinetiq</string>
 	<key>CFBundleIconName</key>
-	<string>Wobbly</string>
+	<string>Kinetiq</string>
 	<key>CFBundleIdentifier</key>
-	<string>io.github.jsgrrchg.Wobbly</string>
+	<string>io.github.invernomut0.Kinetiq</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Wobbly</string>
+	<string>Kinetiq</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.3</string>
+	<string>0.1.4</string>
 	<key>CFBundleVersion</key>
-	<string>4</string>
+	<string>5</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSUIElement</key>

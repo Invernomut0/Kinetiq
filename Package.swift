@@ -5,16 +5,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "Wobbly",
+    name: "Kinetiq",
     platforms: [.macOS(.v14)],
     targets: [
-        .target(name: "WobblyCore"),
+        .target(name: "KinetiqCore"),
         // Window-close effects: Metal shaders ported from Burn-My-Windows.
-        .target(name: "WobblyEffects", resources: [.copy("Resources")]),
-        // Renders the effects headlessly: `swift run wobbly-effects-preview --check`.
-        .executableTarget(name: "wobbly-effects-preview", dependencies: ["WobblyEffects"], path: "Sources/WobblyEffectsPreview"),
-        .executableTarget(name: "Wobbly", dependencies: ["WobblyCore", "WobblyEffects"]),
-        .testTarget(name: "WobblyCoreTests", dependencies: ["WobblyCore"]),
-        .testTarget(name: "WobblyEffectsTests", dependencies: ["WobblyEffects"]),
+        .target(name: "KinetiqEffects", resources: [.copy("Resources")]),
+        // Renders the effects headlessly: `swift run kinetiq-effects-preview --check`.
+        .executableTarget(name: "kinetiq-effects-preview", dependencies: ["KinetiqEffects"], path: "Sources/KinetiqEffectsPreview"),
+        .executableTarget(name: "Kinetiq", dependencies: ["KinetiqCore", "KinetiqEffects"]),
+        .testTarget(name: "KinetiqCoreTests", dependencies: ["KinetiqCore"]),
+        .testTarget(name: "KinetiqEffectsTests", dependencies: ["KinetiqEffects"]),
     ]
 )

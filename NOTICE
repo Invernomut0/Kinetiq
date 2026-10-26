@@ -1,17 +1,17 @@
-Wobbly
+Kinetiq
 Copyright (C) 2026 José Gurruchaga
 
-Wobbly is free software: you can redistribute it and/or modify it under the
+Kinetiq is free software: you can redistribute it and/or modify it under the
 terms of the GNU General Public License as published by the Free Software
 Foundation, either version 3 of the License, or (at your option) any later
 version. See LICENSE for the full text.
 
-Wobbly includes code derived from the following third-party works.
+Kinetiq includes code derived from the following third-party works.
 
 --------------------------------------------------------------------------------
 Compiz wobbly plugin (plugins/wobbly.c) and
 Compiz windows effect, src/effects/wobbly_model.js
-Used in: Sources/WobblyCore/WobblyModel.swift
+Used in: Sources/KinetiqCore/KinetiqModel.swift
 --------------------------------------------------------------------------------
 
 Copyright © 2005 Novell, Inc.
@@ -44,7 +44,7 @@ Spring model implemented by Kristian Hogsberg.
 
 --------------------------------------------------------------------------------
 Compiz windows effect for GNOME Shell, src/effects/resize.js
-Used in: Sources/WobblyCore/ResizeBounce.swift
+Used in: Sources/KinetiqCore/ResizeBounce.swift
 --------------------------------------------------------------------------------
 
 Copyright (C) 2020 Mauro Pepe <https://github.com/hermes83/compiz-windows-effect>
@@ -54,8 +54,8 @@ any later version. See LICENSE for the full text.
 
 --------------------------------------------------------------------------------
 Burn-My-Windows, resources/shaders/*.frag and resources/shaders/common.glsl
-Used in: Sources/WobblyEffects/Resources/Shaders/*.metal (ported from GLSL to Metal)
-         and the effect settings in Sources/WobblyEffects/CloseEffect.swift
+Used in: Sources/KinetiqEffects/Resources/Shaders/*.metal (ported from GLSL to Metal)
+         and the effect settings in Sources/KinetiqEffects/CloseEffect.swift
 --------------------------------------------------------------------------------
 
 Copyright (C) Simon Schneegans <code@simonschneegans.de>
@@ -73,7 +73,7 @@ includes under the MIT License:
 
 --------------------------------------------------------------------------------
 Burn-My-Windows, resources/img/*.png
-Used in: Sources/WobblyEffects/Resources/Textures/ (brush, claws, dust, matrixFont, shards)
+Used in: Sources/KinetiqEffects/Resources/Textures/ (brush, claws, dust, matrixFont, shards)
 --------------------------------------------------------------------------------
 
 Copyright (C) Simon Schneegans <code@simonschneegans.de>

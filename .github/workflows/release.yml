@@ -1,4 +1,4 @@
-# Builds, signs and publishes Wobbly-<version>.dmg when a v* tag is pushed.
+# Builds, signs and publishes Kinetiq-<version>.dmg when a v* tag is pushed.
 #
 # Signing uses the Apple Development identity stored in the SIGNING_CERT_P12 (base64 .p12)
 # and SIGNING_CERT_PASSWORD secrets. Without them the app is signed ad-hoc.
@@ -48,9 +48,9 @@ jobs:
       - name: Build app
         run: |
           scripts/build-app.sh
-          lipo -archs build/Wobbly.app/Contents/MacOS/Wobbly
+          lipo -archs build/Kinetiq.app/Contents/MacOS/Kinetiq
           if [ -n "$SIGNING_CERT_P12" ]; then
-            codesign -dvv build/Wobbly.app 2>&1 | grep -q "Authority=Apple Development" \
+            codesign -dvv build/Kinetiq.app 2>&1 | grep -q "Authority=Apple Development" \
               || { echo "::error::App was not signed with the Apple Development identity"; exit 1; }
           fi
 
@@ -58,16 +58,16 @@ jobs:
         run: |
           STAGING="$RUNNER_TEMP/dmg"
           mkdir -p "$STAGING"
-          cp -R build/Wobbly.app "$STAGING/"
+          cp -R build/Kinetiq.app "$STAGING/"
           ln -s /Applications "$STAGING/Applications"
-          hdiutil create -volname Wobbly -srcfolder "$STAGING" -ov -format UDZO "build/Wobbly-$VERSION.dmg"
+          hdiutil create -volname Kinetiq -srcfolder "$STAGING" -ov -format UDZO "build/Kinetiq-$VERSION.dmg"
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "build/Wobbly-$VERSION.dmg" \
-            --title "Wobbly $VERSION" --generate-notes
+          gh release create "$GITHUB_REF_NAME" "build/Kinetiq-$VERSION.dmg" \
+            --title "Kinetiq $VERSION" --generate-notes
 
       - name: Remove signing keychain
         if: always() && env.SIGNING_CERT_P12 != ''

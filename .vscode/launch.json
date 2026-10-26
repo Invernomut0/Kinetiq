@@ -5,40 +5,40 @@
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:Wobbly}",
-            "name": "Debug Wobbly",
-            "target": "Wobbly",
+            "name": "Debug Kinetiq",
+            "target": "Kinetiq",
             "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug Wobbly"
+            "preLaunchTask": "swift: Build Debug Kinetiq"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:Wobbly}",
-            "name": "Release Wobbly",
-            "target": "Wobbly",
+            "name": "Release Kinetiq",
+            "target": "Kinetiq",
             "configuration": "release",
-            "preLaunchTask": "swift: Build Release Wobbly"
+            "preLaunchTask": "swift: Build Release Kinetiq"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:Wobbly}",
-            "name": "Debug wobbly-effects-preview",
-            "target": "wobbly-effects-preview",
+            "name": "Debug kinetiq-effects-preview",
+            "target": "kinetiq-effects-preview",
             "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug wobbly-effects-preview"
+            "preLaunchTask": "swift: Build Debug kinetiq-effects-preview"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:Wobbly}",
-            "name": "Release wobbly-effects-preview",
-            "target": "wobbly-effects-preview",
+            "name": "Release kinetiq-effects-preview",
+            "target": "kinetiq-effects-preview",
             "configuration": "release",
-            "preLaunchTask": "swift: Build Release wobbly-effects-preview"
+            "preLaunchTask": "swift: Build Release kinetiq-effects-preview"
         }
     ]
 }

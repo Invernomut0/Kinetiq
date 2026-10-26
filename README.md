@@ -1,8 +1,8 @@
-# Wobbly
+# Kinetiq
 
 Compiz-style wobbly windows for macOS. Drag a window and it wobbles like jelly, then settles where you drop it. Optional effects also play when a window is maximized or resized, and closing a window can burn, shatter, melt or dissolve it with one of 30 GPU shader effects.
 
-Wobbly is a menu bar app with no private APIs and no dependencies.
+Kinetiq is a menu bar app with no private APIs and no dependencies. It is a fork of [Wobbly](https://github.com/jsgrrchg/Wobbly) by José Gurruchaga.
 
 https://github.com/user-attachments/assets/40bc5530-d253-4d47-bc57-3eccdac83d70
 
@@ -10,14 +10,14 @@ https://github.com/user-attachments/assets/40bc5530-d253-4d47-bc57-3eccdac83d70
 
 Requires macOS 14 or later, on Apple Silicon or Intel.
 
-Download the DMG from Releases and drag Wobbly to `/Applications`. The app is not notarized, so the first time you open it macOS will block it: go to **System Settings → Privacy & Security** and click **Open Anyway**.
+Download the DMG from Releases and drag Kinetiq to `/Applications`. The app is not notarized, so the first time you open it macOS will block it: go to **System Settings → Privacy & Security** and click **Open Anyway**.
 
 ## Usage
 
 - **Drag from the title bar** as usual, or
 - **Hold the shortcut** (⌃⌘ by default) and drag a window from anywhere.
 
-The menu bar icon keeps only the main controls: **Wobbly Enabled**, **Drag from Title Bar** and the **Shortcut** modifier. Everything else lives in the **Setup** submenu: pick a preset (Subtle, Realistic, Exaggerated, Extreme), fine-tune friction, spring, speedup, mass and mesh density, toggle the shadow and the maximize and resize effects, choose the close effect and its duration, reset to defaults and check the permissions status.
+The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from Title Bar** and the **Shortcut** modifier. Everything else lives in the **Setup** submenu: pick a preset (Subtle, Realistic, Exaggerated, Extreme), fine-tune friction, spring, speedup, mass and mesh density, toggle the shadow and the maximize and resize effects, choose the close effect and its duration, reset to defaults and check the permissions status.
 
 ### Close effects
 
@@ -43,7 +43,7 @@ Minimizing, hiding, switching Spaces, closing a tab with ⌘W, or a close that t
 
 When a window is grabbed it is captured with ScreenCaptureKit, drawn on a deformed mesh by Metal in a transparent overlay, and the real window is moved off-screen through the Accessibility API. Once the animation settles, the real window is put back at its final position.
 
-An app closes its windows by itself, so Wobbly can't intercept a close: it captures the window beforehand and watches it. A click near the top-left corner of a window captures it, and so does holding ⌘ (the capture is refreshed while ⌘ is held; keystrokes are never read). When macOS starts to fade the window out, or removes it, the capture is drawn by the effect's Metal shader in a transparent overlay, over the desktop that the closed window left. The shaders are in `Sources/WobblyEffects/Resources/Shaders`: each effect is one Metal file, ported from the GLSL of Burn-My-Windows.
+An app closes its windows by itself, so Kinetiq can't intercept a close: it captures the window beforehand and watches it. A click near the top-left corner of a window captures it, and so does holding ⌘ (the capture is refreshed while ⌘ is held; keystrokes are never read). When macOS starts to fade the window out, or removes it, the capture is drawn by the effect's Metal shader in a transparent overlay, over the desktop that the closed window left. The shaders are in `Sources/KinetiqEffects/Resources/Shaders`: each effect is one Metal file, ported from the GLSL of Burn-My-Windows.
 
 ## Building
 
@@ -52,12 +52,12 @@ Requires macOS 14 or later and Xcode 26 or later.
 ```sh
 swift build                # build
 swift test                 # run the physics and effect tests
-scripts/build-app.sh       # package and sign build/Wobbly.app
+scripts/build-app.sh       # package and sign build/Kinetiq.app
 
 # Render the close effects headlessly: checks every shader, texture and seed,
 # and writes one contact sheet (PNG) per effect.
-swift run wobbly-effects-preview --check --out /tmp/wobbly-effects
-swift run wobbly-effects-preview --effect fire --out /tmp/wobbly-effects
+swift run kinetiq-effects-preview --check --out /tmp/wobbly-effects
+swift run kinetiq-effects-preview --effect fire --out /tmp/wobbly-effects
 ```
 
 `build-app.sh` signs with your "Apple Development" identity if you have one, or with `SIGN_IDENTITY` if set. Otherwise it falls back to ad-hoc signing, in which case macOS asks for permissions again after every build.
@@ -71,4 +71,4 @@ swift run wobbly-effects-preview --effect fire --out /tmp/wobbly-effects
 
 ## License
 
-Wobbly is licensed under the [GNU General Public License v3.0 or later](LICENSE). The resize effect is ported from Compiz windows effect, and the close effects from Burn-My-Windows, which are GPL-3.0-or-later, so Wobbly is a derivative work under the same license. Third-party notices are in [NOTICE](NOTICE).
+Kinetiq is licensed under the [GNU General Public License v3.0 or later](LICENSE). The resize effect is ported from Compiz windows effect, and the close effects from Burn-My-Windows, which are GPL-3.0-or-later, so Kinetiq is a derivative work under the same license. Third-party notices are in [NOTICE](NOTICE).
