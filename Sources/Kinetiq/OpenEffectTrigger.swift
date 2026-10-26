@@ -97,26 +97,27 @@ final class OpenEffectTrigger {
 
     /// The window is parked: wait for its content, then play the effect.
     private func begin(_ element: AXUIElement, _ initial: WindowInfo) {
-        var origin = initial.frame.origin
-        var restored = false
-        let restore: () -> Void = { [weak self] in
-            guard !restored else { return }
-            restored = true
-            let target = origin
-            let began = CACurrentMediaTime()
-            AXBridge.urgentQueue.async {
-                AXBridge.setPosition(element, target)
-                let took = (CACurrentMediaTime() - began) * 1000
-                let after = AXBridge.frame(of: element)?.origin ?? .zero
-                Self.log.notice("restored to \(target.x), \(target.y) in \(took, format: .fixed(precision: 0)) ms; the window reports \(after.x), \(after.y)")
+        var finalFrame = initial.frame
+        var handedOver = false
+        // Moves the window back, waits until it is really there, and only then lets the overlay go: the overlay keeps
+        // drawing the finished window meanwhile, so there is no moment in which neither is on screen.
+        let handOver: () -> Void = { [weak self] in
+            guard !handedOver else { return }
+            handedOver = true
+            let target = finalFrame.origin
+            AXBridge.urgentQueue.async { AXBridge.setPosition(element, target) }
+            self?.waitUntilBack(id: initial.id, at: target) {
+                guard let self else { return }
+                self.player.releaseHeld()
+                self.inProgress = false
+                self.onFinished?(finalFrame)
             }
-            self?.inProgress = false
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.failsafe) { restore() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.failsafe) { handOver() }
 
         Task {
             let settled = await settledFrame(of: element, from: initial.frame)
-            origin = settled.origin
+            finalFrame = settled
             let info = WindowInfo(id: initial.id, pid: initial.pid, frame: settled)
             Self.log.notice("settled at \(settled.minX), \(settled.minY) \(settled.width)x\(settled.height)")
             for attempt in 0..<Self.maxTries {
@@ -132,15 +133,33 @@ final class OpenEffectTrigger {
                     let pointer = CGEvent(source: nil)?.location ?? CGPoint(x: info.frame.midX, y: info.frame.midY)
                     let started = player.play(
                         frame, windowFrame: info.frame, effect: effect, pointer: pointer,
-                        durationScale: settings.closeDuration, nativeFade: false, opening: true, nearEnd: restore,
-                        onFinish: { [weak self] in self?.onFinished?(settled) })
+                        durationScale: settings.closeDuration, nativeFade: false, opening: true, onFinish: handOver,
+                        holdLastFrame: true)
                     if started { return }
                     Self.log.notice("effect could not start")
                     break
                 }
                 try? await Task.sleep(for: Self.retryDelay)
             }
-            restore()
+            handOver()
         }
+    }
+
+    /// Polls (every millisecond, like a drag does) until the window is on screen at `target`, or gives up.
+    private func waitUntilBack(id: CGWindowID, at target: CGPoint, then done: @escaping () -> Void) {
+        let began = CACurrentMediaTime()
+        let timer = DispatchSource.makeTimerSource(flags: .strict, queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(1), leeway: .nanoseconds(0))
+        timer.setEventHandler {
+            MainActor.assumeIsolated {
+                let frame = WindowLocator.frame(of: id)
+                let back = frame.map { abs($0.minX - target.x) <= 8 && abs($0.minY - target.y) <= 8 } ?? false
+                guard back || CACurrentMediaTime() - began > 0.5 else { return }
+                timer.cancel()
+                Self.log.notice("back on screen after \(((CACurrentMediaTime() - began) * 1000), format: .fixed(precision: 0)) ms")
+                done()
+            }
+        }
+        timer.resume()
     }
 }

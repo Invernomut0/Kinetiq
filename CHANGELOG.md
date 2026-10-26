@@ -5,6 +5,15 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.19]
+
+### Fixed
+
+- **Flash at the end of the open effect.** The real window used to come back at 90 % of the effect, while the effect
+  had not finished revealing it (the whole window popped in early), and its shadow was drawn twice until the overlay
+  went away. The overlay now keeps drawing the finished window until the real one is back on screen (the shadow
+  is handed over at that moment), and only then goes away.
+
 ## [0.1.18]
 
 ### Changed
