@@ -157,6 +157,8 @@ struct SetupView: View {
                        isOn: model.binding({ settings.glideOnFlick }, { settings.glideOnFlick = $0 }))
                 Toggle("3D Tilt while Dragging",
                        isOn: model.binding({ settings.tiltOnDrag }, { settings.tiltOnDrag = $0 }))
+                Toggle("Glow on Focus",
+                       isOn: model.binding({ settings.focusPulse }, { settings.focusPulse = $0 }))
             }
 
             Section("Window Effects") {

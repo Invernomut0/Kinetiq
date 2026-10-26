@@ -11,6 +11,8 @@ import AppKit
 final class WindowObserver {
     var onResize: ((AXUIElement, pid_t) -> Void)?
     var onWindowCreated: ((AXUIElement, pid_t) -> Void)?
+    /// An app became active or moved the focus to another of its windows.
+    var onFocusChanged: ((pid_t) -> Void)?
 
     private var observer: AXObserver?
     private var observedPID: pid_t = 0
@@ -22,7 +24,10 @@ final class WindowObserver {
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] note in
             let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
-            MainActor.assumeIsolated { self?.observe(pid) }
+            MainActor.assumeIsolated {
+                self?.observe(pid)
+                if let pid { self?.onFocusChanged?(pid) }
+            }
         }
         observe(NSWorkspace.shared.frontmostApplication?.processIdentifier)
     }
@@ -39,6 +44,7 @@ final class WindowObserver {
         AXUIElementSetMessagingTimeout(app, 0.25)
         AXObserverAddNotification(observer, app, kAXWindowCreatedNotification as CFString, refcon)
         AXObserverAddNotification(observer, app, kAXWindowResizedNotification as CFString, refcon)
+        AXObserverAddNotification(observer, app, kAXFocusedWindowChangedNotification as CFString, refcon)
 
         // Besides the app-level notification, register each window too: not every app sends the former.
         var value: CFTypeRef?
@@ -63,6 +69,10 @@ final class WindowObserver {
     }
 
     fileprivate func handle(_ element: AXUIElement, notification: String) {
+        if notification == kAXFocusedWindowChangedNotification as String {
+            onFocusChanged?(observedPID)
+            return
+        }
         if notification == kAXWindowCreatedNotification as String {
             if let observer {
                 AXObserverAddNotification(observer, element, kAXResizedNotification as CFString, Unmanaged.passUnretained(self).toOpaque())

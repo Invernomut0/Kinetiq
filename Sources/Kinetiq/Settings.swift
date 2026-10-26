@@ -153,6 +153,12 @@ final class Settings {
         set { defaults.set(newValue, forKey: "glideOnFlick") }
     }
 
+    /// A glow flashes around the window that takes the focus.
+    var focusPulse: Bool {
+        get { defaults.object(forKey: "focusPulse") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "focusPulse") }
+    }
+
     /// The window leans in perspective into its movement while it is dragged.
     var tiltOnDrag: Bool {
         get { defaults.object(forKey: "tiltOnDrag") as? Bool ?? true }
@@ -210,6 +216,7 @@ final class Settings {
         resizeEffect = false
         glideOnFlick = true
         tiltOnDrag = true
+        focusPulse = false
         closeEffect = Self.defaultCloseEffect
         openEffect = .off
         minimizeEffect = .off

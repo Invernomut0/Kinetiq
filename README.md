@@ -27,6 +27,10 @@ Let go of a window while moving it fast and it keeps travelling, slows down and 
 
 While you drag, the window leans in perspective into its movement and flattens again when you stop. Turn it off with **3D Tilt while Dragging** in Setup.
 
+### Glow on focus
+
+Optional (**Glow on Focus** in Setup, off by default): an accent-colored glow flashes around the window that takes the focus.
+
 ### Close effects
 
 When a window closes, it is replaced by an animation drawn on the GPU. Pick the effect in the Setup window under **Window Effects › Close**: one of the 30 effects below, **Random** (a different one every time) or **Off**. The **Duration** slider scales the animation time of every effect (0.25× to 3×). Fire is the default.

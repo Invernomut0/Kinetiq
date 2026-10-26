@@ -5,6 +5,14 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14]
+
+### Added
+
+- **Glow on focus.** An accent-colored glow flashes around the window that takes the focus, when its app is activated
+  or moves the focus to another of its windows. Off by default; toggle **Glow on Focus** in Setup. It is a
+  click-through Core Animation overlay: nothing is captured or moved.
+
 ## [0.1.13]
 
 ### Added

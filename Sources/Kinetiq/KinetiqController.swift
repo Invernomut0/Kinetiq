@@ -99,6 +99,7 @@ final class KinetiqController: NSObject {
     private var closeTrigger: CloseEffectTrigger?
     private var openTrigger: OpenEffectTrigger?
     private var minimizeTrigger: MinimizeEffectTrigger?
+    private let focusPulse = FocusPulse()
     private var overlays: [OverlayWindow] = []
     private var session: DragSession?
     private var pendingClick: PendingClick?
@@ -136,6 +137,7 @@ final class KinetiqController: NSObject {
             self?.refreshCaptureContent()
             self?.openTrigger?.windowCreated(element, pid: pid)
         }
+        windowObserver.onFocusChanged = { [weak self] pid in self?.focusChanged(pid: pid) }
         for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification] {
             NSWorkspace.shared.notificationCenter.addObserver(
                 self, selector: #selector(refreshCaptureContent), name: name, object: nil)
@@ -420,6 +422,16 @@ final class KinetiqController: NSObject {
                                  edges: edges, pickup: pickup, pointerTravel: travel, settings: physics)
                 }
             }
+        }
+    }
+
+    /// An app was activated or moved the focus to another window: flash a glow around it.
+    private func focusChanged(pid: pid_t) {
+        guard settings.enabled, settings.focusPulse, session == nil, pid != ProcessInfo.processInfo.processIdentifier,
+              !AppExclusions.contains(pid: pid) else { return }
+        AXBridge.queue(for: pid).async { [weak self] in
+            guard let frame = AXBridge.focusedWindow(pid: pid)?.frame else { return }
+            Task { @MainActor in self?.focusPulse.pulse(around: frame) }
         }
     }
 
