@@ -19,6 +19,12 @@ final class FocusPulse {
     private let glow = CALayer()
     private var lastPulse: CFTimeInterval = 0
 
+    /// Stops a glow that is showing.
+    func cancel() {
+        glow.removeAllAnimations()
+        window?.orderOut(nil)
+    }
+
     /// `frame` is the window in global CoreGraphics coordinates (origin at the top left of the main screen).
     func pulse(around frame: CGRect) {
         let now = CACurrentMediaTime()

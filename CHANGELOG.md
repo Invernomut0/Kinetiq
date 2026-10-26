@@ -5,6 +5,13 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.18]
+
+### Changed
+
+- **No focus glow while a window opens.** With an Open effect, the glow around the new window is held back (and
+  cancelled if it had already started) and flashes once the effect has finished.
+
 ## [0.1.17]
 
 ### Fixed

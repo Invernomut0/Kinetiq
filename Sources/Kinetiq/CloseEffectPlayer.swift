@@ -22,6 +22,8 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
         let backing: CVMetalTexture
         /// Called once, shortly before the effect ends (the real window is brought back under the last frames).
         var nearEnd: (() -> Void)?
+        /// Called once when the effect is over (or cancelled).
+        var onFinish: (() -> Void)?
     }
 
     /// How long macOS takes to fade a closing window out.
@@ -136,7 +138,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
     /// `nativeFade`: the real window is still fading out underneath, with its own shadow.
     @discardableResult
     func play(_ frame: CapturedFrame, windowFrame: CGRect, effect: CloseEffect, pointer: CGPoint, durationScale: Double,
-              nativeFade: Bool, opening: Bool = false, nearEnd: (() -> Void)? = nil) -> Bool {
+              nativeFade: Bool, opening: Bool = false, nearEnd: (() -> Void)? = nil, onFinish: (() -> Void)? = nil) -> Bool {
         guard let textureCache else { return false }
         do {
             try renderer.prepare(effect)
@@ -170,7 +172,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
             return scene
         }()
 
-        playing.append(Playing(scene: scene, startedAt: nil, underFade: nativeFade, backing: backing, nearEnd: nearEnd))
+        playing.append(Playing(scene: scene, startedAt: nil, underFade: nativeFade, backing: backing, nearEnd: nearEnd, onFinish: onFinish))
         playing[playing.count - 1].scene.shadowOpacity = nativeFade ? 0 : 1
         refreshBounds()
         ensureOverlays()
@@ -183,8 +185,10 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
     /// Stops every running effect (the screens changed, or the app is quitting).
     func cancelAll() {
         let pending = playing.compactMap(\.nearEnd)
+        let finished = playing.compactMap(\.onFinish)
         playing.removeAll()
         pending.forEach { $0() }
+        finished.forEach { $0() }
         refreshBounds()
         finishIfIdle()
     }
@@ -218,10 +222,12 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
                 nearEnd()
             }
         }
+        let finished = playing.filter { $0.scene.progress >= 1 }.compactMap(\.onFinish)
         playing.removeAll { $0.scene.progress >= 1 }
         refreshBounds()
         overlays.forEach { $0.render() }
         finishIfIdle()
+        finished.forEach { $0() }
     }
 
     private func finishIfIdle() {

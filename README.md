@@ -29,7 +29,7 @@ While you drag, the window leans in perspective into its movement and flattens a
 
 ### Glow on focus
 
-Optional (**Glow on Focus** in Setup, off by default): an accent-colored glow flashes around the window that takes the focus.
+Optional (**Glow on Focus** in Setup, off by default): an accent-colored glow flashes around the window that takes the focus. A window that opens with an Open effect gets its glow after the effect has finished.
 
 ### Ripple on drop
 

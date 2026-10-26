@@ -138,6 +138,11 @@ final class KinetiqController: NSObject {
             self?.openTrigger?.windowCreated(element, pid: pid)
         }
         windowObserver.onFocusChanged = { [weak self] pid in self?.focusChanged(pid: pid) }
+        openTrigger?.onStarted = { [weak self] in self?.focusPulse.cancel() }
+        openTrigger?.onFinished = { [weak self] frame in
+            guard let self, self.settings.enabled, self.settings.focusPulse else { return }
+            self.focusPulse.pulse(around: frame)
+        }
         for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification] {
             NSWorkspace.shared.notificationCenter.addObserver(
                 self, selector: #selector(refreshCaptureContent), name: name, object: nil)
@@ -435,10 +440,14 @@ final class KinetiqController: NSObject {
     /// An app was activated or moved the focus to another window: flash a glow around it.
     private func focusChanged(pid: pid_t) {
         guard settings.enabled, settings.focusPulse, session == nil, pid != ProcessInfo.processInfo.processIdentifier,
-              !AppExclusions.contains(pid: pid) else { return }
+              openTrigger?.isActive != true, !AppExclusions.contains(pid: pid) else { return }
         AXBridge.queue(for: pid).async { [weak self] in
             guard let frame = AXBridge.focusedWindow(pid: pid)?.frame else { return }
-            Task { @MainActor in self?.focusPulse.pulse(around: frame) }
+            Task { @MainActor in
+                // The focus change can be announced before the new window is, so check again now.
+                guard let self, self.openTrigger?.isActive != true else { return }
+                self.focusPulse.pulse(around: frame)
+            }
         }
     }
 

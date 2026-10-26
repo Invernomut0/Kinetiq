@@ -27,6 +27,12 @@ final class OpenEffectTrigger {
     /// True while a wobble animation owns the overlays and the windows.
     private let isBusy: () -> Bool
     private var inProgress = false
+    /// An open effect is on its way: the window is parked or being revealed.
+    var isActive: Bool { inProgress }
+    /// Called with the window's final frame once the effect has finished.
+    var onFinished: ((CGRect) -> Void)?
+    /// Called as soon as a new window is going to get an effect.
+    var onStarted: (() -> Void)?
     private static let log = Logger(subsystem: "io.github.invernomut0.Kinetiq", category: "open")
 
     init(settings: Settings, capture: WindowCapture, player: CloseEffectPlayer, isBusy: @escaping () -> Bool) {
@@ -41,6 +47,7 @@ final class OpenEffectTrigger {
         guard settings.enabled, settings.openEffect != .off, !inProgress, !isBusy(),
               pid != ProcessInfo.processInfo.processIdentifier, !AppExclusions.contains(pid: pid) else { return }
         inProgress = true
+        onStarted?()
         let park = NSScreen.parkingPoint
         AXBridge.urgentQueue.async { [weak self] in
             AXUIElementSetMessagingTimeout(element, 0.25)
@@ -125,7 +132,8 @@ final class OpenEffectTrigger {
                     let pointer = CGEvent(source: nil)?.location ?? CGPoint(x: info.frame.midX, y: info.frame.midY)
                     let started = player.play(
                         frame, windowFrame: info.frame, effect: effect, pointer: pointer,
-                        durationScale: settings.closeDuration, nativeFade: false, opening: true, nearEnd: restore)
+                        durationScale: settings.closeDuration, nativeFade: false, opening: true, nearEnd: restore,
+                        onFinish: { [weak self] in self?.onFinished?(settled) })
                     if started { return }
                     Self.log.notice("effect could not start")
                     break
