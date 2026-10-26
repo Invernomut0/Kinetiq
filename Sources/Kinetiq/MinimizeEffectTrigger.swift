@@ -20,6 +20,7 @@ final class MinimizeEffectTrigger {
         let buttonFrame: CGRect
         let down: CGEvent
         let capture: Task<CapturedFrame?, Never>
+        let shield: Task<ScreenShield?, Never>
         let startedAt: CFTimeInterval
     }
 
@@ -29,7 +30,8 @@ final class MinimizeEffectTrigger {
     private static let captureTimeout: CFTimeInterval = 0.5
     /// Frames the overlay shows the window before the real one is parked, as in a drag.
     private static let parkDelay: TimeInterval = 0.04
-    private static let failsafe: TimeInterval = 15
+    /// Longest to wait for the system animation to take the window off screen.
+    private static let animationTimeout: CFTimeInterval = 1.5
 
     private let settings: Settings
     private let capture: WindowCapture
@@ -64,7 +66,9 @@ final class MinimizeEffectTrigger {
               let button = AXBridge.minimizeButtonFrame(pid: info.pid, at: point), let down = event.copy() else { return false }
         // The capture starts with the click: it is what takes longest.
         let task = Task { try? await capture.capture(info) }
-        pending = Pending(info: info, buttonFrame: button, down: down, capture: task, startedAt: CACurrentMediaTime())
+        let shield = Task { await ScreenShield.capture(hiding: [info.id]) }
+        pending = Pending(info: info, buttonFrame: button, down: down, capture: task, shield: shield,
+                          startedAt: CACurrentMediaTime())
         return true
     }
 
@@ -83,9 +87,11 @@ final class MinimizeEffectTrigger {
     private func minimize(_ click: Pending, up: CGEvent) async {
         let info = click.info
         let frame = await click.capture.value
+        let shield = await click.shield.value
         guard let frame, frame.isPainted, frame.pointSize == info.frame.size,
               CACurrentMediaTime() - click.startedAt < Self.captureTimeout, !isBusy(),
               let effect = player.effect(for: settings.minimizeEffect) else {
+            shield?.hide()
             replay(click.down, up)
             return
         }
@@ -95,32 +101,47 @@ final class MinimizeEffectTrigger {
             }
         }
         guard let element else {
+            shield?.hide()
             replay(click.down, up)
             return
         }
 
-        var restored = false
-        let restore: () -> Void = {
-            guard !restored else { return }
-            restored = true
-            AXBridge.queue(for: element).async { AXBridge.setPosition(element, info.frame.origin) }
-        }
+        // The shield goes up first, and the effect over it: the real window can then shrink towards the Dock unseen.
+        shield?.show()
         let started = player.play(
             frame, windowFrame: info.frame, effect: effect, pointer: CGPoint(x: click.buttonFrame.midX, y: click.buttonFrame.midY),
-            durationScale: settings.closeDuration, nativeFade: true, nearEnd: restore)
+            durationScale: settings.closeDuration, nativeFade: shield == nil)
         guard started else {
+            shield?.hide()
             replay(click.down, up)
             return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.failsafe) { restore() }
 
         // Parked and minimized in one go, so the system animation starts from a window that is not on screen.
         let park = NSScreen.parkingPoint
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.parkDelay) {
-            AXBridge.queue(for: element).async {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.parkDelay) { [weak self] in
+            AXBridge.urgentQueue.async {
                 AXBridge.setPosition(element, park)
                 AXBridge.setMinimized(element, true)
             }
+            self?.finishWhenGone(info.id, element: element, origin: info.frame.origin, shield: shield)
         }
+    }
+
+    /// Once the system animation has taken the window off screen, puts it back at its position (it stays minimized,
+    /// so it comes back where it was) and drops the shield.
+    private func finishWhenGone(_ id: CGWindowID, element: AXUIElement, origin: CGPoint, shield: ScreenShield?) {
+        let began = CACurrentMediaTime()
+        let timer = DispatchSource.makeTimerSource(flags: .strict, queue: .main)
+        timer.schedule(deadline: .now() + 0.05, repeating: .milliseconds(16), leeway: .nanoseconds(0))
+        timer.setEventHandler {
+            MainActor.assumeIsolated {
+                guard WindowLocator.snapshot(of: id) == nil || CACurrentMediaTime() - began > Self.animationTimeout else { return }
+                timer.cancel()
+                AXBridge.urgentQueue.async { AXBridge.setPosition(element, origin) }
+                shield?.hide()
+            }
+        }
+        timer.resume()
     }
 }

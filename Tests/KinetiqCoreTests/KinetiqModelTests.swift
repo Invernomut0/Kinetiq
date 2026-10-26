@@ -180,6 +180,63 @@ final class KinetiqModelTests: XCTestCase {
         XCTAssertEqual(model.origin.y, 100, accuracy: 0.001, "a horizontal fling must not move the window vertically")
     }
 
+    /// A real flick: the window is dragged fast (nodes lag behind the cursor), then released while still moving.
+    private func flick(_ preset: KinetiqSettings, velocity: SIMD2<Float>, bounds: (min: SIMD2<Float>, max: SIMD2<Float>))
+        -> (model: KinetiqModel, firstStepDelta: SIMD2<Float>, settled: Bool) {
+        let start = SIMD2<Float>(600, 350)
+        let grabLocal = SIMD2<Float>(250, 12)
+        let model = KinetiqModel(size: SIMD2(500, 350), origin: start, settings: preset)
+        model.grab(at: start + grabLocal)
+        var origin = start
+        for _ in 0..<12 {
+            origin += velocity * frame
+            model.moveGrab(to: origin + grabLocal, origin: origin)
+            model.step(frame)
+        }
+        model.release(origin: origin)
+        model.fling(velocity: velocity, bounds: bounds)
+        let before = model.origin
+        model.step(frame)
+        let firstStepDelta = model.origin - before
+
+        var elapsed: Float = 0
+        while !model.isSettled && elapsed < 20 {
+            model.step(frame)
+            elapsed += frame
+        }
+        return (model, firstStepDelta, model.isSettled)
+    }
+
+    func testFlickGlidesTowardsTheMovementAndSettlesExactlyAtTheOrigin() {
+        let bounds = (min: SIMD2<Float>(0, 25), max: SIMD2<Float>(1228, 767))
+        let velocities: [SIMD2<Float>] = [SIMD2(3000, 0), SIMD2(-3000, 0), SIMD2(0, 2500), SIMD2(0, -2500), SIMD2(2500, -1800)]
+        for preset in presets {
+            for velocity in velocities {
+                let result = flick(preset, velocity: velocity, bounds: bounds)
+                XCTAssertGreaterThan(simd_dot(result.firstStepDelta, velocity), 0, "glides against the movement for \(velocity)")
+                XCTAssertTrue(result.settled, "never settles for \(velocity)")
+                XCTAssertEqual(result.model.maxDisplacement, 0, accuracy: 1, "the mesh must end on the rigid frame")
+                XCTAssertGreaterThanOrEqual(result.model.origin.x, bounds.min.x - 0.01)
+                XCTAssertLessThanOrEqual(result.model.origin.x, bounds.max.x + 0.01)
+                XCTAssertGreaterThanOrEqual(result.model.origin.y, bounds.min.y - 0.01)
+                XCTAssertLessThanOrEqual(result.model.origin.y, bounds.max.y + 0.01)
+            }
+        }
+    }
+
+    func testWindowThatStartsPastABoundIsNotThrownBack() {
+        // The bounds were widened to the window's own position, as the controller does for windows sticking out.
+        let origin = SIMD2<Float>(300, 500)
+        let bounds = (min: SIMD2<Float>(0, 25), max: SIMD2<Float>(1228, origin.y))
+        let model = KinetiqModel(size: SIMD2(500, 700), origin: origin, settings: .realistic)
+        model.grab(at: origin + SIMD2(250, 12))
+        model.release(origin: origin)
+        model.fling(velocity: SIMD2(1500, 0), bounds: bounds)
+        for _ in 0..<30 { model.step(frame) }
+        XCTAssertEqual(model.origin.y, origin.y, accuracy: 0.001, "a horizontal fling must leave the vertical position alone")
+        XCTAssertGreaterThan(model.origin.x, origin.x)
+    }
+
     func testSlowReleaseDoesNotGlide() {
         let model = KinetiqModel(size: SIMD2(600, 400), origin: SIMD2(100, 100), settings: .realistic)
         model.grab(at: SIMD2(300, 110))

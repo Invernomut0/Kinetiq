@@ -41,7 +41,7 @@ When a window closes, it is replaced by an animation drawn on the GPU. Pick the 
 
 The same effects can play in reverse when a window opens (**Window Effects › Open**, off by default). The new window is hidden as soon as its app creates it, captured once it has been painted and revealed by the effect, so opening takes a fraction of a second longer. Dialogs, sheets and popovers are not affected.
 
-**Window Effects › Minimize** (off by default) plays a close effect when you minimize a window with its yellow button instead of the system animation. The click is held back for a moment while the window is captured. ⌘M and minimizing from the Dock cannot be intercepted, so they use the system animation; to keep it from competing with the effect, choosing a Minimize effect sets the Dock's minimize animation to *scale* (the Dock restarts), and choosing **Off** puts your original animation (genie by default) back.
+**Window Effects › Minimize** (off by default) plays a close effect when you minimize a window with its yellow button instead of the system animation. The click is held back for a moment while the window is captured. A frozen picture of the screen covers the system’s own animation (which shrinks the real window towards the Dock) while the effect plays. ⌘M and minimizing from the Dock cannot be intercepted, so they use the system animation; to keep it from competing with the effect, choosing a Minimize effect sets the Dock's minimize animation to *scale* (the Dock restarts), and choosing **Off** puts your original animation (genie by default) back.
 
 The **Per-App Close Effects** list in Setup gives an app its own close effect (a shader, Random or Off) in place of the global one.
 

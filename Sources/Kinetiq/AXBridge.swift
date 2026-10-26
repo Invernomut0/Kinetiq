@@ -14,6 +14,9 @@ enum AXBridge {
     private static let queuesLock = NSLock()
     private static var queues: [pid_t: DispatchQueue] = [:]
 
+    /// For moves that must not wait behind the app's other Accessibility calls (a slow one can take hundreds of ms).
+    static let urgentQueue = DispatchQueue(label: "kinetiq.ax.urgent", qos: .userInteractive, attributes: .concurrent)
+
     /// One serial queue per app: calls to the same app keep their order, but a slow app
     /// can't hold up the window the user has just grabbed in another one.
     static func queue(for pid: pid_t) -> DispatchQueue {

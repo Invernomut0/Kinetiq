@@ -330,8 +330,12 @@ final class KinetiqController: NSObject {
     private func glideBounds(for session: DragSession, at point: CGPoint) -> (min: SIMD2<Float>, max: SIMD2<Float>)? {
         guard let visible = NSScreen.containing(cgPoint: point)?.cgVisibleFrame else { return nil }
         let size = session.window.frame.size
-        return (SIMD2(Float(visible.minX), Float(visible.minY)),
-                SIMD2(Float(visible.maxX - size.width), Float(visible.maxY - size.height)))
+        // A window that already sticks out of the usable area (a tall one, or one dragged half off screen) may stay
+        // where it is: its own position is the limit on that side, or it would be thrown back at the first frame.
+        let origin = session.origin
+        let low = SIMD2(Float(min(visible.minX, origin.x)), Float(min(visible.minY, origin.y)))
+        let high = SIMD2(Float(max(visible.maxX - size.width, origin.x)), Float(max(visible.maxY - size.height, origin.y)))
+        return (low, high)
     }
 
     /// Replays mouse down and up in order; the original `clickState` preserves double clicks.

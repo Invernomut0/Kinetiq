@@ -5,6 +5,23 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.17]
+
+### Fixed
+
+- **Open effects used the wrong size and position.** A new window pops in with an animation, so its frame was still
+  changing when the app announced it; the capture was cropped and the window came back at a stale position. Kinetiq
+  now waits for the size to hold still and puts the window back at its final position (the animation keeps its
+  center). Moves of the new window no longer wait behind the app's other Accessibility calls.
+- **Glide and bounce went the wrong way and ended in the wrong place.** The mesh was no longer tied to the window's
+  position once released, so it could drift away from where the real window was put back, and a window that already
+  stuck out of the screen was thrown back at the first frame. The mesh is now pulled to its rest position while it
+  glides, and a window that sticks out keeps its own position as the limit on that side.
+- **The minimize animation was visible below the Dock.** The system shrinks the real window towards the Dock, and the
+  effect only covered the place where the window was. A frozen picture of the screen without the window (and without
+  the menu bar and Dock, which stay live) now covers the animation; the window is put back at its position once it
+  has left the screen.
+
 ## [0.1.16]
 
 ### Changed

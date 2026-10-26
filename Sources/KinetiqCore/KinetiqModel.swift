@@ -102,6 +102,9 @@ public final class KinetiqModel: WindowDeformer {
     private var glideBounds: (min: SIMD2<Float>, max: SIMD2<Float>)?
     /// The window keeps travelling after a fast release, bouncing off the bounds.
     public private(set) var isGliding = false
+    /// After a fling every node is also pulled to its rest position: nothing pins the window to `origin` any more,
+    /// and the nodes that lagged behind the cursor would otherwise leave the mesh offset from where the real window goes.
+    private var restPull = false
     /// How fast a glide loses speed (1/s) and how much speed is kept when bouncing off a bound.
     private static let glideDamping: Float = 3.2
     private static let glideRestitution: Float = 0.6
@@ -172,6 +175,7 @@ public final class KinetiqModel: WindowDeformer {
         lastGrabPoint = point
         isGrabbed = true
         isGliding = false
+        restPull = false
     }
 
     public func moveGrab(to point: SIMD2<Float>, origin: SIMD2<Float>) {
@@ -197,6 +201,7 @@ public final class KinetiqModel: WindowDeformer {
         isGrabbed = false
         glideVelocity = velocity
         glideBounds = bounds
+        restPull = true
         isGliding = simd_length(velocity) > Self.glideStopSpeed
     }
 
@@ -313,6 +318,7 @@ public final class KinetiqModel: WindowDeformer {
         var moving = false
         for i in positions.indices {
             if !immobile[i] {
+                if restPull { forces[i] += springK * 0.6 * (restPosition(i) - positions[i]) }
                 forces[i] -= friction * velocities[i]
                 velocities[i] += forces[i] / mass
                 positions[i] += velocities[i]
@@ -333,6 +339,7 @@ public final class KinetiqModel: WindowDeformer {
 
     public func snapToRest() {
         isGliding = false
+        restPull = false
         rippleTime = .infinity
         for i in positions.indices {
             positions[i] = restPosition(i)
