@@ -57,6 +57,9 @@ final class ChaosSaver: NSObject {
     private var mouseTravel: CGFloat = 0
     private var previousApp: NSRunningApplication?
     private var dumped = Set<Int>()
+    private var dockDetonated = false
+    private var lastFPSLog: CFTimeInterval = 0
+    private var lastFrames = 0
 
     /// Debugging aids: `KINETIQ_CHAOS_DUMP=<dir>` writes pictures of the saver, `KINETIQ_CHAOS_SECONDS=<n>` ends it by itself.
     private let environment = ProcessInfo.processInfo.environment
@@ -207,6 +210,7 @@ final class ChaosSaver: NSObject {
         isRunning = true
         startedAt = CACurrentMediaTime()
         mouseTravel = 0
+        dockDetonated = false
         dumped.removeAll()
         let front = NSWorkspace.shared.frontmostApplication
         previousApp = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
@@ -244,8 +248,21 @@ final class ChaosSaver: NSObject {
     private func debugTick() {
         guard let renderer = overlays.first?.delegate.renderer else { return }
         let elapsed = renderer.elapsed
+        if CACurrentMediaTime() - lastFPSLog > 2 {
+            let fps = Double(renderer.frames - lastFrames) / (CACurrentMediaTime() - lastFPSLog)
+            let loose = renderer.world.looseCount, puffs = renderer.world.puffs.count
+            Self.log.info("t \(elapsed) fps \(fps) loose \(loose) puffs \(puffs)")
+            lastFPSLog = CACurrentMediaTime()
+            lastFrames = renderer.frames
+        }
+        if let at = environment["KINETIQ_CHAOS_NUKE"].flatMap(Float.init), elapsed >= at, !renderer.world.nukeSpent { renderer.world.run(.nuke) }
+        if let at = environment["KINETIQ_CHAOS_DOCK"].flatMap(Float.init), elapsed >= at, !dockDetonated {
+            dockDetonated = true
+            if let i = renderer.world.bodies.firstIndex(where: { $0.isDock && $0.state == .attached }) { renderer.world.detonate(i) }
+        }
+        let times = (environment["KINETIQ_CHAOS_DUMP_TIMES"]?.split(separator: ",").compactMap { Double($0) }) ?? [1.5, 4.0, 8.0, 14.0, 22.0]
         if let directory = environment["KINETIQ_CHAOS_DUMP"] {
-            for (index, second) in [1.5, 4.0, 8.0, 14.0, 22.0].enumerated() where Float(second) <= elapsed && !dumped.contains(index) {
+            for (index, second) in times.enumerated() where Float(second) <= elapsed && !dumped.contains(index) {
                 dumped.insert(index)
                 guard let image = renderer.snapshot() else { continue }
                 let url = URL(fileURLWithPath: directory).appendingPathComponent(String(format: "chaos-%02d.png", Int(second)))

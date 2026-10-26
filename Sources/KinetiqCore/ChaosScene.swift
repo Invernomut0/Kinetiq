@@ -63,7 +63,7 @@ public enum ChaosSceneBuilder {
                 let drawn = SIMD2(Float(CGFloat(object.pixelWidth) / sx), Float(CGFloat(object.pixelHeight) / sy))
                 scene.seeds.append(ChaosSeed(kind: kind, center: center, size: drawn,
                                              bodySize: SIMD2(Float(object.frame.width), Float(object.frame.height)),
-                                             group: group, sprite: scene.sprites.count))
+                                             group: group, sprite: scene.sprites.count, isDock: object.kind == .dockIcon))
                 scene.sprites.append(object)
             }
         }

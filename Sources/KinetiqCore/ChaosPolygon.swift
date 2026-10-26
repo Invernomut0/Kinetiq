@@ -84,6 +84,28 @@ public enum ChaosGeometry {
         return out
     }
 
+    /// The part of the segment `a`-`b` that lies inside the convex polygon, or nil when it does not touch it.
+    public static func clipSegment(_ a: SIMD2<Float>, _ b: SIMD2<Float>, to polygon: [SIMD2<Float>]) -> (SIMD2<Float>, SIMD2<Float>)? {
+        guard polygon.count >= 3 else { return nil }
+        var signedArea: Float = 0
+        for i in polygon.indices {
+            let p = polygon[i], q = polygon[(i + 1) % polygon.count]
+            signedArea += p.x * q.y - q.x * p.y
+        }
+        let orientation: Float = signedArea >= 0 ? 1 : -1
+        var t0: Float = 0, t1: Float = 1
+        for i in polygon.indices {
+            let p = polygon[i], q = polygon[(i + 1) % polygon.count]
+            let e = q - p
+            let fa = orientation * (e.x * (a.y - p.y) - e.y * (a.x - p.x))
+            let fb = orientation * (e.x * (b.y - p.y) - e.y * (b.x - p.x))
+            if fa < 0, fb < 0 { return nil }
+            if fa < 0 { t0 = max(t0, fa / (fa - fb)) } else if fb < 0 { t1 = min(t1, fa / (fa - fb)) }
+            if t0 >= t1 { return nil }
+        }
+        return (a + (b - a) * t0, a + (b - a) * t1)
+    }
+
     /// The Voronoi cell of `sites[index]` inside the convex polygon `bounds`.
     public static func cell(of index: Int, in sites: [SIMD2<Float>], bounds: [SIMD2<Float>]) -> [SIMD2<Float>] {
         var cell = bounds

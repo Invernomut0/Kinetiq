@@ -5,6 +5,17 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.25]
+
+### Added
+
+- **Screen saver: burnt edges, cracks, sparks and dust.** The broken edges of pieces are charred and glow until they
+  cool. Blasts and cracking windows draw jagged cracks (with branches and arcs) on the pieces around them that hold.
+  Explosions throw cooling sparks and fine dust, and hard landings raise dust.
+- **Dock icon explosions** are far stronger than the others (about three times the radius, a flash, a shake, a ring of
+  dust). **A nuclear blast** with a mushroom cloud happens once per session, now and then. It is contained: limited
+  reach and number of pieces, a soft flash and little shake.
+
 ## [0.1.24]
 
 ### Changed

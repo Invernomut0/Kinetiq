@@ -40,12 +40,13 @@ private enum ChaosShaders {
     };
 
     vertex SpriteOut chaos_sprite_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
-                                         constant Sprite *sprites [[buffer(0)]], constant float2 &res [[buffer(1)]]) {
+                                         constant Sprite *sprites [[buffer(0)]], constant float2 &res [[buffer(1)]],
+                                         constant float2 &shift [[buffer(3)]]) {
         Sprite s = sprites[iid];
         float2 c = float2(vid & 1, vid >> 1);
         float2 local = (c - .5) * s.size;
         float sn = sin(s.angle), co = cos(s.angle);
-        float2 px = s.pos + float2(co * local.x - sn * local.y, sn * local.x + co * local.y);
+        float2 px = s.pos + shift + float2(co * local.x - sn * local.y, sn * local.x + co * local.y);
         SpriteOut o;
         o.position = float4(px.x / res.x * 2. - 1., 1. - px.y / res.y * 2., 0., 1.);
         o.uv = mix(s.uv.xy, s.uv.zw, c);
@@ -72,7 +73,7 @@ private enum ChaosShaders {
         float alpha;
         float flash;
         float feather;  // 1 = soften the edges (loose pieces)
-        float2 pad;
+        float2 pad;     // burn (charred edge, 0...1), heat (glowing edge, 0...1)
         float4 tint;
     };
 
@@ -83,15 +84,29 @@ private enum ChaosShaders {
         float alpha;
         float flash;
         float feather;
+        float2 burn;
         float4 tint;
     };
 
+    float hash21(float2 p) {
+        p = fract(p * float2(123.34, 456.21));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+    }
+
+    float vnoise(float2 p) {
+        float2 i = floor(p), f = fract(p);
+        f = f * f * (3. - 2. * f);
+        return mix(mix(hash21(i), hash21(i + float2(1., 0.)), f.x), mix(hash21(i + float2(0., 1.)), hash21(i + float2(1., 1.)), f.x), f.y);
+    }
+
     vertex TriOut chaos_tri_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
-                                   constant Tri *tris [[buffer(0)]], constant float2 &res [[buffer(1)]]) {
+                                   constant Tri *tris [[buffer(0)]], constant float2 &res [[buffer(1)]],
+                                   constant float2 &shift [[buffer(3)]]) {
         Tri s = tris[iid];
         float2 local = vid == 0 ? s.a : (vid == 1 ? s.b : s.c);
         float sn = sin(s.angle), co = cos(s.angle);
-        float2 px = s.pos + float2(co * local.x - sn * local.y, sn * local.x + co * local.y);
+        float2 px = s.pos + shift + float2(co * local.x - sn * local.y, sn * local.x + co * local.y);
         TriOut o;
         o.position = float4(px.x / res.x * 2. - 1., 1. - px.y / res.y * 2., 0., 1.);
         o.uv = vid == 0 ? s.ua : (vid == 1 ? s.ub : s.uc);
@@ -99,6 +114,7 @@ private enum ChaosShaders {
         o.alpha = s.alpha;
         o.flash = s.flash;
         o.feather = s.feather;
+        o.burn = s.pad;
         o.tint = s.tint;
         return o;
     }
@@ -113,8 +129,15 @@ private enum ChaosShaders {
         float d = m / max(fwidth(m), 1e-5);   // distance to the edge in pixels
         float soft = in.feather > .5;
         float edge = soft > .5 ? clamp(d, 0., 1.) : 1.;
+        // Broken edges are charred (dark, ragged) and glow while they are hot.
+        float n = vnoise(in.uv * 1100.);
+        float width = (5. + 11. * n) * in.burn.x;
+        float charred = soft > .5 ? in.burn.x * (1. - smoothstep(0., max(width, .001), d)) : 0.;
+        rgb = mix(rgb, rgb * .1 + float3(.025, .014, .008) * t.a, charred * .92);
+        float ember = soft > .5 ? in.burn.y * (1. - smoothstep(0., 2.2 + 2.4 * n, d)) * (.55 + .45 * n) : 0.;
+        rgb += ember * t.a * float3(1., .42, .08) * 1.5;
         // A thin pale rim, like the edge of broken glass.
-        rgb += (soft > .5 ? (1. - clamp(d / 3., 0., 1.)) * .22 : 0.) * t.a * float3(.8, .9, 1.);
+        rgb += (soft > .5 ? (1. - clamp(d / 3., 0., 1.)) * .22 * (1. - in.burn.x) : 0.) * t.a * float3(.8, .9, 1.);
         return float4(rgb, t.a) * (in.alpha * edge);
     }
 
@@ -132,10 +155,12 @@ private enum ChaosShaders {
     };
 
     vertex PuffOut chaos_puff_vertex(uint vid [[vertex_id]], constant Puff *puffs [[buffer(0)]],
-                                     constant float2 &res [[buffer(1)]], constant float &pixelScale [[buffer(2)]]) {
+                                     constant float2 &res [[buffer(1)]], constant float &pixelScale [[buffer(2)]],
+                                     constant float2 &shift [[buffer(3)]]) {
         Puff p = puffs[vid];
         PuffOut o;
-        o.position = float4(p.pos.x / res.x * 2. - 1., 1. - p.pos.y / res.y * 2., 0., 1.);
+        float2 at = p.pos + shift;
+        o.position = float4(at.x / res.x * 2. - 1., 1. - at.y / res.y * 2., 0., 1.);
         o.pointSize = clamp(p.size * 2. * pixelScale, 1., 480.);
         o.color = float4(p.color.rgb, p.color.a * p.alpha);
         return o;
@@ -149,13 +174,61 @@ private enum ChaosShaders {
         return float4(in.color.rgb * al, al);
     }
 
+    struct Crack {
+        float2 pos;     // piece position, points
+        float2 p0, p1;  // segment relative to the piece
+        float angle;
+        float alpha;
+        float width;
+        float pad;
+    };
+
+    struct CrackOut {
+        float4 position [[position]];
+        float across;   // distance from the middle of the line, points
+        float halfWidth;
+        float alpha;
+    };
+
+    vertex CrackOut chaos_crack_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
+                                       constant Crack *cracks [[buffer(0)]], constant float2 &res [[buffer(1)]],
+                                       constant float2 &shift [[buffer(3)]]) {
+        Crack c = cracks[iid];
+        float2 d = c.p1 - c.p0;
+        float len = max(length(d), 1e-3);
+        float2 u = d / len, nrm = float2(-u.y, u.x);
+        float hw = c.width * .5;
+        float reach = hw + 1.2;   // room for the soft edge
+        float along = (vid & 1) ? 1. : 0.;
+        float side = (vid >> 1) ? 1. : -1.;
+        float2 local = mix(c.p0 - u * hw, c.p1 + u * hw, along) + nrm * side * reach;
+        float sn = sin(c.angle), co = cos(c.angle);
+        float2 px = c.pos + shift + float2(co * local.x - sn * local.y, sn * local.x + co * local.y);
+        CrackOut o;
+        o.position = float4(px.x / res.x * 2. - 1., 1. - px.y / res.y * 2., 0., 1.);
+        o.across = side * reach;
+        o.halfWidth = hw;
+        o.alpha = c.alpha;
+        return o;
+    }
+
+    // A dark groove with a faint pale chip along its sides.
+    fragment float4 chaos_crack_fragment(CrackOut in [[stage_in]]) {
+        float x = abs(in.across);
+        float core = 1. - smoothstep(in.halfWidth - .35, in.halfWidth + .45, x);
+        float rim = (1. - smoothstep(in.halfWidth + .2, in.halfWidth + 1.1, x)) * (1. - core);
+        float a = core * .8 + rim * .16;
+        float3 rgb = float3(.02) * core * .8 + float3(.9, .95, 1.) * rim * .16;
+        return float4(rgb, a) * in.alpha;
+    }
+
     vertex float4 chaos_fade_vertex(uint vid [[vertex_id]]) {
         float2 p = float2((vid << 1) & 2, vid & 2);
         return float4(p * 2. - 1., 0., 1.);
     }
 
-    fragment float4 chaos_fade_fragment(constant float &a [[buffer(0)]]) {
-        return float4(0., 0., 0., a);
+    fragment float4 chaos_fade_fragment(constant float4 &color [[buffer(0)]]) {
+        return float4(color.rgb * color.a, color.a);
     }
     """#
 }
@@ -185,6 +258,16 @@ private struct TriInstance {
     var feather: Float = 0
     var pad = SIMD2<Float>(0, 0)
     var tint = SIMD4<Float>(0, 0, 0, 0)
+}
+
+private struct CrackInstance {
+    var pos: SIMD2<Float>
+    var p0: SIMD2<Float>
+    var p1: SIMD2<Float>
+    var angle: Float
+    var alpha: Float
+    var width: Float
+    var pad: Float = 0
 }
 
 private struct PuffInstance {
@@ -283,9 +366,12 @@ final class ChaosRenderer {
     private var fade: Float = 0
     /// Seconds since the saver started.
     private(set) var elapsed: Float = 0
+    /// Frames drawn so far (debugging aid).
+    private(set) var frames = 0
 
     private let spritePipeline: MTLRenderPipelineState
     private let triPipeline: MTLRenderPipelineState
+    private let crackPipeline: MTLRenderPipelineState
     private let puffPipeline: MTLRenderPipelineState
     private let puffAdditivePipeline: MTLRenderPipelineState
     private let fadePipeline: MTLRenderPipelineState
@@ -299,6 +385,8 @@ final class ChaosRenderer {
     private static let slots = 3
     private let spriteBuffers: [MTLBuffer]
     private let triBuffers: [MTLBuffer]
+    private let crackBuffers: [MTLBuffer]
+    private let crackCapacity = 40_000
     private let puffBuffers: [MTLBuffer]
     private let inFlight = DispatchSemaphore(value: ChaosRenderer.slots)
     private var slot = 0
@@ -306,6 +394,8 @@ final class ChaosRenderer {
     private var attachedShards: [[TriInstance]]
     private var attachedSprites: [[SpriteInstance]]
     private var looseShards: [[TriInstance]]
+    private var attachedCracks: [[CrackInstance]]
+    private var looseCracks: [[CrackInstance]]
     private var looseSprites: [SpriteInstance] = []
 
     private static var library: MTLLibrary?
@@ -328,6 +418,8 @@ final class ChaosRenderer {
         attachedShards = Array(repeating: [], count: groups)
         attachedSprites = Array(repeating: [], count: groups)
         looseShards = Array(repeating: [], count: groups)
+        attachedCracks = Array(repeating: [], count: groups)
+        looseCracks = Array(repeating: [], count: groups)
 
         let library: MTLLibrary
         if let cached = Self.library { library = cached } else {
@@ -353,24 +445,28 @@ final class ChaosRenderer {
         }
         spritePipeline = try pipeline("chaos_sprite_vertex", "chaos_sprite_fragment")
         triPipeline = try pipeline("chaos_tri_vertex", "chaos_tri_fragment")
+        crackPipeline = try pipeline("chaos_crack_vertex", "chaos_crack_fragment")
         puffPipeline = try pipeline("chaos_puff_vertex", "chaos_puff_fragment")
         puffAdditivePipeline = try pipeline("chaos_puff_vertex", "chaos_puff_fragment", additive: true)
         fadePipeline = try pipeline("chaos_fade_vertex", "chaos_fade_fragment")
 
         spriteCapacity = world.maxBodies + 8
         triCapacity = world.maxBodies * 5
-        var sprites: [MTLBuffer] = [], tris: [MTLBuffer] = [], puffs: [MTLBuffer] = []
+        var sprites: [MTLBuffer] = [], tris: [MTLBuffer] = [], cracks: [MTLBuffer] = [], puffs: [MTLBuffer] = []
         for _ in 0..<Self.slots {
             guard let s = device.makeBuffer(length: spriteCapacity * MemoryLayout<SpriteInstance>.stride, options: .storageModeShared),
                   let t = device.makeBuffer(length: triCapacity * MemoryLayout<TriInstance>.stride, options: .storageModeShared),
+                  let k = device.makeBuffer(length: crackCapacity * MemoryLayout<CrackInstance>.stride, options: .storageModeShared),
                   let p = device.makeBuffer(length: puffCapacity * MemoryLayout<PuffInstance>.stride, options: .storageModeShared)
             else { throw ChaosRendererError.noDevice }
             sprites.append(s)
             tris.append(t)
+            cracks.append(k)
             puffs.append(p)
         }
         spriteBuffers = sprites
         triBuffers = tris
+        crackBuffers = cracks
         puffBuffers = puffs
     }
 
@@ -386,7 +482,9 @@ final class ChaosRenderer {
             world.step(dt: dt)
             fade = min(1, fade + dt / 1.0)
             if fade >= 1 {
+                let spent = world.nukeSpent
                 world = ChaosWorld(seeds: scene.seeds, size: screenSize, settings: settings)
+                world.nukeSpent = spent   // one nuclear blast per session
                 phase = .fadingIn
             }
         case .fadingIn:
@@ -396,6 +494,7 @@ final class ChaosRenderer {
     }
 
     func encodeFrame(commands: MTLCommandBuffer, target: MTLTexture, dt: Float) {
+        frames += 1
         inFlight.wait()
         commands.addCompletedHandler { [inFlight] _ in inFlight.signal() }
         advance(dt)
@@ -406,26 +505,38 @@ final class ChaosRenderer {
         var spriteOffset = 0, triOffset = 0
         let spritePointer = spriteBuffers[s].contents().bindMemory(to: SpriteInstance.self, capacity: spriteCapacity)
         let triPointer = triBuffers[s].contents().bindMemory(to: TriInstance.self, capacity: triCapacity)
-        struct Segment { var start: Int; var count: Int; var texture: MTLTexture; var triangles: Bool }
+        struct Segment { var start: Int; var count: Int; var texture: MTLTexture?; var kind: Int }   // kind: 0 sprites, 1 triangles, 2 cracks
         var segments: [Segment] = []
+        var crackOffset = 0
+        let crackPointer = crackBuffers[s].contents().bindMemory(to: CrackInstance.self, capacity: crackCapacity)
         func add(_ instances: [SpriteInstance], _ texture: MTLTexture?) {
             guard !instances.isEmpty, let texture, spriteOffset + instances.count <= spriteCapacity else { return }
             instances.withUnsafeBufferPointer { (spritePointer + spriteOffset).update(from: $0.baseAddress!, count: instances.count) }
-            segments.append(Segment(start: spriteOffset, count: instances.count, texture: texture, triangles: false))
+            segments.append(Segment(start: spriteOffset, count: instances.count, texture: texture, kind: 0))
             spriteOffset += instances.count
         }
         func add(_ instances: [TriInstance], _ texture: MTLTexture?) {
             guard !instances.isEmpty, let texture, triOffset + instances.count <= triCapacity else { return }
             instances.withUnsafeBufferPointer { (triPointer + triOffset).update(from: $0.baseAddress!, count: instances.count) }
-            segments.append(Segment(start: triOffset, count: instances.count, texture: texture, triangles: true))
+            segments.append(Segment(start: triOffset, count: instances.count, texture: texture, kind: 1))
             triOffset += instances.count
         }
-        add([SpriteInstance(pos: screenSize / 2, size: screenSize, uv: SIMD4(0, 0, 1, 1))], wallpaper)
+        func add(_ instances: [CrackInstance]) {
+            guard !instances.isEmpty, crackOffset + instances.count <= crackCapacity else { return }
+            instances.withUnsafeBufferPointer { (crackPointer + crackOffset).update(from: $0.baseAddress!, count: instances.count) }
+            segments.append(Segment(start: crackOffset, count: instances.count, texture: nil, kind: 2))
+            crackOffset += instances.count
+        }
+        add([SpriteInstance(pos: screenSize / 2, size: screenSize + SIMD2(64, 64), uv: SIMD4(0, 0, 1, 1))], wallpaper)
         for g in scene.pictures.indices {
             add(attachedShards[g], windowTextures[g])
+            add(attachedCracks[g])
             add(attachedSprites[g], atlas?.texture)
         }
-        for g in scene.pictures.indices { add(looseShards[g], windowTextures[g]) }
+        for g in scene.pictures.indices {
+            add(looseShards[g], windowTextures[g])
+            add(looseCracks[g])
+        }
         add(looseSprites, atlas?.texture)
 
         let puffs = fillPuffs(into: puffBuffers[s])
@@ -437,19 +548,27 @@ final class ChaosRenderer {
         pass.colorAttachments[0].storeAction = .store
         guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return }
         var resolution = screenSize
+        // The whole picture shakes with the big blasts.
+        let shake = world.shake
+        var shift = shake > 0.05 ? SIMD2(Float.random(in: -shake...shake), Float.random(in: -shake...shake)) : SIMD2<Float>(0, 0)
         encoder.setRenderPipelineState(spritePipeline)
         encoder.setVertexBytes(&resolution, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
-        var usingTriangles = false
+        encoder.setVertexBytes(&shift, length: MemoryLayout<SIMD2<Float>>.size, index: 3)
+        var current = 0
         for segment in segments {
-            if segment.triangles != usingTriangles {
-                usingTriangles = segment.triangles
-                encoder.setRenderPipelineState(usingTriangles ? triPipeline : spritePipeline)
+            if segment.kind != current {
+                current = segment.kind
+                encoder.setRenderPipelineState(current == 0 ? spritePipeline : (current == 1 ? triPipeline : crackPipeline))
             }
-            encoder.setFragmentTexture(segment.texture, index: 0)
-            if segment.triangles {
+            if let texture = segment.texture { encoder.setFragmentTexture(texture, index: 0) }
+            switch segment.kind {
+            case 1:
                 encoder.setVertexBuffer(triBuffers[s], offset: segment.start * MemoryLayout<TriInstance>.stride, index: 0)
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3, instanceCount: segment.count)
-            } else {
+            case 2:
+                encoder.setVertexBuffer(crackBuffers[s], offset: segment.start * MemoryLayout<CrackInstance>.stride, index: 0)
+                encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: segment.count)
+            default:
                 encoder.setVertexBuffer(spriteBuffers[s], offset: segment.start * MemoryLayout<SpriteInstance>.stride, index: 0)
                 encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: segment.count)
             }
@@ -469,10 +588,16 @@ final class ChaosRenderer {
             encoder.setVertexBytes(&scale, length: MemoryLayout<Float>.size, index: 2)
             encoder.drawPrimitives(type: .point, vertexStart: puffs.normal, vertexCount: puffs.additive)
         }
-        if fade > 0.001 {
-            var alpha = fade
+        if world.flash > 0.01 {
+            var color = SIMD4<Float>(1, 0.94, 0.8, min(1, world.flash))
             encoder.setRenderPipelineState(fadePipeline)
-            encoder.setFragmentBytes(&alpha, length: MemoryLayout<Float>.size, index: 0)
+            encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        }
+        if fade > 0.001 {
+            var color = SIMD4<Float>(0, 0, 0, fade)
+            encoder.setRenderPipelineState(fadePipeline)
+            encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         }
         encoder.endEncoding()
@@ -504,6 +629,8 @@ final class ChaosRenderer {
             attachedShards[g].removeAll(keepingCapacity: true)
             attachedSprites[g].removeAll(keepingCapacity: true)
             looseShards[g].removeAll(keepingCapacity: true)
+            attachedCracks[g].removeAll(keepingCapacity: true)
+            looseCracks[g].removeAll(keepingCapacity: true)
         }
         looseSprites.removeAll(keepingCapacity: true)
         // Pieces in place overlap by half a pixel so no seam shows between them.
@@ -519,8 +646,17 @@ final class ChaosRenderer {
                 for v in 0..<n {
                     let p1 = poly.verts[v] * k, p2 = poly.verts[(v + 1) % n] * k
                     let instance = TriInstance(pos: b.pos, a: .zero, b: p1, c: p2, ua: poly.uv(.zero), ub: poly.uv(p1), uc: poly.uv(p2),
-                                               angle: b.angle, alpha: b.alpha, flash: b.flash, feather: inPlace ? 0 : 1, tint: b.tint)
+                                               angle: b.angle, alpha: b.alpha, flash: b.flash, feather: inPlace ? 0 : 1,
+                                               pad: SIMD2(b.burn, b.heat), tint: b.tint)
                     if inPlace { attachedShards[b.group].append(instance) } else { looseShards[b.group].append(instance) }
+                }
+                if b.crack >= 0 {
+                    for (index, segment) in world.crackSets[Int(b.crack)].enumerated() {
+                        let width = 1.0 + 0.7 * Float((index * 7 + Int(b.crack)) % 5) / 4
+                        let instance = CrackInstance(pos: b.pos, p0: SIMD2(segment.x, segment.y), p1: SIMD2(segment.z, segment.w), angle: b.angle,
+                                                     alpha: b.alpha, width: width)
+                        if inPlace { attachedCracks[b.group].append(instance) } else { looseCracks[b.group].append(instance) }
+                    }
                 }
             } else if let atlas, let uv = atlas.rects[b.sprite] {
                 let instance = SpriteInstance(pos: b.pos, size: b.size * b.scale, uv: uv, angle: b.angle, alpha: b.alpha, flash: b.flash, tint: b.tint)
@@ -548,7 +684,13 @@ final class ChaosRenderer {
                 let color = t < 0.35 ? mix(SIMD3(1, 0.96, 0.7), SIMD3(1, 0.55, 0.12), t / 0.35) : mix(SIMD3(1, 0.55, 0.12), SIMD3(0.45, 0.06, 0.02), (t - 0.35) / 0.65)
                 additive.append(PuffInstance(pos: p.pos, size: p.size, alpha: 0.9 * (1 - t), color: SIMD4(color, 1)))
             case .spark:
-                additive.append(PuffInstance(pos: p.pos, size: p.size, alpha: 1 - t, color: SIMD4(1, 0.78, 0.35, 1)))
+                // Sparks cool from white-yellow to dull red.
+                let color = mix(SIMD3(1, 0.9, 0.55), SIMD3(1, 0.32, 0.08), min(1, t * 1.4))
+                additive.append(PuffInstance(pos: p.pos, size: p.size, alpha: 1 - t, color: SIMD4(color, 1)))
+            case .mote:
+                guard n < puffCapacity else { break }
+                pointer[n] = PuffInstance(pos: p.pos, size: p.size, alpha: 0.6 * (1 - t) * min(1, p.age * 4), color: SIMD4(0.88, 0.82, 0.7, 1))
+                n += 1
             }
         }
         let room = max(0, puffCapacity - n)

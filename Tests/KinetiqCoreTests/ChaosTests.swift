@@ -167,6 +167,132 @@ final class ChaosTests: XCTestCase {
         XCTAssertGreaterThan(Set(fragments.map { world.polygons[Int($0.polygon)].verts.count }).count, 1, "fragments with different numbers of sides")
     }
 
+    func testASegmentIsClippedToThePartInsideAPolygon() {
+        let square: [SIMD2<Float>] = [SIMD2(0, 0), SIMD2(10, 0), SIMD2(10, 10), SIMD2(0, 10)]
+        let inside = ChaosGeometry.clipSegment(SIMD2(-5, 5), SIMD2(15, 5), to: square)
+        XCTAssertEqual(inside?.0.x ?? -1, 0, accuracy: 0.001)
+        XCTAssertEqual(inside?.1.x ?? -1, 10, accuracy: 0.001)
+        XCTAssertNil(ChaosGeometry.clipSegment(SIMD2(-5, -5), SIMD2(-1, 20), to: square))
+        let whole = ChaosGeometry.clipSegment(SIMD2(2, 2), SIMD2(8, 7), to: square.reversed())
+        XCTAssertEqual(whole?.0 ?? .zero, SIMD2(2, 2))
+        XCTAssertEqual(whole?.1 ?? .zero, SIMD2(8, 7))
+    }
+
+    func testABlastLeavesCracksOnThePiecesAroundIt() {
+        let world = world(intensity: 2, automatic: false)
+        world.run(.bomb)
+        let cracked = world.bodies.filter { $0.crack >= 0 }
+        XCTAssertGreaterThan(cracked.count, 2, "the neighbours of the blast are cracked")
+        for b in cracked {
+            let poly = world.polygons[Int(b.polygon)]
+            let segments = world.crackSets[Int(b.crack)]
+            XCTAssertFalse(segments.isEmpty)
+            for s in segments {
+                for p in [SIMD2(s.x, s.y), SIMD2(s.z, s.w)] {
+                    XCTAssertTrue(p.x >= poly.boundsMin.x - 0.01 && p.x <= poly.boundsMax.x + 0.01 && p.y >= poly.boundsMin.y - 0.01 && p.y <= poly.boundsMax.y + 0.01,
+                                  "cracks stay inside the piece they are on")
+                }
+            }
+        }
+        XCTAssertTrue(cracked.contains { $0.state == .attached || $0.state == .pending }, "some pieces hold with their cracks")
+    }
+
+    func testACrumblingWindowGetsCracksToo() {
+        let world = world(automatic: false)
+        world.run(.shardCrumble)
+        XCTAssertTrue(world.bodies.contains { $0.crack >= 0 })
+    }
+
+    func testBrokenEdgesAreScorchedAndGlowUntilTheyCool() {
+        let world = world(intensity: 2, automatic: false)
+        world.run(.bomb)
+        let fragments = world.bodies.filter { $0.isChild }
+        XCTAssertFalse(fragments.isEmpty)
+        XCTAssertTrue(fragments.allSatisfy { $0.burn > 0.4 && $0.heat == 1 }, "charred and hot")
+        run(world, seconds: 5)
+        let later = world.bodies.filter { $0.isChild && $0.state == .loose }
+        XCTAssertFalse(later.isEmpty)
+        XCTAssertTrue(later.allSatisfy { $0.heat < 0.3 && $0.burn > 0.4 }, "the glow fades, the char stays")
+    }
+
+    func testBlastsMakeSparksAndDust() {
+        let world = world(automatic: false)
+        world.run(.bomb)
+        run(world, seconds: 0.3)
+        let kinds = world.puffs.reduce(into: [ChaosPuff.Kind: Int]()) { $0[$1.kind, default: 0] += 1 }
+        XCTAssertGreaterThan(kinds[.spark] ?? 0, 30, "sparks")
+        XCTAssertGreaterThan(kinds[.mote] ?? 0, 30, "fine dust in the air")
+        XCTAssertGreaterThan(kinds[.dust] ?? 0, 3, "dust from the breaking window")
+    }
+
+    func testADockIconExplodesFarHarderThanAButton() {
+        let source = Self.fixture
+        func explosion(of pick: (ChaosBody) -> Bool) -> (reach: Float, puffs: Int, flash: Float, shake: Float) {
+            let w = ChaosWorld(seeds: source.scene.seeds, size: source.screen, settings: ChaosSettings(intensity: 1, seed: 11, speed: 1))
+            w.automaticEvents = false
+            let i = w.bodies.firstIndex(where: pick)!
+            w.detonate(i)
+            run(w, seconds: 0.12)   // the fuse is 0.05 s: the blast has just gone off
+            let puffs = w.puffs.count, flash = w.flash, shake = w.shake
+            return (w.largestBlastRadius, puffs, flash, shake)
+        }
+        let dock = explosion { $0.isDock && $0.kind == .icon }
+        let button = explosion { !$0.isDock && $0.kind == .button }
+        XCTAssertGreaterThan(dock.reach, button.reach * 2.5, "the blast reaches much farther: \(dock.reach) against \(button.reach)")
+        XCTAssertGreaterThan(dock.puffs, button.puffs * 2, "far more flames, smoke and sparks")
+        XCTAssertGreaterThan(dock.flash, 0.2, "a flash of light")
+        XCTAssertGreaterThan(dock.shake, button.shake + 5, "the screen shakes")
+    }
+
+    func testTheNukeIsAContainedBlastWithAFlashAShockWaveAndAMushroomCloud() {
+        let world = world(automatic: false)
+        let total = (0..<world.originalCount).filter { !world.isOccluded($0) }.count
+        XCTAssertFalse(world.nukeSpent)
+        XCTAssertTrue(world.run(.nuke))
+        XCTAssertTrue(world.nukeSpent)
+        XCTAssertFalse(world.run(.nuke), "only once")
+        run(world, seconds: 0.12)
+        XCTAssertGreaterThan(world.flash, 0.3, "a flash of light")
+        XCTAssertLessThan(world.flash, 0.6, "but not a whiteout")
+        XCTAssertGreaterThan(world.shake, 3)
+        XCTAssertLessThan(world.shake, 12)
+        run(world, seconds: 0.5)
+        let early = Set(world.puffs.map { "\($0.kind)" })
+        XCTAssertTrue(early.isSuperset(of: ["flame", "spark", "dust"]), "fireball, embers and a ring of dust at the start")
+        var peakLoose = 0
+        for _ in 0..<(3 * 60) {
+            world.step(dt: 1 / 60)
+            peakLoose = max(peakLoose, world.looseCount)
+        }
+        let c = world.nukeCenter
+        XCTAssertGreaterThan(world.puffs.count, 80, "stem, cap and embers")
+        XCTAssertLessThan(world.puffs.count, 1500, "a moderate number of particles")
+        XCTAssertTrue(world.puffs.contains { $0.kind == .smoke && abs($0.pos.x - c.x) < 200 && $0.pos.y < world.size.y * 0.7 }, "the cloud rises above the ground burst")
+        let intact = (0..<world.originalCount).filter { world.bodies[$0].state == .attached }.count
+        XCTAssertGreaterThan(intact, total / 2, "most of the desktop is still there")
+        XCTAssertLessThan(intact, total, "but the blast has hit what was near it")
+        XCTAssertLessThan(peakLoose, 700, "a limited number of pieces comes loose")
+        // Nothing farther than the reach of the wave is touched.
+        for b in world.bodies where b.state != .attached && !b.isChild && simd_distance(b.home, c) > world.nukeReach + b.radius + 1 {
+            XCTFail("a piece \(simd_distance(b.home, c)) points away was hit; the reach is \(world.nukeReach)")
+        }
+        let hit = world.bodies.filter { $0.state == .loose }
+        XCTAssertTrue(hit.allSatisfy { $0.burn > 0.3 }, "all of it is charred")
+        run(world, seconds: 12)
+        XCTAssertEqual(world.flash, 0, accuracy: 0.001)
+        XCTAssertEqual(world.shake, 0, accuracy: 0.001)
+    }
+
+    func testTheNukeComesRarelyAndOnlyOncePerSession() {
+        let world = world(lifetime: 4, interval: 150)
+        run(world, seconds: 20)
+        XCTAssertFalse(world.nukeSpent, "not in the first 25 seconds")
+        // One session: the nuke does not repeat after it has been used.
+        let again = ChaosWorld(seeds: Self.fixture.scene.seeds, size: Self.fixture.screen, settings: ChaosSettings(seed: 3, speed: 1))
+        again.nukeSpent = true
+        XCTAssertFalse(again.run(.nuke))
+    }
+
     func testAButtonBlinksThenExplodesAndHurtsItsNeighbours() {
         let world = world(automatic: false)
         XCTAssertTrue(world.run(.buttonBlast))

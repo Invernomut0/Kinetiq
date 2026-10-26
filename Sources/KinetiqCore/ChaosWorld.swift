@@ -29,6 +29,8 @@ public enum ChaosEvent: CaseIterable, Sendable {
     case shardCrumble
     /// The desktop shakes: loose pieces hop and some more come off.
     case quake
+    /// A nuclear blast with a mushroom cloud: once per session, now and then.
+    case nuke
 
     fileprivate var weight: Float {
         switch self {
@@ -37,6 +39,7 @@ public enum ChaosEvent: CaseIterable, Sendable {
         case .buttonBlast: return 2
         case .shardCrumble: return 3
         case .quake: return 0.7
+        case .nuke: return 0   // decided by the world: rare, and only once
         }
     }
 }
@@ -81,7 +84,7 @@ public struct SplitMix64: RandomNumberGenerator, Sendable {
 }
 
 public struct ChaosPuff: Sendable {
-    public enum Kind: Sendable { case smoke, flame, spark, dust }
+    public enum Kind: Sendable { case smoke, flame, spark, dust, mote }
     public var pos: SIMD2<Float>
     public var vel: SIMD2<Float>
     public var size: Float
@@ -135,6 +138,14 @@ public struct ChaosBody: Sendable {
     public var tint = SIMD4<Float>(0, 0, 0, 0)
     public var flash: Float = 0
     public var isChild = false
+    /// Charred along its edges (0...1) and the glow of those edges while they are still hot (0...1).
+    public var burn: Float = 0
+    public var heat: Float = 0
+    /// Index into `ChaosWorld.crackSets`, -1 when the piece has no cracks.
+    public var crack: Int32 = -1
+    /// An icon of the Dock: its explosion is much stronger.
+    public var isDock = false
+    var shocked = false
 
     var invInertia: Float { invMass == 0 ? 0 : 2 * invMass / max(radius * radius * scale * scale, 1) }
     var effectiveRadius: Float { radius * scale }
@@ -153,9 +164,10 @@ public struct ChaosSeed: Sendable {
     public var sprite: Int
     /// Outline of a shard (corners relative to `center`); nil for letters, buttons and icons.
     public var polygon: ChaosPolygon?
+    public var isDock = false
 
     public init(kind: ChaosPieceKind, center: SIMD2<Float>, size: SIMD2<Float>, bodySize: SIMD2<Float>? = nil, group: Int, sprite: Int,
-                polygon: ChaosPolygon? = nil) {
+                polygon: ChaosPolygon? = nil, isDock: Bool = false) {
         self.kind = kind
         self.center = center
         self.size = size
@@ -163,6 +175,7 @@ public struct ChaosSeed: Sendable {
         self.group = group
         self.sprite = sprite
         self.polygon = polygon
+        self.isDock = isDock
     }
 }
 
@@ -183,12 +196,14 @@ public final class ChaosWorld {
     /// Share of the original pieces still in place (0...1).
     public private(set) var intactFraction: Float = 1
     public private(set) var looseCount = 0
+    /// The reach of the biggest blast so far, in points.
+    public private(set) var largestBlastRadius: Float = 0
     /// Runs an event every `settings.eventInterval`; off when the events are triggered by hand.
     public var automaticEvents = true
     /// Number of pieces that came with the desktop; the ones after them are fragments.
     public let originalCount: Int
 
-    public static let maxPuffs = 2500
+    public static let maxPuffs = 3500
     /// Upper bound of `bodies.count`: the original pieces plus room for fragments.
     public let maxBodies: Int
     /// More loose pieces than this fade away faster.
@@ -203,6 +218,29 @@ public final class ChaosWorld {
     private var lastFragmentCleanup: Float = 0
     private var lastQuake: Float = -10
     private var wakePoints: [SIMD2<Float>] = []
+
+    /// Cracks drawn on pieces: segments (x0, y0, x1, y1) relative to the piece; `ChaosBody.crack` indexes this list.
+    public private(set) var crackSets: [[SIMD4<Float>]] = []
+    private var crackSegmentTotal = 0
+    private static let maxCrackSegments = 30_000
+
+    /// The nuclear blast happens once per session; the renderer sets this when it restarts the world.
+    public var nukeSpent = false
+    private var nukeStart: Float?
+    public private(set) var nukeCenter = SIMD2<Float>(0, 0)
+    private var nukeFlash: Float = 0
+    private var nukeShake: Float = 0
+    /// How many pieces the shock wave may still hit, and how many window pieces it may still break.
+    private var nukeBudget = 0
+    private var nukeBreaks = 0
+    /// How far the shock wave goes: a patch of the screen, not all of it.
+    public var nukeReach: Float { min(size.x, size.y) * 0.4 }
+    private var eventFlash: Float = 0
+    private var eventShake: Float = 0
+    /// Whiteout of the screen (0...1), from the nuke and from the big explosions.
+    public var flash: Float { max(eventFlash, nukeFlash) }
+    /// How far the whole picture is shaken, in points.
+    public var shake: Float { eventShake + nukeShake }
 
     // Spatial grid of the original shards: tells whether a piece is hidden behind another window.
     private let coverCell: Float = 48
@@ -246,7 +284,7 @@ public final class ChaosWorld {
     private static func makeBody(_ s: ChaosSeed, radius: Float, restitution: Float, friction: Float, massDivisor: Float = 80, mass: Float? = nil) -> ChaosBody {
         let mass = mass ?? max(1, s.bodySize.x * s.bodySize.y / massDivisor)
         return ChaosBody(kind: s.kind, sprite: s.sprite, group: s.group, pos: s.center, size: s.size, radius: radius, invMass: 1 / mass,
-                         restitution: restitution, friction: friction, home: s.center)
+                         restitution: restitution, friction: friction, home: s.center, isDock: s.isDock)
     }
 
     // MARK: - Random helpers
@@ -301,17 +339,24 @@ public final class ChaosWorld {
     public func triggerEvent() -> ChaosEvent? {
         var pool = ChaosEvent.allCases
         while !pool.isEmpty {
-            let total = pool.reduce(0) { $0 + $1.weight }
+            let total = pool.reduce(0) { $0 + weight(of: $1) }
             var pick = random(0...total)
             var index = pool.count - 1
             for (k, e) in pool.enumerated() {
-                pick -= e.weight
+                pick -= weight(of: e)
                 if pick <= 0 { index = k; break }
             }
             let event = pool.remove(at: index)
-            if run(event) { return event }
+            if weight(of: event) > 0, run(event) { return event }
         }
         return nil
+    }
+
+    /// The nuke is rare: not before 25 s, then one event in about fifteen, and certain after two minutes. Only once.
+    private func weight(of event: ChaosEvent) -> Float {
+        guard event == .nuke else { return event.weight }
+        guard !nukeSpent, time > 25 else { return 0 }
+        return time > 120 ? 1000 : 0.8
     }
 
     /// Runs one kind of event; false when there is nothing left it could act on.
@@ -324,15 +369,18 @@ public final class ChaosWorld {
         case .buttonBlast: done = buttonBlast()
         case .shardCrumble: done = shardCrumble()
         case .quake: done = quake()
+        case .nuke: done = startNuke()
         }
         if done { eventCount += 1; lastEvent = event }
         return done
     }
 
     /// A random piece that is still in place and visible, of one of the given kinds.
-    private func pickExposed(_ kinds: [ChaosPieceKind]) -> Int? {
+    private func pickExposed(_ kinds: [ChaosPieceKind], dockOnly: Bool = false) -> Int? {
         var candidates: [Int] = []
-        for i in 0..<originalCount where bodies[i].state == .attached && kinds.contains(bodies[i].kind) { candidates.append(i) }
+        for i in 0..<originalCount where bodies[i].state == .attached && kinds.contains(bodies[i].kind) && (!dockOnly || bodies[i].isDock) {
+            candidates.append(i)
+        }
         guard !candidates.isEmpty else { return nil }
         for _ in 0..<16 {
             let i = candidates[Int.random(in: 0..<candidates.count, using: &rng)]
@@ -346,7 +394,10 @@ public final class ChaosWorld {
         let p = bodies[anchor].pos + SIMD2(random(-20...20), random(-20...20))
         let radius = random(100...160) * intensity
         explosionPuffs(at: p, strength: 0.9 + 0.35 * intensity)
+        addCracks(at: p, radius: radius, rays: 6 + Int(random(0...3)), rings: 2)
         blast(at: p, radius: radius, strength: intensity, chain: true)
+        eventShake = max(eventShake, 3 * intensity)
+        eventFlash = max(eventFlash, 0.06)
         return true
     }
 
@@ -369,15 +420,28 @@ public final class ChaosWorld {
     }
 
     private func buttonBlast() -> Bool {
+        // Now and then it is an icon of the Dock, which blows up much harder.
+        if chance(0.3), let dock = pickExposed([.icon], dockOnly: true) {
+            ignite(dock, delay: random(0.9...1.4))
+            return true
+        }
         guard let i = pickExposed([.button, .button, .icon]) else { return false }
         ignite(i, delay: random(0.7...1.3))
         return true
+    }
+
+    /// Lights the fuse of a piece right now (tests and scripted use).
+    public func detonate(_ i: Int) {
+        guard bodies.indices.contains(i) else { return }
+        ignite(i, delay: 0.05)
     }
 
     private func shardCrumble() -> Bool {
         guard let anchor = pickExposed([.shard]) else { return false }
         let c = bodies[anchor].pos
         let reach = random(60...120) * (0.8 + 0.3 * intensity)
+        // The crack runs on across the neighbours that hold.
+        addCracks(at: c, radius: reach * 1.6, rays: 4, rings: 0)
         var released = 0
         for i in 0..<originalCount where bodies[i].kind == .shard && bodies[i].state == .attached {
             let d = bodies[i].pos - c
@@ -426,8 +490,8 @@ public final class ChaosWorld {
         carry(from: i, delay: delay, velocity: velocity, spin: spin)
     }
 
-    /// Letters and icons that sit on a piece of the window come with it.
-    private func carry(from shard: Int, delay: Float, velocity: SIMD2<Float>, spin: Float) {
+    /// Letters and icons that sit on a piece of the window come with it (charred when the piece was hit by a blast).
+    private func carry(from shard: Int, delay: Float, velocity: SIMD2<Float>, spin: Float, scorched: Float = 0) {
         guard bodies[shard].kind == .shard else { return }
         let s = bodies[shard]
         for j in 0..<originalCount where bodies[j].state == .attached && bodies[j].kind != .shard && bodies[j].group == s.group {
@@ -436,6 +500,7 @@ public final class ChaosWorld {
             bodies[j].timer = delay + random(0...0.05)
             bodies[j].vel = velocity + SIMD2(random(-30...30), random(-30...10))
             bodies[j].angVel = spin + random(-1.5...1.5)
+            if scorched > 0 { scorch(j, scorched) }
         }
     }
 
@@ -451,7 +516,7 @@ public final class ChaosWorld {
             bodies[i].vel = velocity
             bodies[i].angVel = spin
             release(i)
-            carry(from: i, delay: 0, velocity: velocity, spin: spin)
+            carry(from: i, delay: 0, velocity: velocity, spin: spin, scorched: 0.6)
         } else {
             bodies[i].vel += velocity
             bodies[i].angVel += spin
@@ -470,6 +535,7 @@ public final class ChaosWorld {
     // MARK: - Blasts
 
     private func blast(at p: SIMD2<Float>, radius R: Float, strength S: Float, chain: Bool) {
+        largestBlastRadius = max(largestBlastRadius, R)
         let count = bodies.count
         for i in 0..<count {
             let state = bodies[i].state
@@ -493,17 +559,28 @@ public final class ChaosWorld {
                 }
                 guard dist < R * (0.72 + 0.28 * random(0...1)) else { continue }
                 if bodies[i].kind == .shard, falloff > 0.4, bodies.count < maxBodies - 16 {
-                    fracture(i, from: p, strength: S, falloff: falloff)
+                    fracture(i, from: p, strength: S, falloff: falloff, burn: 0.45 + 0.55 * falloff)
                 } else {
                     launch(i, velocity: velocity, spin: spin)
+                    scorch(i, 0.3 + 0.7 * falloff)
                 }
             case .loose:
                 launch(i, velocity: velocity * 0.7, spin: spin)
+                scorch(i, 0.3 + 0.5 * falloff)
             case .fuse:
                 if bodies[i].timer > 0.25 { bodies[i].timer = 0.12 + random(0...0.12) }
             case .gone:
                 break
             }
+        }
+    }
+
+    /// Chars the edges of a piece and makes them glow; letters and icons get a dark, singed tint.
+    private func scorch(_ i: Int, _ amount: Float) {
+        bodies[i].burn = max(bodies[i].burn, min(1, amount))
+        bodies[i].heat = max(bodies[i].heat, min(1, amount + 0.3))
+        if bodies[i].kind != .shard, bodies[i].state != .fuse {
+            bodies[i].tint = SIMD4(0.06, 0.035, 0.02, min(0.75, 0.25 + amount * 0.5))
         }
     }
 
@@ -531,7 +608,7 @@ public final class ChaosWorld {
     }
 
     /// A shard close to a blast breaks into jagged convex fragments along cracks that spread from the impact.
-    private func fracture(_ i: Int, from p: SIMD2<Float>, strength S: Float, falloff: Float) {
+    private func fracture(_ i: Int, from p: SIMD2<Float>, strength S: Float, falloff: Float, burn: Float) {
         let parent = bodies[i]
         let poly = polygons[Int(parent.polygon)]
         let outline = poly.verts.map { parent.home + $0 }
@@ -548,7 +625,7 @@ public final class ChaosWorld {
 
         let dirToParent = parent.pos - p
         let base = simd_length(dirToParent) > 0.5 ? dirToParent / simd_length(dirToParent) : SIMD2<Float>(0, -1)
-        carry(from: i, delay: 0, velocity: base * 400 * S, spin: random(-4...4))
+        carry(from: i, delay: 0, velocity: base * 400 * S, spin: random(-4...4), scorched: 0.6)
         bodies[i].state = .gone
         wakePoints.append(parent.pos)
 
@@ -579,17 +656,250 @@ public final class ChaosWorld {
             child.asleep = false
             child.sleepTimer = 0
             child.isChild = true
+            child.crack = -1
+            child.burn = burn
+            child.heat = 1
             bodies.append(child)
+        }
+        // The break raises a little dust along the cracks.
+        for _ in 0..<min(10, sites.count) {
+            emit(.dust, at: SIMD2(random(lo.x...hi.x), random(lo.y...hi.y)), velocity: SIMD2(random(-40...40), random(-50...10)),
+                 size: random(8...16), growth: random(20...40), life: random(0.6...1.2))
         }
     }
 
     private func explode(_ i: Int) {
         let p = bodies[i].pos
         let wasIcon = bodies[i].kind == .icon
+        let dock = bodies[i].isDock
         bodies[i].state = .gone
         wakePoints.append(p)
-        explosionPuffs(at: p, strength: (wasIcon ? 0.85 : 0.7) + 0.25 * intensity)
-        blast(at: p, radius: random(70...100) * intensity, strength: 0.75 * intensity, chain: true)
+        if dock {
+            // An icon of the Dock goes off far harder than anything else on the screen.
+            let radius = random(250...320) * intensity
+            explosionPuffs(at: p, strength: 2.2 + 0.5 * intensity, big: true)
+            eventFlash = max(eventFlash, 0.45)
+            eventShake = max(eventShake, 14 * intensity)
+            addCracks(at: p, radius: radius * 0.9, rays: 10, rings: 3)
+            blast(at: p, radius: radius, strength: 2 * intensity, chain: true)
+        } else {
+            explosionPuffs(at: p, strength: (wasIcon ? 0.85 : 0.7) + 0.25 * intensity)
+            addCracks(at: p, radius: random(70...100) * intensity, rays: 4, rings: 1)
+            blast(at: p, radius: random(70...100) * intensity, strength: 0.75 * intensity, chain: true)
+            eventShake = max(eventShake, 1.5 * intensity)
+        }
+    }
+
+    // MARK: - Cracks
+
+    /// Jagged lines from the impact (with now and then a side branch) and a few arcs around it, like the cracks of glass.
+    private func crackPolylines(at p: SIMD2<Float>, radius R: Float, rays: Int, rings: Int) -> [[SIMD2<Float>]] {
+        var lines: [[SIMD2<Float>]] = []
+        for _ in 0..<rays {
+            var a = random(0...(2 * .pi))
+            let length = R * random(0.8...1.35)
+            var r = random(0...10)
+            var points = [p + SIMD2(cos(a), sin(a)) * r]
+            while r < length {
+                r += random(9...17)
+                a += random(-0.13...0.13)
+                let d = SIMD2(cos(a), sin(a))
+                let point = p + d * r + SIMD2(-d.y, d.x) * random(-2.5...2.5)
+                points.append(point)
+                if chance(0.12) {
+                    var b = a + random(-0.9...0.9)
+                    var branch = [point]
+                    for _ in 0..<Int(random(2...4)) {
+                        b += random(-0.25...0.25)
+                        branch.append(branch[branch.count - 1] + SIMD2(cos(b), sin(b)) * random(10...18))
+                    }
+                    lines.append(branch)
+                }
+            }
+            lines.append(points)
+        }
+        for _ in 0..<rings {
+            let r = R * random(0.25...0.85), sweep = random(0.8...2.6), start = random(0...(2 * .pi))
+            let steps = max(3, Int(sweep * r / 13))
+            lines.append((0...steps).map { k in
+                let a = start + sweep * Float(k) / Float(steps), rr = r + random(-2.5...2.5)
+                return p + SIMD2(cos(a), sin(a)) * rr
+            })
+        }
+        return lines
+    }
+
+    /// Draws cracks on the pieces of window near `p` that stay in place; a piece that comes loose later takes them along.
+    private func addCracks(at p: SIMD2<Float>, radius R: Float, rays: Int, rings: Int) {
+        guard crackSegmentTotal < Self.maxCrackSegments else { return }
+        var segments: [(SIMD2<Float>, SIMD2<Float>)] = []
+        for line in crackPolylines(at: p, radius: R, rays: rays, rings: rings) {
+            for k in 0..<(line.count - 1) { segments.append((line[k], line[k + 1])) }
+        }
+        let reach = R * 1.5
+        for i in 0..<originalCount where bodies[i].kind == .shard && inPlace(bodies[i].state) {
+            let b = bodies[i]
+            guard simd_length(b.home - p) < reach + b.radius, !isOccluded(i) else { continue }
+            let outline = polygons[Int(b.polygon)].verts
+            var local: [SIMD4<Float>] = []
+            for (a, c) in segments {
+                if let (s0, s1) = ChaosGeometry.clipSegment(a - b.home, c - b.home, to: outline), simd_distance(s0, s1) > 1.5 {
+                    local.append(SIMD4(s0.x, s0.y, s1.x, s1.y))
+                }
+            }
+            guard !local.isEmpty else { continue }
+            if bodies[i].crack < 0 {
+                crackSets.append([])
+                bodies[i].crack = Int32(crackSets.count - 1)
+            }
+            let k = Int(bodies[i].crack)
+            let room = max(0, 80 - crackSets[k].count)
+            crackSets[k].append(contentsOf: local.prefix(room))
+            crackSegmentTotal += min(room, local.count)
+        }
+    }
+
+    // MARK: - Nuclear blast
+
+    /// A ground burst with a flash, a shock wave that tears everything apart, a fireball and a mushroom cloud.
+    private func startNuke() -> Bool {
+        guard !nukeSpent, nukeStart == nil else { return false }
+        guard (0..<originalCount).contains(where: { inPlace(bodies[$0].state) }) else { return false }
+        nukeSpent = true
+        nukeStart = time
+        nukeBudget = 450
+        nukeBreaks = 24
+        nukeCenter = SIMD2(size.x * random(0.3...0.7), size.y)
+        let c = nukeCenter
+        for _ in 0..<36 {
+            let a = random((-Float.pi * 0.98)...(-Float.pi * 0.02)), s = random(60...320)
+            emit(.flame, at: c + SIMD2(random(-40...40), -random(10...50)), velocity: SIMD2(cos(a), sin(a)) * s, size: random(40...80),
+                 growth: random(25...60), life: random(0.9...1.8))
+        }
+        for _ in 0..<90 {
+            let a = random((-Float.pi * 0.98)...(-Float.pi * 0.02)), s = random(200...800)
+            emit(.spark, at: c + SIMD2(random(-30...30), -random(0...30)), velocity: SIMD2(cos(a), sin(a)) * s, size: random(1.5...4), growth: 0, life: random(1.2...2.8))
+        }
+        return true
+    }
+
+    private func updateNuke(_ dt: Float) {
+        guard let start = nukeStart else { return }
+        let t = time - start
+        nukeFlash = 0.55 * (t < 0.08 ? t / 0.08 : exp(-(t - 0.08) * 3.2))
+        nukeShake = 9 * exp(-t * 1.6)
+        shockwave(radius: min(800 * t, nukeReach))
+        emitMushroom(t: t, dt: dt)
+        if t > 6 {
+            nukeStart = nil
+            nukeFlash = 0
+            nukeShake = 0
+        }
+    }
+
+    /// Everything the front of the wave reaches is broken, thrown and charred.
+    private func shockwave(radius: Float) {
+        let c = nukeCenter
+        let count = bodies.count
+        for i in 0..<count {
+            let state = bodies[i].state
+            guard state != .gone, !bodies[i].shocked else { continue }
+            let d = bodies[i].pos - c
+            let dist = simd_length(d)
+            guard dist <= radius else { continue }
+            if inPlace(state), isOccluded(i) { continue }
+            bodies[i].shocked = true
+            // Farther pieces are less and less likely to be touched, and the wave runs out of strength after a while.
+            if state != .fuse, nukeBudget <= 0 || random(0...1) > 1 - 0.65 * dist / nukeReach { continue }
+            nukeBudget -= 1
+            let f = 1 / (1 + (dist / 200) * (dist / 200))
+            var dir = dist > 0.5 ? d / dist : SIMD2<Float>(0, -1)
+            dir.y -= 0.45
+            dir /= simd_length(dir)
+            let heavy = 1 / (1 + 0.08 * (1 / bodies[i].invMass).squareRoot())
+            let velocity = dir * (180 + 700 * f) * heavy * random(0.85...1.15)
+            let spin = random(-9...9) * (0.3 + f)
+            switch state {
+            case .fuse:
+                bodies[i].timer = min(bodies[i].timer, 0.1 + dist / 1500)
+            case .attached, .pending:
+                if bodies[i].kind == .shard, nukeBreaks > 0, dist < nukeReach * 0.6, bodies.count < maxBodies - 16 {
+                    nukeBreaks -= 1
+                    fracture(i, from: c, strength: 1.1, falloff: 0.1 + 0.4 * f, burn: 1)
+                } else {
+                    launch(i, velocity: velocity, spin: spin)
+                    scorch(i, 1)
+                }
+            case .loose:
+                launch(i, velocity: velocity * 0.6, spin: spin)
+                scorch(i, 0.9)
+            case .gone:
+                break
+            }
+        }
+    }
+
+    /// Number of things to emit in `dt` at `rate` per second, with the fraction decided by chance.
+    private func emitCount(_ rate: Float, _ dt: Float) -> Int {
+        let x = rate * dt
+        return Int(x) + (random(0...1) < x - Float(Int(x)) ? 1 : 0)
+    }
+
+    private func emitMushroom(t: Float, dt: Float) {
+        let c = nukeCenter
+        let floorY = size.y
+        let height = size.y * 0.45 * (1 - exp(-t * 0.8))
+        let headY = floorY - height
+
+        if t < 4 {   // the stem
+            for _ in 0..<emitCount(40, dt) {
+                let s = random(0...1)
+                let y = floorY - 15 - s * max(height - 15, 0)
+                let w = 12 + 30 * (1 - s) * (1 - s)
+                let at = SIMD2(c.x + random(-w...w), y)
+                if chance(0.6) {
+                    emit(.smoke, at: at, velocity: SIMD2(random(-10...10), -random(25...80)), size: random(20...38), growth: random(10...20), life: random(2.2...3.8))
+                } else {
+                    emit(.flame, at: at, velocity: SIMD2(random(-12...12), -random(50...120)), size: random(14...26), growth: random(5...18), life: random(0.6...1.2))
+                }
+            }
+        }
+        if t > 0.6, t < 4.5 {   // the cap rolls outwards and down at its edges
+            let capRadius = 30 + 80 * min(1, t / 3)
+            for _ in 0..<emitCount(55, dt) {
+                let th = random(0...(2 * .pi))
+                let rx = capRadius * random(0.75...1.25) * 1.15, ry = capRadius * 0.5 * random(0.7...1.2)
+                let at = SIMD2(c.x + cos(th) * rx, headY + sin(th) * ry - ry * 0.3)
+                let v = SIMD2(cos(th) * 40, sin(th) * 25 - 18)
+                if sin(th) > 0.2, chance(0.5) {
+                    emit(.flame, at: at, velocity: v, size: random(20...36), growth: random(4...12), life: random(0.7...1.3))
+                } else {
+                    emit(.smoke, at: at, velocity: v, size: random(30...52), growth: random(10...20), life: random(2.5...4.2))
+                }
+            }
+        }
+        let ring = 800 * t   // a little dust runs along the ground ahead of the wave
+        if ring < nukeReach {
+            for side in [Float(-1), Float(1)] {
+                for _ in 0..<emitCount(22, dt) {
+                    let x = c.x + side * ring * random(0.85...1.0)
+                    guard x > 0, x < size.x else { continue }
+                    emit(.dust, at: SIMD2(x, floorY - random(4...20)), velocity: SIMD2(side * random(100...260), -random(10...40)), size: random(20...40),
+                         growth: random(20...40), life: random(1.0...2.0))
+                }
+            }
+        }
+        if t < 1.5 {   // embers thrown up by the fireball
+            for _ in 0..<emitCount(40, dt) {
+                let a = random((-Float.pi * 0.9)...(-Float.pi * 0.1)), s = random(150...600)
+                emit(.spark, at: SIMD2(c.x + random(-25...25), floorY - random(0...40)), velocity: SIMD2(cos(a), sin(a)) * s, size: random(1.5...3.5), growth: 0, life: random(1.2...2.6))
+            }
+        }
+        if t < 3 {   // fine dust in the air around the burst
+            for _ in 0..<emitCount(60, dt) {
+                emit(.mote, at: SIMD2(c.x + random(-nukeReach...nukeReach), random((size.y * 0.4)...size.y)), velocity: SIMD2(random(-25...25), random(-35...10)), size: random(1...3), growth: 0, life: random(1.5...3))
+            }
+        }
     }
 
     // MARK: - Puffs
@@ -599,19 +909,32 @@ public final class ChaosWorld {
         puffs.append(ChaosPuff(pos: p, vel: v, size: size, growth: growth, age: 0, life: life, kind: kind))
     }
 
-    private func explosionPuffs(at p: SIMD2<Float>, strength: Float) {
+    private func explosionPuffs(at p: SIMD2<Float>, strength: Float, big: Bool = false) {
         for _ in 0..<Int(30 * strength) {
             let a = random(0...(2 * .pi)), s = random(30...260) * strength
             emit(.flame, at: p, velocity: SIMD2(cos(a), sin(a)) * s, size: random(14...34) * strength, growth: random(-10...20), life: random(0.35...0.9))
         }
-        for _ in 0..<Int(26 * strength) {
-            let a = random(0...(2 * .pi)), s = random(120...520) * strength
-            emit(.spark, at: p, velocity: SIMD2(cos(a), sin(a)) * s, size: random(2...5), growth: 0, life: random(0.5...1.3))
+        // Sparks, some fast and thin, some slow and fat that fall back as embers.
+        for _ in 0..<Int(48 * strength) {
+            let a = random(0...(2 * .pi)), s = random(100...720) * strength
+            emit(.spark, at: p, velocity: SIMD2(cos(a), sin(a)) * s, size: random(1.5...4.5), growth: 0, life: random(0.7...2.2))
         }
         for _ in 0..<Int(30 * strength) {
             let a = random(0...(2 * .pi)), s = random(20...150) * strength
             emit(.smoke, at: p + SIMD2(cos(a), sin(a)) * random(0...20), velocity: SIMD2(cos(a), sin(a)) * s - SIMD2(0, 30),
                  size: random(20...55) * strength, growth: random(25...60), life: random(1.5...3.5))
+        }
+        // Fine dust that hangs in the air.
+        for _ in 0..<Int(70 * strength) {
+            let a = random(0...(2 * .pi)), s = random(15...170) * strength
+            emit(.mote, at: p + SIMD2(cos(a), sin(a)) * random(0...40), velocity: SIMD2(cos(a), sin(a)) * s, size: random(1.2...3.5), growth: 0, life: random(1.6...4))
+        }
+        if big {
+            // A ring of dust and smoke runs out along the screen.
+            for k in 0..<56 {
+                let a = Float(k) / 56 * 2 * .pi + random(-0.05...0.05)
+                emit(.dust, at: p, velocity: SIMD2(cos(a), sin(a)) * random(380...620), size: random(18...30), growth: random(50...90), life: random(0.7...1.2))
+            }
         }
     }
 
@@ -625,6 +948,7 @@ public final class ChaosWorld {
             case .flame: puffs[i].vel = puffs[i].vel * (1 - 2.5 * dt) - SIMD2(0, 90 * dt)
             case .spark: puffs[i].vel = puffs[i].vel * (1 - 0.8 * dt) + SIMD2(0, 500 * dt)
             case .dust: puffs[i].vel *= 1 - 3 * dt
+            case .mote: puffs[i].vel = puffs[i].vel * (1 - 1.3 * dt) - SIMD2(0, 9 * dt)
             }
             puffs[i].pos += puffs[i].vel * dt
             puffs[i].size = max(0.5, puffs[i].size + puffs[i].growth * dt)
@@ -648,7 +972,7 @@ public final class ChaosWorld {
     }
 
     /// True once most of the desktop is gone and what fell has settled or faded: time to restore it.
-    public var isExhausted: Bool { time > 4 && intactFraction < 0.07 && looseCount < 40 }
+    public var isExhausted: Bool { time > 4 && intactFraction < 0.07 && looseCount < 40 && nukeStart == nil }
 
     private func substep(_ dt: Float) {
         time += dt
@@ -657,6 +981,9 @@ public final class ChaosWorld {
             nextEvent = time + Float(settings.eventInterval / 1000 * settings.speed) * random(0.7...1.3)
         }
         updateScripted(dt)
+        updateNuke(dt)
+        eventFlash = max(0, eventFlash - dt * 1.6)
+        eventShake = max(0, eventShake - dt * 16)
         let ageRate = 1 + Float(max(0, looseCount - Self.comfortableLoose)) / 400
         let g = SIMD2<Float>(0, gravity)
         var loose = 0
@@ -670,6 +997,7 @@ public final class ChaosWorld {
                 continue
             }
             bodies[i].alpha = min(1, remaining / 1.2)
+            if bodies[i].heat > 0 { bodies[i].heat = max(0, bodies[i].heat - dt * 0.3) }
             guard !bodies[i].asleep else { continue }
             // Pieces lying on something lose their jitter quickly: a pile settles instead of shivering.
             if bodies[i].grounded {
@@ -750,6 +1078,10 @@ public final class ChaosWorld {
         let vn = simd_dot(bodies[i].vel, n)
         if n.y < -0.6 { bodies[i].grounded = true }
         guard vn < 0 else { return }
+        if -vn > 260, chance(0.4) {
+            emit(.dust, at: bodies[i].pos - n * r, velocity: SIMD2(random(-40...40), -random(10...60)), size: random(5...12),
+                 growth: random(15...35), life: random(0.5...1.1))
+        }
         let e = -vn > 70 ? bodies[i].restitution : 0
         let invM = bodies[i].invMass, invI = bodies[i].invInertia
         bodies[i].vel += n * (-(1 + e) * vn)
