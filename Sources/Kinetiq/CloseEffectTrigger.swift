@@ -67,7 +67,7 @@ final class CloseEffectTrigger {
         self.isBusy = isBusy
     }
 
-    private var enabled: Bool { settings.enabled && settings.closeEffect != .off }
+    private var enabled: Bool { settings.enabled && (settings.closeEffect != .off || !settings.appCloseEffects.isEmpty) }
 
     // MARK: - Events
 
@@ -236,9 +236,10 @@ final class CloseEffectTrigger {
     /// The window is closing: plays the effect on its last capture.
     /// `fading` is true while macOS' own fade-out is still running underneath the effect.
     private func closed(_ watch: Watch, fading: Bool) {
-        guard enabled, !isBusy(), let effect = player.effect(for: settings.closeEffect),
+        guard enabled, !isBusy(),
               // Hiding the app fades its windows out too, but they come back.
-              !(NSRunningApplication(processIdentifier: watch.window.pid)?.isHidden ?? false) else { return }
+              let app = NSRunningApplication(processIdentifier: watch.window.pid), !app.isHidden,
+              let effect = player.effect(for: settings.closeEffect(forBundleID: app.bundleIdentifier)) else { return }
         let windowFrame = watch.lastFrame
         let pointer = CGEvent(source: nil)?.location ?? CGPoint(x: windowFrame.minX + 24, y: windowFrame.minY + 22)
         let speed = settings.closeDuration

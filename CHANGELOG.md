@@ -5,6 +5,13 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13]
+
+### Added
+
+- **Per-app close effects.** A new **Per-App Close Effects** list in Setup gives an app its own close effect (a shader,
+  Random or Off), overriding the global one, even when the global one is Off.
+
 ## [0.1.12]
 
 ### Added

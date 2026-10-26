@@ -74,9 +74,9 @@ final class SetupModel: ObservableObject {
         refresh()
     }
 
-    /// Regular running apps that are not excluded yet, sorted by name.
-    func runningCandidates() -> [(name: String, id: String)] {
-        let excluded = Set(settings.excludedApps)
+    /// Regular running apps that are not in `taken` (the exclusions by default), sorted by name.
+    func runningCandidates(excluding taken: [String]? = nil) -> [(name: String, id: String)] {
+        let excluded = Set(taken ?? settings.excludedApps)
         var seen = Set<String>()
         return NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular }
@@ -88,13 +88,39 @@ final class SetupModel: ObservableObject {
     }
 
     func chooseApp() {
+        if let id = pickApp(message: "Choose an app to exclude") { addExclusion(id) }
+    }
+
+    func chooseAppForEffect() {
+        if let id = pickApp(message: "Choose an app with its own close effect") { addAppEffect(id) }
+    }
+
+    func addAppEffect(_ bundleID: String) {
+        guard settings.appCloseEffects[bundleID] == nil else { return }
+        settings.appCloseEffects[bundleID] = settings.closeEffect.rawValue
+        closeEffectChanged()
+        refresh()
+    }
+
+    func setAppEffect(_ bundleID: String, _ raw: String) {
+        settings.appCloseEffects[bundleID] = raw
+        closeEffectChanged()
+        refresh()
+    }
+
+    func removeAppEffect(_ bundleID: String) {
+        settings.appCloseEffects[bundleID] = nil
+        refresh()
+    }
+
+    private func pickApp(message: String) -> String? {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.application]
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.allowsMultipleSelection = false
-        panel.message = "Choose an app to exclude"
-        guard panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier else { return }
-        addExclusion(id)
+        panel.message = message
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return Bundle(url: url)?.bundleIdentifier
     }
 }
 
@@ -158,11 +184,41 @@ struct SetupView: View {
             }
 
             Section {
+                if settings.appCloseEffects.isEmpty {
+                    Text("No per-app effects").foregroundStyle(.secondary)
+                }
+                ForEach(settings.appCloseEffects.keys.sorted(), id: \.self) { id in
+                    AppRow(bundleID: id, remove: { model.removeAppEffect(id) }) {
+                        Picker("Close effect", selection: model.binding({ settings.appCloseEffects[id] ?? "" }, { model.setAppEffect(id, $0) })) {
+                            Text("Off").tag(CloseEffectChoice.off.rawValue)
+                            Text("Random").tag(CloseEffectChoice.random.rawValue)
+                            Divider()
+                            ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+                        }
+                        .labelsHidden()
+                        .frame(width: 150)
+                    }
+                }
+                HStack {
+                    Menu("Add Running App") {
+                        ForEach(model.runningCandidates(excluding: Array(settings.appCloseEffects.keys)), id: \.id) { candidate in
+                            Button(candidate.name) { model.addAppEffect(candidate.id) }
+                        }
+                    }
+                    Button("Choose App…") { model.chooseAppForEffect() }
+                }
+            } header: {
+                Text("Per-App Close Effects")
+            } footer: {
+                Text("These apps use their own close effect instead of the one above.")
+            }
+
+            Section {
                 if settings.excludedApps.isEmpty {
                     Text("No excluded apps").foregroundStyle(.secondary)
                 }
                 ForEach(settings.excludedApps, id: \.self) { id in
-                    ExclusionRow(bundleID: id) { model.removeExclusion(id) }
+                    AppRow(bundleID: id, remove: { model.removeExclusion(id) }) { EmptyView() }
                 }
                 HStack {
                     Menu("Add Running App") {
@@ -220,9 +276,16 @@ private struct SliderRow: View {
     }
 }
 
-private struct ExclusionRow: View {
+private struct AppRow<Accessory: View>: View {
     let bundleID: String
     let remove: () -> Void
+    @ViewBuilder let accessory: () -> Accessory
+
+    init(bundleID: String, remove: @escaping () -> Void, @ViewBuilder accessory: @escaping () -> Accessory) {
+        self.bundleID = bundleID
+        self.remove = remove
+        self.accessory = accessory
+    }
 
     private var url: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) }
 
@@ -236,6 +299,7 @@ private struct ExclusionRow: View {
                 Text(bundleID).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            accessory()
             Button(role: .destructive, action: remove) { Image(systemName: "minus.circle") }
                 .buttonStyle(.borderless)
                 .help("Remove from exclusions")

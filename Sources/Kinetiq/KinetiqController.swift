@@ -5,6 +5,7 @@
 import AppKit
 @preconcurrency import ApplicationServices
 import KinetiqCore
+import KinetiqEffects
 import simd
 
 @MainActor
@@ -148,7 +149,9 @@ final class KinetiqController: NSObject {
 
     /// Compiles the shaders of the chosen close and open effect(s) in the background.
     func closeEffectChanged() {
-        closePlayer?.warmUp(settings.closeEffect, settings.openEffect, settings.minimizeEffect)
+        closePlayer?.warmUp(
+            [settings.closeEffect, settings.openEffect, settings.minimizeEffect]
+                + settings.appCloseEffects.values.map { CloseEffectChoice(rawValue: $0) })
     }
 
     /// Keeps the capture's window list current so a drag never has to wait for it. Skipped mid-gesture:

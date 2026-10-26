@@ -61,7 +61,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
     // MARK: - Shaders
 
     /// Compiles the shaders the user may need, in the background, so the first close doesn't wait for the compiler.
-    func warmUp(_ choices: CloseEffectChoice...) {
+    func warmUp(_ choices: [CloseEffectChoice]) {
         var effects: [CloseEffect] = []
         for choice in choices {
             switch choice {

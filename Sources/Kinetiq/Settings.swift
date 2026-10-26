@@ -183,6 +183,18 @@ final class Settings {
         set { defaults.set(newValue, forKey: "closeDuration") }
     }
 
+    /// Close effect per app (bundle identifier -> choice), overriding `closeEffect`.
+    var appCloseEffects: [String: String] {
+        get { defaults.dictionary(forKey: "appCloseEffects") as? [String: String] ?? [:] }
+        set { defaults.set(newValue, forKey: "appCloseEffects") }
+    }
+
+    /// The close effect for windows of the app with this bundle identifier.
+    func closeEffect(forBundleID id: String?) -> CloseEffectChoice {
+        if let id, let raw = appCloseEffects[id] { return CloseEffectChoice(rawValue: raw) }
+        return closeEffect
+    }
+
     /// Bundle identifiers of the apps whose windows get no effect at all.
     var excludedApps: [String] {
         get { defaults.stringArray(forKey: "excludedApps") ?? Self.defaultExcludedApps }
@@ -201,6 +213,7 @@ final class Settings {
         closeEffect = Self.defaultCloseEffect
         openEffect = .off
         minimizeEffect = .off
+        appCloseEffects = [:]
         closeDuration = 1
     }
 
