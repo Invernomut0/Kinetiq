@@ -39,20 +39,20 @@ enum DragModifier: String, CaseIterable {
     }
 }
 
-/// What plays when a window opens: a jelly entrance, one of the shaders (the close effects in reverse), a random one or nothing.
+/// What plays when a window opens: one of the jelly entrances, a random one or nothing.
 enum OpenEffectChoice: Equatable {
     case off
     case random
     case wobble(WobbleEntrance)
-    case shader(CloseEffect)
 
     init(rawValue: String?) {
         switch rawValue {
         case nil, "off": self = .off
         case "random": self = .random
         case let id? where id.hasPrefix("wobble:"):
-            self = WobbleEntrance(rawValue: String(id.dropFirst("wobble:".count))).map(OpenEffectChoice.wobble) ?? .off
-        case let id?: self = CloseEffect(rawValue: id).map(OpenEffectChoice.shader) ?? .off
+            self = WobbleEntrance(rawValue: String(id.dropFirst("wobble:".count))).map(OpenEffectChoice.wobble) ?? .wobble(.wobblePop)
+        // Older versions stored a shader here: the effect was on, so keep it on.
+        default: self = .wobble(.wobblePop)
         }
     }
 
@@ -61,16 +61,6 @@ enum OpenEffectChoice: Equatable {
         case .off: return "off"
         case .random: return "random"
         case .wobble(let entrance): return "wobble:" + entrance.rawValue
-        case .shader(let effect): return effect.rawValue
-        }
-    }
-
-    /// The shaders to compile in advance for this choice.
-    var shaderChoice: CloseEffectChoice? {
-        switch self {
-        case .off, .wobble: return nil
-        case .random: return .random
-        case .shader(let effect): return .effect(effect)
         }
     }
 }

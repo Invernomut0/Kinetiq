@@ -74,6 +74,47 @@ final class DockMorphTests: XCTestCase {
         XCTAssertLessThan(top, bottom, "the top edge travels further towards an icon above")
     }
 
+    func testWhirlpoolTwistsAroundTheIconAndTornadoTurnsTheWindowOver() {
+        let iconCenter = iconOrigin + iconSize / 2
+        func angle(_ p: SIMD2<Float>) -> Float { atan2(p.y - iconCenter.y, p.x - iconCenter.x) }
+        let whirl = deformer(.whirlpool), straight = deformer(.morph)
+        // Same distance to the icon at the same point of the trip is not required: the twist shows in the direction.
+        run(whirl, to: 0.5)
+        run(straight, to: 0.5)
+        var difference = abs(angle(whirl.target(u: 1, v: 1)) - angle(straight.target(u: 1, v: 1)))
+        if difference > Float.pi { difference = 2 * Float.pi - difference }
+        XCTAssertGreaterThan(difference, 0.3, "the whirlpool does not twist")
+
+        let tornado = deformer(.tornado)
+        run(tornado, to: 0.5)
+        XCTAssertGreaterThan(tornado.target(u: 0.5, v: 0).y, tornado.target(u: 0.5, v: 1).y,
+                             "half way the window is upside down")
+    }
+
+    func testRubberBandSwellsAwayFromTheIconFirst() {
+        let center = iconOrigin + iconSize / 2
+        let d = deformer(.rubberBand)
+        let before = simd_length(d.point(u: 0.5, v: 1) - center)
+        run(d, to: 0.2)
+        let after = simd_length(d.point(u: 0.5, v: 1) - center)
+        XCTAssertGreaterThan(after, before, "it must wind up away from the icon before it snaps in")
+    }
+
+    func testPancakeFlattensBeforeItSlides() {
+        let d = deformer(.pancake)
+        run(d, to: 0.4)
+        let height = d.target(u: 0.5, v: 1).y - d.target(u: 0.5, v: 0).y
+        XCTAssertLessThan(height, windowSize.y * 0.3)
+        XCTAssertGreaterThan(height, 0)
+    }
+
+    func testHopRisesAboveTheStraightPath() {
+        let d = deformer(.hop), straight = deformer(.morph)
+        run(d, to: 0.5)
+        run(straight, to: 0.5)
+        XCTAssertLessThan(d.target(u: 0.5, v: 0.5).y, straight.target(u: 0.5, v: 0.5).y - 20)
+    }
+
     func testSideDockWorksToo() {
         let d = DockMorphDeformer(windowOrigin: windowOrigin, windowSize: windowSize, iconOrigin: SIMD2(1700, 400),
                                   iconSize: iconSize, style: .genie)

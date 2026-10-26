@@ -179,8 +179,6 @@ struct SetupView: View {
                     ForEach(WobbleEntrance.allCases, id: \.rawValue) {
                         Text($0.title).tag(OpenEffectChoice.wobble($0).rawValue)
                     }
-                    Divider()
-                    ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 }
                 Picker("Minimize", selection: model.binding({ settings.minimizeEffect.rawValue }, { model.selectMinimizeEffect($0) })) {
                     Text("Off").tag(MinimizeEffectChoice.off.rawValue)
@@ -190,7 +188,7 @@ struct SetupView: View {
                         Text($0.title).tag(MinimizeEffectChoice.morph($0).rawValue)
                     }
                 }
-                Text("Jelly entrances keep the window visible while it arrives, so there is no flash; shader effects hide it for a moment first. Minimize morphs the window into its Dock icon.")
+                Text("Open and Minimize use the jelly model: the window stays visible while it arrives, so there is no flash. Minimize morphs the window into its Dock icon.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 SliderRow(title: "Duration",

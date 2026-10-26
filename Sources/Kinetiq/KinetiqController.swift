@@ -34,6 +34,8 @@ private final class DragSession {
     var samples: [(time: CFTimeInterval, point: CGPoint)] = []
     /// Current perspective lean `(pitch, yaw)`.
     var tilt = SIMD2<Float>.zero
+    /// Runs once the effect is over and the real window is back.
+    var onFinish: (() -> Void)?
     /// Top-left corner of the rigid frame (where the window would be without deformation).
     var origin: CGPoint
     var deformer: WindowDeformer?
@@ -122,9 +124,7 @@ final class KinetiqController: NSObject {
         closeTrigger = closePlayer.map { player in
             CloseEffectTrigger(settings: settings, capture: capture, player: player, isBusy: { [weak self] in self?.session != nil })
         }
-        openTrigger = closePlayer.map { player in
-            OpenEffectTrigger(settings: settings, capture: capture, player: player, isBusy: { [weak self] in self?.session != nil })
-        }
+        openTrigger = OpenEffectTrigger(settings: settings, isBusy: { [weak self] in self?.session != nil })
         minimizeTrigger = MorphPlayer().map { morph in
             MinimizeEffectTrigger(
                 settings: settings, capture: capture, morph: morph, isBusy: { [weak self] in self?.session != nil },
@@ -142,10 +142,6 @@ final class KinetiqController: NSObject {
         openTrigger?.startWobbleEntrance = { [weak self] element, info, entrance in
             self?.startWobbleEntrance(element, info, entrance)
         }
-        openTrigger?.onFinished = { [weak self] frame in
-            guard let self, self.settings.enabled, self.settings.focusPulse else { return }
-            self.focusPulse.pulse(around: frame)
-        }
         for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification] {
             NSWorkspace.shared.notificationCenter.addObserver(
                 self, selector: #selector(refreshCaptureContent), name: name, object: nil)
@@ -160,7 +156,7 @@ final class KinetiqController: NSObject {
     /// Compiles the shaders of the chosen close and open effect(s) in the background.
     func closeEffectChanged() {
         closePlayer?.warmUp(
-            [settings.closeEffect, settings.openEffect.shaderChoice ?? .off]
+            [settings.closeEffect]
                 + settings.appCloseEffects.values.map { CloseEffectChoice(rawValue: $0) })
     }
 
@@ -512,10 +508,17 @@ final class KinetiqController: NSObject {
         let origin = SIMD2<Float>(info.frame.origin)
         // A stone falls somewhere around the middle of the window.
         let drop = SIMD2(Float(info.frame.width) * Float.random(in: 0.3...0.7), Float(info.frame.height) * Float.random(in: 0.3...0.7))
+        let free = session == nil
         startEffect(info, axWindow: element, tiles: (22, 18)) { size in
             let model = KinetiqModel(size: SIMD2(Float(size.width), Float(size.height)), origin: origin, settings: physics)
             entrance.apply(to: model, drop: drop)
             return model
+        }
+        // The glow around a new window waits for its entrance to be over.
+        guard free, let session else { return }
+        session.onFinish = { [weak self] in
+            guard let self, self.settings.enabled, self.settings.focusPulse else { return }
+            self.focusPulse.pulse(around: info.frame)
         }
     }
 
@@ -820,8 +823,10 @@ final class KinetiqController: NSObject {
     }
 
     private func tearDown() {
+        let finished = session?.onFinish
         clearOverlays()
         session = nil
+        finished?()
     }
 
     private func clearOverlays() {

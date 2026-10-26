@@ -5,6 +5,19 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.22]
+
+### Added
+
+- **Six more Minimize styles**: Whirlpool, Tornado, Rubber Band, Pancake, Accordion and Hop, next to Dock Morph, Genie
+  and Jelly Suck.
+
+### Changed
+
+- **Open only offers the jelly entrances.** The shader effects (the close effects in reverse) are gone from the Open
+  picker, together with the code that hid and revealed the window; a shader saved by an earlier version becomes Wobble
+  Pop. The glow on focus now flashes once an entrance has finished.
+
 ## [0.1.21]
 
 ### Added
