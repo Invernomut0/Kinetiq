@@ -139,6 +139,7 @@ final class KinetiqController: NSObject {
         }
         windowObserver.onFocusChanged = { [weak self] pid in self?.focusChanged(pid: pid) }
         openTrigger?.onStarted = { [weak self] in self?.focusPulse.cancel() }
+        openTrigger?.startWobblePop = { [weak self] element, info in self?.startWobblePop(element, info) }
         openTrigger?.onFinished = { [weak self] frame in
             guard let self, self.settings.enabled, self.settings.focusPulse else { return }
             self.focusPulse.pulse(around: frame)
@@ -500,6 +501,17 @@ final class KinetiqController: NSObject {
                 model.unmaximize()
                 return model
             }
+        }
+    }
+
+    /// A new window that was left visible: it is captured as it is and shakes like jelly (the unmaximize kick).
+    private func startWobblePop(_ element: AXUIElement, _ info: WindowInfo) {
+        let physics = settings.physics
+        let origin = SIMD2<Float>(info.frame.origin)
+        startEffect(info, axWindow: element, tiles: (10, 10)) { size in
+            let model = KinetiqModel(size: SIMD2(Float(size.width), Float(size.height)), origin: origin, settings: physics)
+            model.unmaximize()
+            return model
         }
     }
 

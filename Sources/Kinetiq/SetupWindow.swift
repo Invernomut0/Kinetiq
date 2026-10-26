@@ -184,6 +184,12 @@ struct SetupView: View {
                     Divider()
                     ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 }
+                Picker("Open Trick", selection: model.binding({ settings.openTrick }, { settings.openTrick = $0 })) {
+                    ForEach(OpenTrick.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                Text("Apps show a new window before Kinetiq can hide it. \"Skip the start\" shortens the empty moment before the effect; \"Keep visible\" never hides the window and gives it a jelly pop instead of the Open effect.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 SliderRow(title: "Duration",
                           value: model.binding({ settings.closeDuration }, { settings.closeDuration = $0 }),
                           range: Settings.closeSpeedRange, decimals: 2)

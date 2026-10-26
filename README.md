@@ -41,6 +41,8 @@ When a window closes, it is replaced by an animation drawn on the GPU. Pick the 
 
 The same effects can play in reverse when a window opens (**Window Effects › Open**, off by default). The new window is hidden as soon as its app creates it, captured once it has been painted and revealed by the effect, so opening takes a fraction of a second longer. Dialogs, sheets and popovers are not affected.
 
+Apps show a new window before Kinetiq can react, so a short flash and a gap before the effect cannot be removed entirely (macOS has no public way to hide a window of another app before its first frame). **Window Effects › Open Trick** offers two workarounds: *Skip the Start of the Effect* starts the effect a quarter of the way in, and *Keep Visible (Wobble Pop)* never hides the window: once it has finished its own pop-in animation it is captured as it is and given a jelly pop instead of the Open effect.
+
 **Window Effects › Minimize** (off by default) plays a close effect when you minimize a window with its yellow button instead of the system animation. The click is held back for a moment while the window is captured. A frozen picture of the screen covers the system’s own animation (which shrinks the real window towards the Dock) while the effect plays. ⌘M and minimizing from the Dock cannot be intercepted, so they use the system animation; to keep it from competing with the effect, choosing a Minimize effect sets the Dock's minimize animation to *scale* (the Dock restarts), and choosing **Off** puts your original animation (genie by default) back.
 
 The **Per-App Close Effects** list in Setup gives an app its own close effect (a shader, Random or Off) in place of the global one.

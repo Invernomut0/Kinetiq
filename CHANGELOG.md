@@ -5,6 +5,18 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.20]
+
+### Added
+
+- **Open tricks** (new **Open Trick** picker in Setup) to deal with apps showing a new window before Kinetiq can hide it:
+  - *Hide Immediately* (default): as before.
+  - *Skip the Start of the Effect*: the Open effect starts a quarter of the way in, so the empty moment before the
+    window appears is shorter.
+  - *Keep Visible (Wobble Pop)*: the window is never hidden. Once its pop-in animation is over it is captured as it
+    is and the overlay takes over with a jelly pop (the unmaximize kick), so there is no flash and no gap. This
+    replaces the Open effect and works even when it is Off.
+
 ## [0.1.19]
 
 ### Fixed

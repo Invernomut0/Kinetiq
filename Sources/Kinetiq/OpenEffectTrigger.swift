@@ -16,6 +16,8 @@ import os
 final class OpenEffectTrigger {
     private static let settleTime: CFTimeInterval = 0.05
     private static let settleTimeout: CFTimeInterval = 0.8
+    /// Fraction of the effect skipped by the "skip the start" trick.
+    private static let skippedStart: Float = 0.25
     private static let retryDelay: Duration = .milliseconds(60)
     private static let maxTries = 6
     /// Longest an effect may keep the window parked, whatever happens.
@@ -33,6 +35,8 @@ final class OpenEffectTrigger {
     var onFinished: ((CGRect) -> Void)?
     /// Called as soon as a new window is going to get an effect.
     var onStarted: (() -> Void)?
+    /// Called with a window that was left visible and should pop with the jelly effect.
+    var startWobblePop: ((AXUIElement, WindowInfo) -> Void)?
     private static let log = Logger(subsystem: "io.github.invernomut0.Kinetiq", category: "open")
 
     init(settings: Settings, capture: WindowCapture, player: CloseEffectPlayer, isBusy: @escaping () -> Bool) {
@@ -44,7 +48,8 @@ final class OpenEffectTrigger {
 
     func windowCreated(_ element: AXUIElement, pid: pid_t) {
         Self.log.notice("window created, pid \(pid), busy \(self.inProgress), effect \(self.settings.openEffect.rawValue, privacy: .public)")
-        guard settings.enabled, settings.openEffect != .off, !inProgress, !isBusy(),
+        let keepVisible = settings.openTrick == .keepVisible
+        guard settings.enabled, settings.openEffect != .off || keepVisible, !inProgress, !isBusy(),
               pid != ProcessInfo.processInfo.processIdentifier, !AppExclusions.contains(pid: pid) else { return }
         inProgress = true
         onStarted?()
@@ -57,15 +62,46 @@ final class OpenEffectTrigger {
                 Task { @MainActor in self?.inProgress = false }
                 return
             }
-            AXBridge.setPosition(element, park)
+            if !keepVisible { AXBridge.setPosition(element, park) }
             guard !AXBridge.isFullScreen(element), let id = AXBridge.windowID(of: element),
                   frame.width >= 200, frame.height >= 120 else {
                 Self.log.notice("skipped after parking: full screen, no id or too small")
-                AXBridge.setPosition(element, frame.origin)
+                if !keepVisible { AXBridge.setPosition(element, frame.origin) }
                 Task { @MainActor in self?.inProgress = false }
                 return
             }
-            Task { @MainActor in self?.begin(element, WindowInfo(id: id, pid: pid, frame: frame)) }
+            let info = WindowInfo(id: id, pid: pid, frame: frame)
+            Task { @MainActor in
+                if keepVisible { self?.beginWobblePop(element, info) } else { self?.begin(element, info) }
+            }
+        }
+    }
+
+    /// The window stays where it is. Once its pop-in animation is over it is handed to the jelly effect.
+    private func beginWobblePop(_ element: AXUIElement, _ initial: WindowInfo) {
+        Task {
+            var frame = initial.frame
+            var stableSince = CACurrentMediaTime()
+            let deadline = stableSince + Self.settleTimeout
+            while CACurrentMediaTime() < deadline {
+                try? await Task.sleep(for: .milliseconds(16))
+                let current: CGRect? = await withCheckedContinuation { continuation in
+                    AXBridge.urgentQueue.async { continuation.resume(returning: AXBridge.frame(of: element)) }
+                }
+                guard let current else { continue }
+                let now = CACurrentMediaTime()
+                if abs(current.minX - frame.minX) > 0.5 || abs(current.minY - frame.minY) > 0.5
+                    || abs(current.width - frame.width) > 0.5 || abs(current.height - frame.height) > 0.5 {
+                    frame = current
+                    stableSince = now
+                } else if now - stableSince >= Self.settleTime {
+                    break
+                }
+            }
+            inProgress = false
+            guard settings.enabled, !isBusy() else { return }
+            Self.log.notice("wobble pop at \(frame.minX), \(frame.minY) \(frame.width)x\(frame.height)")
+            startWobblePop?(element, WindowInfo(id: initial.id, pid: initial.pid, frame: frame))
         }
     }
 
@@ -134,7 +170,7 @@ final class OpenEffectTrigger {
                     let started = player.play(
                         frame, windowFrame: info.frame, effect: effect, pointer: pointer,
                         durationScale: settings.closeDuration, nativeFade: false, opening: true, onFinish: handOver,
-                        holdLastFrame: true)
+                        holdLastFrame: true, startProgress: settings.openTrick == .skipStart ? Self.skippedStart : 0)
                     if started { return }
                     Self.log.notice("effect could not start")
                     break

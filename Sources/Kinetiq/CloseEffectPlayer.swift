@@ -26,6 +26,8 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
         var onFinish: (() -> Void)?
         /// Keeps drawing the last frame after the end, until `releaseHeld()`: the real window needs a moment to come back.
         var holdLastFrame = false
+        /// Fraction of the effect that is skipped: it starts this far in.
+        var startProgress: Float = 0
         var finishNotified = false
         var released = false
         var releaseTicks = 0
@@ -144,7 +146,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
     @discardableResult
     func play(_ frame: CapturedFrame, windowFrame: CGRect, effect: CloseEffect, pointer: CGPoint, durationScale: Double,
               nativeFade: Bool, opening: Bool = false, nearEnd: (() -> Void)? = nil, onFinish: (() -> Void)? = nil,
-              holdLastFrame: Bool = false) -> Bool {
+              holdLastFrame: Bool = false, startProgress: Float = 0) -> Bool {
         guard let textureCache else { return false }
         do {
             try renderer.prepare(effect)
@@ -180,6 +182,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
 
         playing.append(Playing(scene: scene, startedAt: nil, underFade: nativeFade, backing: backing, nearEnd: nearEnd, onFinish: onFinish))
         playing[playing.count - 1].holdLastFrame = holdLastFrame
+        playing[playing.count - 1].startProgress = startProgress
         playing[playing.count - 1].scene.shadowOpacity = nativeFade ? 0 : 1
         refreshBounds()
         ensureOverlays()
@@ -224,7 +227,8 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
         var finished: [() -> Void] = []
         for index in playing.indices {
             // The first frame is drawn at progress 0, whenever the animation was requested.
-            let start = playing[index].startedAt ?? link.timestamp
+            let start = playing[index].startedAt
+                ?? link.timestamp - Double(playing[index].startProgress * playing[index].scene.duration)
             playing[index].startedAt = start
             let elapsed = link.timestamp - start
             playing[index].scene.progress = Float(elapsed / Double(playing[index].scene.duration))

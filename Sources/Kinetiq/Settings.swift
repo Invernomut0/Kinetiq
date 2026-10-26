@@ -39,6 +39,24 @@ enum DragModifier: String, CaseIterable {
     }
 }
 
+/// How a new window is handled to hide that the app shows it before Kinetiq can react.
+enum OpenTrick: String, CaseIterable {
+    /// Park the window at once and reveal it with the effect (a 1-2 frame flash and a short gap remain).
+    case hide
+    /// Same, but the effect starts a quarter of the way in, so the empty gap before the window shows up is shorter.
+    case skipStart
+    /// Never hide the window: it is captured while visible and the overlay takes over with a jelly pop.
+    case keepVisible
+
+    var title: String {
+        switch self {
+        case .hide: return "Hide Immediately"
+        case .skipStart: return "Skip the Start of the Effect"
+        case .keepVisible: return "Keep Visible (Wobble Pop)"
+        }
+    }
+}
+
 enum WobblePreset: String, CaseIterable {
     case subtle, realistic, exaggerated, extreme, custom
 
@@ -177,6 +195,11 @@ final class Settings {
         set { defaults.set(newValue.rawValue, forKey: "closeEffect") }
     }
 
+    var openTrick: OpenTrick {
+        get { defaults.string(forKey: "openTrick").flatMap(OpenTrick.init(rawValue:)) ?? .hide }
+        set { defaults.set(newValue.rawValue, forKey: "openTrick") }
+    }
+
     /// Effect played when a window opens (the same shaders, reversed); off by default.
     var openEffect: CloseEffectChoice {
         get { defaults.string(forKey: "openEffect").map { CloseEffectChoice(rawValue: $0) } ?? .off }
@@ -226,6 +249,7 @@ final class Settings {
         rippleOnDrop = false
         closeEffect = Self.defaultCloseEffect
         openEffect = .off
+        openTrick = .hide
         minimizeEffect = .off
         appCloseEffects = [:]
         closeDuration = 1
