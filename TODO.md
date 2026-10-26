@@ -10,7 +10,7 @@ Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (imple
 | 4 | Minimize effect | Review | v0.1.12. Yellow button only (⌘M and Dock clicks can't be intercepted without reading keystrokes): click held back, window parked + minimized, effect plays, position restored. Not yet verified on screen. |
 | 5 | Per-app close effects | Review | v0.1.13. `Settings.appCloseEffects`, picker per app in Setup; overrides the global Close effect (also when that is Off). |
 | 6 | Focus highlight (pulse / glow on the window that gets focus) | Review | v0.1.14. Accent-colored glow (Core Animation overlay, no capture) on app activation and focused-window changes; off by default. Dimming of the other windows not done. |
-| 7 | Ripple at the drop point | To Do | |
+| 7 | Ripple at the drop point | Review | v0.1.15. Radial wave in `KinetiqModel` (unit-tested); settling waits for it to finish; off by default. |
 
 ## Done
 

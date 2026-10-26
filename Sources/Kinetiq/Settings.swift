@@ -153,6 +153,12 @@ final class Settings {
         set { defaults.set(newValue, forKey: "glideOnFlick") }
     }
 
+    /// A circular ripple spreads over the window from the point where it was dropped.
+    var rippleOnDrop: Bool {
+        get { defaults.object(forKey: "rippleOnDrop") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "rippleOnDrop") }
+    }
+
     /// A glow flashes around the window that takes the focus.
     var focusPulse: Bool {
         get { defaults.object(forKey: "focusPulse") as? Bool ?? false }
@@ -217,6 +223,7 @@ final class Settings {
         glideOnFlick = true
         tiltOnDrag = true
         focusPulse = false
+        rippleOnDrop = false
         closeEffect = Self.defaultCloseEffect
         openEffect = .off
         minimizeEffect = .off

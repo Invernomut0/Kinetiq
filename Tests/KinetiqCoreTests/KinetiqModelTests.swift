@@ -196,4 +196,42 @@ final class KinetiqModelTests: XCTestCase {
         XCTAssertFalse(model.isGliding)
         XCTAssertTrue(model.isGrabbed)
     }
+
+    func testRippleSpreadsFromTheDropPointAndDiesOut() {
+        let model = KinetiqModel(size: SIMD2(800, 600), origin: SIMD2(100, 100), settings: .realistic)
+        XCTAssertEqual(model.maxDisplacement, 0, accuracy: 1e-4, "no ripple, no deformation")
+        model.ripple(atLocal: SIMD2(400, 300))
+        XCTAssertTrue(model.isRippling)
+        XCTAssertFalse(model.isSettled)
+
+        // Before the wave has travelled anywhere, far corners are untouched.
+        model.step(0.05)
+        XCTAssertEqual(simd_length(model.displacement(u: 1, v: 1)), 0, accuracy: 1e-3)
+        // Later it has reached them and deforms the window.
+        var peak: Float = 0
+        for _ in 0..<60 {
+            model.step(frame)
+            peak = max(peak, model.maxDisplacement)
+        }
+        XCTAssertGreaterThan(peak, 1)
+        XCTAssertLessThan(peak, 10, "a ripple must not tear the window apart")
+
+        var elapsed: Float = 0
+        while !model.isSettled && elapsed < 5 {
+            model.step(frame)
+            elapsed += frame
+        }
+        XCTAssertTrue(model.isSettled)
+        XCTAssertFalse(model.isRippling)
+        XCTAssertEqual(model.maxDisplacement, 0, accuracy: 1e-4, "the real window takes over from a flat overlay")
+    }
+
+    func testSnapToRestCancelsTheRipple() {
+        let model = KinetiqModel(size: SIMD2(800, 600), origin: SIMD2(100, 100), settings: .realistic)
+        model.ripple(atLocal: SIMD2(10, 10))
+        model.step(0.2)
+        model.snapToRest()
+        XCTAssertFalse(model.isRippling)
+        XCTAssertEqual(model.maxDisplacement, 0, accuracy: 1e-4)
+    }
 }

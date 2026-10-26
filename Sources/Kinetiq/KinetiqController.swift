@@ -293,6 +293,9 @@ final class KinetiqController: NSObject {
         session.phase = .settling
         if let model = session.model {
             model.release(origin: SIMD2(session.origin))
+            if settings.rippleOnDrop {
+                model.ripple(atLocal: SIMD2(Float(session.grabLocal.x), Float(session.grabLocal.y)))
+            }
             if let velocity = flingVelocity(session) {
                 model.fling(velocity: velocity, bounds: glideBounds(for: session, at: point))
             }

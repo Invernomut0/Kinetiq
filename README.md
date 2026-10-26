@@ -31,6 +31,10 @@ While you drag, the window leans in perspective into its movement and flattens a
 
 Optional (**Glow on Focus** in Setup, off by default): an accent-colored glow flashes around the window that takes the focus.
 
+### Ripple on drop
+
+Optional (**Ripple on Drop** in Setup, off by default): a circular wave spreads over the window from the point where you dropped it.
+
 ### Close effects
 
 When a window closes, it is replaced by an animation drawn on the GPU. Pick the effect in the Setup window under **Window Effects › Close**: one of the 30 effects below, **Random** (a different one every time) or **Off**. The **Duration** slider scales the animation time of every effect (0.25× to 3×). Fire is the default.

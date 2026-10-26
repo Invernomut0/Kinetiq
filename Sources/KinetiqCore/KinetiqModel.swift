@@ -106,6 +106,16 @@ public final class KinetiqModel: WindowDeformer {
     private static let glideDamping: Float = 3.2
     private static let glideRestitution: Float = 0.6
     private static let glideStopSpeed: Float = 30
+
+    // Ripple: a circular wave that spreads from the drop point over the window.
+    private static let rippleDuration: Float = 1.2
+    private static let rippleSpeed: Float = 700
+    private static let rippleWavelength: Float = 150
+    private static let rippleAmplitude: Float = 7
+    private var rippleCenter = SIMD2<Float>.zero
+    private var rippleTime: Float = .infinity
+    /// A ripple is still spreading.
+    public var isRippling: Bool { rippleTime < Self.rippleDuration }
     public init(size: SIMD2<Float>, origin: SIMD2<Float>, settings: KinetiqSettings = .realistic) {
         self.size = size
         self.origin = origin
@@ -224,6 +234,26 @@ public final class KinetiqModel: WindowDeformer {
         }
     }
 
+    /// Starts a ripple at `local`, a point of the window in points from its top-left corner.
+    public func ripple(atLocal local: SIMD2<Float>) {
+        rippleCenter = local
+        rippleTime = 0
+    }
+
+    private func rippleOffset(u: Float, v: Float) -> SIMD2<Float> {
+        guard isRippling else { return .zero }
+        let delta = SIMD2(u * size.x, v * size.y) - rippleCenter
+        let radius = simd_length(delta)
+        guard radius > 0.001 else { return .zero }
+        let front = Self.rippleSpeed * rippleTime
+        let behind = front - radius
+        // Nothing ahead of the wavefront; a soft leading edge, then a train of waves that fades with time and distance.
+        let leading = min(max(behind / Self.rippleWavelength, 0), 1)
+        let envelope = exp(-rippleTime / 0.45) * exp(-radius / 600)
+        let phase = 2 * Float.pi * behind / Self.rippleWavelength
+        return delta / radius * (Self.rippleAmplitude * leading * envelope * sin(phase))
+    }
+
     /// Maximize effect: corners pinned and an inward kick on their neighbours.
     public func maximize() {
         let w = size.x
@@ -262,6 +292,7 @@ public final class KinetiqModel: WindowDeformer {
     // MARK: - Simulation
 
     public func step(_ dt: Float) {
+        if isRippling { rippleTime += min(max(dt, 0), 1.0 / 15.0) }
         if isGliding { advanceGlide(min(max(dt, 0), 1.0 / 15.0)) }
         accumulator += min(max(dt, 0), 1.0 / 15.0) * stepsPerSecond
         guard accumulator >= 1 else { return }
@@ -296,12 +327,13 @@ public final class KinetiqModel: WindowDeformer {
     /// Compiz stops as soon as no force exceeds 1, but at that point a few points of deformation are
     /// left and vanish abruptly. We keep going until every node is within half a point of rest.
     public var isSettled: Bool {
-        guard !isGrabbed, !isGliding, !movement else { return false }
+        guard !isGrabbed, !isGliding, !isRippling, !movement else { return false }
         return positions.indices.allSatisfy { simd_length(positions[$0] - restPosition($0)) < 0.5 }
     }
 
     public func snapToRest() {
         isGliding = false
+        rippleTime = .infinity
         for i in positions.indices {
             positions[i] = restPosition(i)
             velocities[i] = .zero
@@ -327,7 +359,7 @@ public final class KinetiqModel: WindowDeformer {
                 p += (bv[j] * bu[i]) * positions[j * 4 + i]
             }
         }
-        return p - (origin + SIMD2(u * size.x, v * size.y))
+        return p - (origin + SIMD2(u * size.x, v * size.y)) + rippleOffset(u: u, v: v)
     }
 }
 

@@ -159,6 +159,8 @@ struct SetupView: View {
                        isOn: model.binding({ settings.tiltOnDrag }, { settings.tiltOnDrag = $0 }))
                 Toggle("Glow on Focus",
                        isOn: model.binding({ settings.focusPulse }, { settings.focusPulse = $0 }))
+                Toggle("Ripple on Drop",
+                       isOn: model.binding({ settings.rippleOnDrop }, { settings.rippleOnDrop = $0 }))
             }
 
             Section("Window Effects") {
