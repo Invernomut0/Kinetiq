@@ -27,6 +27,13 @@ xcrun actool Resources/Kinetiq.icon --compile "$APP/Contents/Resources" --platfo
     --output-partial-info-plist "$(mktemp -t kinetiq-icon)" > /dev/null
 
 IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ { print $2; exit }')}"
-codesign --force --options runtime --sign "${IDENTITY:--}" "$APP"
+if [[ -n "${IDENTITY:-}" ]]; then
+    codesign --force --options runtime --sign "$IDENTITY" "$APP"
+else
+    # Ad-hoc: pin the requirement to the bundle id, otherwise macOS ties the Accessibility and
+    # Screen Recording grants to the binary hash and asks again after every build.
+    codesign --force --options runtime --sign - \
+        -r='designated => identifier "io.github.invernomut0.Kinetiq"' "$APP"
+fi
 echo "Signed with: ${IDENTITY:-ad-hoc}"
 echo "$APP"

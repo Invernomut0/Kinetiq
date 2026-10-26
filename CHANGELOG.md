@@ -5,6 +5,14 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7]
+
+### Fixed
+
+- **Permissions requested again after every build.** Ad-hoc builds were bound to the binary hash, so macOS dropped the
+  Accessibility and Screen Recording grants on each rebuild. `build-app.sh` now pins the ad-hoc signature to the
+  bundle identifier, so a grant survives rebuilds (grant once after updating to this version).
+
 ## [0.1.6]
 
 ### Fixed
