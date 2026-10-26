@@ -190,9 +190,30 @@ enum AXBridge {
 
     /// Regular document-style windows only: no sheets, popovers, panels or tooltips.
     static func isStandardWindow(_ window: AXUIElement) -> Bool {
+        subrole(of: window) == kAXStandardWindowSubrole as String
+    }
+
+    /// Frame of the yellow minimize button if that is what lies under `point` (or inside it, for a window's contents).
+    /// Called from the event tap, so it uses short timeouts.
+    static func minimizeButtonFrame(pid: pid_t, at point: CGPoint) -> CGRect? {
+        guard let hit = hitTest(pid, at: point, timeout: 0.1) else { return nil }
+        var current = limit(hit, 0.1)
+        for _ in 0..<2 {
+            if subrole(of: current) == kAXMinimizeButtonSubrole as String { return frame(of: current) }
+            guard let parent = element(current, kAXParentAttribute) else { return nil }
+            current = limit(parent, 0.1)
+        }
+        return nil
+    }
+
+    static func setMinimized(_ window: AXUIElement, _ minimized: Bool) {
+        AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, minimized ? kCFBooleanTrue : kCFBooleanFalse)
+    }
+
+    private static func subrole(of element: AXUIElement) -> String? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXSubroleAttribute as CFString, &value) == .success else { return false }
-        return (value as? String) == kAXStandardWindowSubrole as String
+        guard AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &value) == .success else { return nil }
+        return value as? String
     }
 
     static func raise(_ window: AXUIElement, pid: pid_t) {

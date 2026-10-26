@@ -51,6 +51,12 @@ final class SetupModel: ObservableObject {
         refresh()
     }
 
+    func selectMinimizeEffect(_ raw: String) {
+        settings.minimizeEffect = CloseEffectChoice(rawValue: raw)
+        closeEffectChanged()
+        refresh()
+    }
+
     func resetToDefaults() {
         settings.resetToDefaults()
         closeEffectChanged()
@@ -135,6 +141,12 @@ struct SetupView: View {
                     ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 }
                 Picker("Open", selection: model.binding({ settings.openEffect.rawValue }, { model.selectOpenEffect($0) })) {
+                    Text("Off").tag(CloseEffectChoice.off.rawValue)
+                    Text("Random").tag(CloseEffectChoice.random.rawValue)
+                    Divider()
+                    ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+                }
+                Picker("Minimize", selection: model.binding({ settings.minimizeEffect.rawValue }, { model.selectMinimizeEffect($0) })) {
                     Text("Off").tag(CloseEffectChoice.off.rawValue)
                     Text("Random").tag(CloseEffectChoice.random.rawValue)
                     Divider()

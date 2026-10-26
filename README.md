@@ -33,6 +33,8 @@ When a window closes, it is replaced by an animation drawn on the GPU. Pick the 
 
 The same effects can play in reverse when a window opens (**Window Effects › Open**, off by default). The new window is hidden as soon as its app creates it, captured once it has been painted and revealed by the effect, so opening takes a fraction of a second longer. Dialogs, sheets and popovers are not affected.
 
+**Window Effects › Minimize** (off by default) plays a close effect when you minimize a window with its yellow button instead of the system animation. The click is held back for a moment while the window is captured; ⌘M and minimizing from the Dock keep the system animation.
+
 Aperture Panels, Apparition, Aura Glow, Broken Glass, Doom, Energize A, Energize B, Fire, Focus, Glide, Glitch, Hexagon, Incinerate, Materialize, Matrix, Morph, Mushroom, Paint Brush, Pixelate, Pixel Wheel, Pixel Wipe, Portal, RGB Warp, Snap of Disintegration, Team Rocket, T-Rex Attack, TV Effect, TV Glitch, Wisps and Wormhole.
 
 The effect plays when you close a window with:

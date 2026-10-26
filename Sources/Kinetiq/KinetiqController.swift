@@ -97,6 +97,7 @@ final class KinetiqController: NSObject {
     private let closePlayer: CloseEffectPlayer?
     private var closeTrigger: CloseEffectTrigger?
     private var openTrigger: OpenEffectTrigger?
+    private var minimizeTrigger: MinimizeEffectTrigger?
     private var overlays: [OverlayWindow] = []
     private var session: DragSession?
     private var pendingClick: PendingClick?
@@ -122,6 +123,11 @@ final class KinetiqController: NSObject {
         openTrigger = closePlayer.map { player in
             OpenEffectTrigger(settings: settings, capture: capture, player: player, isBusy: { [weak self] in self?.session != nil })
         }
+        minimizeTrigger = closePlayer.map { player in
+            MinimizeEffectTrigger(
+                settings: settings, capture: capture, player: player, isBusy: { [weak self] in self?.session != nil },
+                replay: { [weak self] down, up in self?.replayClick(down: down, up: up) })
+        }
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         windowObserver.onResize = { [weak self] element, pid in self?.windowResized(element, pid: pid) }
@@ -142,7 +148,7 @@ final class KinetiqController: NSObject {
 
     /// Compiles the shaders of the chosen close and open effect(s) in the background.
     func closeEffectChanged() {
-        closePlayer?.warmUp(settings.closeEffect, settings.openEffect)
+        closePlayer?.warmUp(settings.closeEffect, settings.openEffect, settings.minimizeEffect)
     }
 
     /// Keeps the capture's window list current so a drag never has to wait for it. Skipped mid-gesture:
@@ -160,11 +166,14 @@ final class KinetiqController: NSObject {
             let windows = WindowList()
             let consumed = mouseDown(event, windows: windows)
             resizeWatch = consumed ? nil : watchForResize(at: event.location, windows: windows)
+            if !consumed, minimizeTrigger?.mouseDown(event, windows: windows) == true { return true }
             if !consumed { closeTrigger?.mouseDown(at: event.location, windows: windows) }
             return consumed
         case .leftMouseDragged:
+            if minimizeTrigger?.isPending == true { return true }
             return mouseDragged(to: event.location)
         case .leftMouseUp:
+            if let minimizeTrigger, minimizeTrigger.isPending { return minimizeTrigger.mouseUp(event) }
             let consumed = mouseUp(event)
             if !consumed {
                 checkForResize(endingAt: event.location)
@@ -184,6 +193,7 @@ final class KinetiqController: NSObject {
     func cancelAll() {
         pendingClick = nil
         resizeWatch = nil
+        minimizeTrigger?.cancel()
         closeTrigger?.cancelAll()
         if let session { finishImmediately(session) }
     }

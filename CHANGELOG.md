@@ -5,6 +5,16 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12]
+
+### Added
+
+- **Minimize effects.** Minimizing a window with its yellow button can play one of the close effects instead of the
+  system animation (new **Minimize** picker in Setup, off by default). The click is held back; if it ends on the
+  button and the window was captured, the window is parked, minimized off-screen and the effect plays where it was,
+  then the minimized window is put back at its position. Otherwise the click is replayed untouched. ⌘M and
+  minimizing from the Dock keep the system animation.
+
 ## [0.1.11]
 
 ### Added

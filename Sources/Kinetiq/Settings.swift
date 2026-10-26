@@ -171,6 +171,12 @@ final class Settings {
         set { defaults.set(newValue.rawValue, forKey: "openEffect") }
     }
 
+    /// Effect played when a window is minimized with its yellow button (the close shaders); off by default.
+    var minimizeEffect: CloseEffectChoice {
+        get { defaults.string(forKey: "minimizeEffect").map { CloseEffectChoice(rawValue: $0) } ?? .off }
+        set { defaults.set(newValue.rawValue, forKey: "minimizeEffect") }
+    }
+
     /// Animation time of the close effects relative to the default of each effect.
     var closeDuration: Double {
         get { min(max(defaults.object(forKey: "closeDuration") as? Double ?? 1, Self.closeSpeedRange.lowerBound), Self.closeSpeedRange.upperBound) }
@@ -194,6 +200,7 @@ final class Settings {
         tiltOnDrag = true
         closeEffect = Self.defaultCloseEffect
         openEffect = .off
+        minimizeEffect = .off
         closeDuration = 1
     }
 
