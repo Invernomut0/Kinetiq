@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Wobbly}",
+            "name": "Debug Wobbly",
+            "target": "Wobbly",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug Wobbly"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Wobbly}",
+            "name": "Release Wobbly",
+            "target": "Wobbly",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release Wobbly"
+        }
+    ]
+}
