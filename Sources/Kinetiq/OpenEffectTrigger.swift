@@ -5,6 +5,8 @@
 import AppKit
 @preconcurrency import ApplicationServices
 import QuartzCore
+import KinetiqCore
+import KinetiqEffects
 import os
 
 /// Plays the open effect when a window is created.
@@ -16,8 +18,6 @@ import os
 final class OpenEffectTrigger {
     private static let settleTime: CFTimeInterval = 0.05
     private static let settleTimeout: CFTimeInterval = 0.8
-    /// Fraction of the effect skipped by the "skip the start" trick.
-    private static let skippedStart: Float = 0.25
     private static let retryDelay: Duration = .milliseconds(60)
     private static let maxTries = 6
     /// Longest an effect may keep the window parked, whatever happens.
@@ -35,9 +35,27 @@ final class OpenEffectTrigger {
     var onFinished: ((CGRect) -> Void)?
     /// Called as soon as a new window is going to get an effect.
     var onStarted: (() -> Void)?
-    /// Called with a window that was left visible and should pop with the jelly effect.
-    var startWobblePop: ((AXUIElement, WindowInfo) -> Void)?
+    /// Called with a window that was left visible and should arrive with a jelly entrance.
+    var startWobbleEntrance: ((AXUIElement, WindowInfo, WobbleEntrance) -> Void)?
     private static let log = Logger(subsystem: "io.github.invernomut0.Kinetiq", category: "open")
+
+    private enum Plan {
+        /// The window stays visible and the jelly model plays the entrance.
+        case wobble(WobbleEntrance)
+        /// The window is parked, captured and revealed by a shader.
+        case shader(CloseEffect)
+    }
+
+    private func plan() -> Plan? {
+        switch settings.openEffect {
+        case .off: return nil
+        case .wobble(let entrance): return .wobble(entrance)
+        case .shader(let effect): return .shader(effect)
+        case .random:
+            if Bool.random(), let entrance = WobbleEntrance.allCases.randomElement() { return .wobble(entrance) }
+            return player.effect(for: .random).map(Plan.shader)
+        }
+    }
 
     init(settings: Settings, capture: WindowCapture, player: CloseEffectPlayer, isBusy: @escaping () -> Bool) {
         self.settings = settings
@@ -48,9 +66,10 @@ final class OpenEffectTrigger {
 
     func windowCreated(_ element: AXUIElement, pid: pid_t) {
         Self.log.notice("window created, pid \(pid), busy \(self.inProgress), effect \(self.settings.openEffect.rawValue, privacy: .public)")
-        let keepVisible = settings.openTrick == .keepVisible
-        guard settings.enabled, settings.openEffect != .off || keepVisible, !inProgress, !isBusy(),
-              pid != ProcessInfo.processInfo.processIdentifier, !AppExclusions.contains(pid: pid) else { return }
+        let keepVisible: Bool
+        guard settings.enabled, !inProgress, !isBusy(), pid != ProcessInfo.processInfo.processIdentifier,
+              !AppExclusions.contains(pid: pid), let plan = plan() else { return }
+        if case .wobble = plan { keepVisible = true } else { keepVisible = false }
         inProgress = true
         onStarted?()
         let park = NSScreen.parkingPoint
@@ -72,13 +91,16 @@ final class OpenEffectTrigger {
             }
             let info = WindowInfo(id: id, pid: pid, frame: frame)
             Task { @MainActor in
-                if keepVisible { self?.beginWobblePop(element, info) } else { self?.begin(element, info) }
+                switch plan {
+                case .wobble(let entrance): self?.beginWobbleEntrance(element, info, entrance)
+                case .shader(let effect): self?.begin(element, info, effect)
+                }
             }
         }
     }
 
     /// The window stays where it is. Once its pop-in animation is over it is handed to the jelly effect.
-    private func beginWobblePop(_ element: AXUIElement, _ initial: WindowInfo) {
+    private func beginWobbleEntrance(_ element: AXUIElement, _ initial: WindowInfo, _ entrance: WobbleEntrance) {
         Task {
             var frame = initial.frame
             var stableSince = CACurrentMediaTime()
@@ -100,8 +122,8 @@ final class OpenEffectTrigger {
             }
             inProgress = false
             guard settings.enabled, !isBusy() else { return }
-            Self.log.notice("wobble pop at \(frame.minX), \(frame.minY) \(frame.width)x\(frame.height)")
-            startWobblePop?(element, WindowInfo(id: initial.id, pid: initial.pid, frame: frame))
+            Self.log.notice("wobble entrance \(entrance.title, privacy: .public) at \(frame.minX), \(frame.minY) \(frame.width)x\(frame.height)")
+            startWobbleEntrance?(element, WindowInfo(id: initial.id, pid: initial.pid, frame: frame), entrance)
         }
     }
 
@@ -132,7 +154,7 @@ final class OpenEffectTrigger {
     }
 
     /// The window is parked: wait for its content, then play the effect.
-    private func begin(_ element: AXUIElement, _ initial: WindowInfo) {
+    private func begin(_ element: AXUIElement, _ initial: WindowInfo, _ effect: CloseEffect) {
         var finalFrame = initial.frame
         var handedOver = false
         // Moves the window back, waits until it is really there, and only then lets the overlay go: the overlay keeps
@@ -165,12 +187,12 @@ final class OpenEffectTrigger {
                 }
                 Self.log.notice("attempt \(attempt): captured \(captured != nil), painted \(captured?.isPainted ?? false)")
                 if let frame = captured, frame.isPainted {
-                    guard settings.enabled, let effect = player.effect(for: settings.openEffect) else { break }
+                    guard settings.enabled else { break }
                     let pointer = CGEvent(source: nil)?.location ?? CGPoint(x: info.frame.midX, y: info.frame.midY)
                     let started = player.play(
                         frame, windowFrame: info.frame, effect: effect, pointer: pointer,
                         durationScale: settings.closeDuration, nativeFade: false, opening: true, onFinish: handOver,
-                        holdLastFrame: true, startProgress: settings.openTrick == .skipStart ? Self.skippedStart : 0)
+                        holdLastFrame: true)
                     if started { return }
                     Self.log.notice("effect could not start")
                     break

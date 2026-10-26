@@ -125,9 +125,9 @@ final class KinetiqController: NSObject {
         openTrigger = closePlayer.map { player in
             OpenEffectTrigger(settings: settings, capture: capture, player: player, isBusy: { [weak self] in self?.session != nil })
         }
-        minimizeTrigger = closePlayer.map { player in
+        minimizeTrigger = MorphPlayer().map { morph in
             MinimizeEffectTrigger(
-                settings: settings, capture: capture, player: player, isBusy: { [weak self] in self?.session != nil },
+                settings: settings, capture: capture, morph: morph, isBusy: { [weak self] in self?.session != nil },
                 replay: { [weak self] down, up in self?.replayClick(down: down, up: up) })
         }
         NotificationCenter.default.addObserver(
@@ -139,7 +139,9 @@ final class KinetiqController: NSObject {
         }
         windowObserver.onFocusChanged = { [weak self] pid in self?.focusChanged(pid: pid) }
         openTrigger?.onStarted = { [weak self] in self?.focusPulse.cancel() }
-        openTrigger?.startWobblePop = { [weak self] element, info in self?.startWobblePop(element, info) }
+        openTrigger?.startWobbleEntrance = { [weak self] element, info, entrance in
+            self?.startWobbleEntrance(element, info, entrance)
+        }
         openTrigger?.onFinished = { [weak self] frame in
             guard let self, self.settings.enabled, self.settings.focusPulse else { return }
             self.focusPulse.pulse(around: frame)
@@ -158,7 +160,7 @@ final class KinetiqController: NSObject {
     /// Compiles the shaders of the chosen close and open effect(s) in the background.
     func closeEffectChanged() {
         closePlayer?.warmUp(
-            [settings.closeEffect, settings.openEffect, settings.minimizeEffect]
+            [settings.closeEffect, settings.openEffect.shaderChoice ?? .off]
                 + settings.appCloseEffects.values.map { CloseEffectChoice(rawValue: $0) })
     }
 
@@ -504,13 +506,15 @@ final class KinetiqController: NSObject {
         }
     }
 
-    /// A new window that was left visible: it is captured as it is and shakes like jelly (the unmaximize kick).
-    private func startWobblePop(_ element: AXUIElement, _ info: WindowInfo) {
+    /// A new window that was left visible: it is captured as it is and the jelly model plays the entrance.
+    private func startWobbleEntrance(_ element: AXUIElement, _ info: WindowInfo, _ entrance: WobbleEntrance) {
         let physics = settings.physics
         let origin = SIMD2<Float>(info.frame.origin)
-        startEffect(info, axWindow: element, tiles: (10, 10)) { size in
+        // A stone falls somewhere around the middle of the window.
+        let drop = SIMD2(Float(info.frame.width) * Float.random(in: 0.3...0.7), Float(info.frame.height) * Float.random(in: 0.3...0.7))
+        startEffect(info, axWindow: element, tiles: (22, 18)) { size in
             let model = KinetiqModel(size: SIMD2(Float(size.width), Float(size.height)), origin: origin, settings: physics)
-            model.unmaximize()
+            entrance.apply(to: model, drop: drop)
             return model
         }
     }

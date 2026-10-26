@@ -39,20 +39,64 @@ enum DragModifier: String, CaseIterable {
     }
 }
 
-/// How a new window is handled to hide that the app shows it before Kinetiq can react.
-enum OpenTrick: String, CaseIterable {
-    /// Park the window at once and reveal it with the effect (a 1-2 frame flash and a short gap remain).
-    case hide
-    /// Same, but the effect starts a quarter of the way in, so the empty gap before the window shows up is shorter.
-    case skipStart
-    /// Never hide the window: it is captured while visible and the overlay takes over with a jelly pop.
-    case keepVisible
+/// What plays when a window opens: a jelly entrance, one of the shaders (the close effects in reverse), a random one or nothing.
+enum OpenEffectChoice: Equatable {
+    case off
+    case random
+    case wobble(WobbleEntrance)
+    case shader(CloseEffect)
 
-    var title: String {
+    init(rawValue: String?) {
+        switch rawValue {
+        case nil, "off": self = .off
+        case "random": self = .random
+        case let id? where id.hasPrefix("wobble:"):
+            self = WobbleEntrance(rawValue: String(id.dropFirst("wobble:".count))).map(OpenEffectChoice.wobble) ?? .off
+        case let id?: self = CloseEffect(rawValue: id).map(OpenEffectChoice.shader) ?? .off
+        }
+    }
+
+    var rawValue: String {
         switch self {
-        case .hide: return "Hide Immediately"
-        case .skipStart: return "Skip the Start of the Effect"
-        case .keepVisible: return "Keep Visible (Wobble Pop)"
+        case .off: return "off"
+        case .random: return "random"
+        case .wobble(let entrance): return "wobble:" + entrance.rawValue
+        case .shader(let effect): return effect.rawValue
+        }
+    }
+
+    /// The shaders to compile in advance for this choice.
+    var shaderChoice: CloseEffectChoice? {
+        switch self {
+        case .off, .wobble: return nil
+        case .random: return .random
+        case .shader(let effect): return .effect(effect)
+        }
+    }
+}
+
+/// What plays when a window is minimized with its yellow button: a morph into its Dock icon.
+enum MinimizeEffectChoice: Equatable {
+    case off
+    case random
+    case morph(DockMorphStyle)
+
+    init(rawValue: String?) {
+        switch rawValue {
+        case nil, "off": self = .off
+        case "random": self = .random
+        case let id? where id.hasPrefix("morph:"):
+            self = DockMorphStyle(rawValue: String(id.dropFirst("morph:".count))).map(MinimizeEffectChoice.morph) ?? .morph(.genie)
+        // Older versions stored a close shader here: the effect was on, so keep it on.
+        default: self = .morph(.genie)
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .off: return "off"
+        case .random: return "random"
+        case .morph(let style): return "morph:" + style.rawValue
         }
     }
 }
@@ -195,20 +239,15 @@ final class Settings {
         set { defaults.set(newValue.rawValue, forKey: "closeEffect") }
     }
 
-    var openTrick: OpenTrick {
-        get { defaults.string(forKey: "openTrick").flatMap(OpenTrick.init(rawValue:)) ?? .hide }
-        set { defaults.set(newValue.rawValue, forKey: "openTrick") }
-    }
-
-    /// Effect played when a window opens (the same shaders, reversed); off by default.
-    var openEffect: CloseEffectChoice {
-        get { defaults.string(forKey: "openEffect").map { CloseEffectChoice(rawValue: $0) } ?? .off }
+    /// Effect played when a window opens: a jelly entrance or a shader (the close effects in reverse); off by default.
+    var openEffect: OpenEffectChoice {
+        get { OpenEffectChoice(rawValue: defaults.string(forKey: "openEffect")) }
         set { defaults.set(newValue.rawValue, forKey: "openEffect") }
     }
 
-    /// Effect played when a window is minimized with its yellow button (the close shaders); off by default.
-    var minimizeEffect: CloseEffectChoice {
-        get { defaults.string(forKey: "minimizeEffect").map { CloseEffectChoice(rawValue: $0) } ?? .off }
+    /// Effect played when a window is minimized with its yellow button: a morph into its Dock icon; off by default.
+    var minimizeEffect: MinimizeEffectChoice {
+        get { MinimizeEffectChoice(rawValue: defaults.string(forKey: "minimizeEffect")) }
         set { defaults.set(newValue.rawValue, forKey: "minimizeEffect") }
     }
 
@@ -249,7 +288,6 @@ final class Settings {
         rippleOnDrop = false
         closeEffect = Self.defaultCloseEffect
         openEffect = .off
-        openTrick = .hide
         minimizeEffect = .off
         appCloseEffects = [:]
         closeDuration = 1

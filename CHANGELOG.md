@@ -5,6 +5,24 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.21]
+
+### Added
+
+- **Jelly entrances for opening windows**, in the **Open** picker: Wobble Pop, Ripple, Stone in Water, Shockwave,
+  Jelly Squash and Quake. The window is never hidden: it is captured when its pop-in animation ends and the jelly model
+  plays the entrance, so there is no flash and no gap. *Random* picks among these and the shaders.
+- **Dock morphs for minimizing**, in the **Minimize** picker: Dock Morph, Genie and Jelly Suck. The window is
+  deformed towards its Dock icon (found through Accessibility) and fades out as it arrives, over the frozen screen
+  picture that hides the system animation. A minimize effect saved by an older version is migrated to Genie.
+- The jelly model gained configurable and chained ripples, squeeze and shear impulses, and its settling now also waits
+  for nodes thrown by an impulse to stop moving.
+
+### Changed
+
+- **The Open Trick picker is gone** (added in 0.1.20): Wobble Pop is now an Open effect and keeps the window
+  visible by itself. Minimize no longer offers the close shaders.
+
 ## [0.1.20]
 
 ### Added

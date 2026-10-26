@@ -70,7 +70,7 @@ public struct KinetiqSettings: Equatable, Sendable {
 public final class KinetiqModel: WindowDeformer {
     public static let gridWidth = 4
     public static let gridHeight = 4
-    private static let intensity: Float = 0.8
+    public static let intensity: Float = 0.8
 
     private struct Spring {
         let a: Int
@@ -110,15 +110,20 @@ public final class KinetiqModel: WindowDeformer {
     private static let glideRestitution: Float = 0.6
     private static let glideStopSpeed: Float = 30
 
-    // Ripple: a circular wave that spreads from the drop point over the window.
-    private static let rippleDuration: Float = 1.2
-    private static let rippleSpeed: Float = 700
-    private static let rippleWavelength: Float = 150
-    private static let rippleAmplitude: Float = 7
-    private var rippleCenter = SIMD2<Float>.zero
-    private var rippleTime: Float = .infinity
+    // Ripples: circular waves that spread over the window from a point (a drop, a stone in the water).
+    private struct Ripple {
+        var center: SIMD2<Float>
+        var time: Float
+        var amplitude: Float
+        var wavelength: Float
+        var speed: Float
+        var duration: Float
+        var decay: Float
+        var isActive: Bool { time < duration }
+    }
+    private var ripples: [Ripple] = []
     /// A ripple is still spreading.
-    public var isRippling: Bool { rippleTime < Self.rippleDuration }
+    public var isRippling: Bool { ripples.contains { $0.isActive } }
     public init(size: SIMD2<Float>, origin: SIMD2<Float>, settings: KinetiqSettings = .realistic) {
         self.size = size
         self.origin = origin
@@ -239,24 +244,54 @@ public final class KinetiqModel: WindowDeformer {
         }
     }
 
-    /// Starts a ripple at `local`, a point of the window in points from its top-left corner.
-    public func ripple(atLocal local: SIMD2<Float>) {
-        rippleCenter = local
-        rippleTime = 0
+    /// Starts a ripple at `local`, a point of the window in points from its top-left corner. `delay` (seconds) holds the
+    /// wave back, so several can be chained like drops falling one after the other.
+    public func ripple(atLocal local: SIMD2<Float>, amplitude: Float = 7, wavelength: Float = 150, speed: Float = 700,
+                       duration: Float = 1.2, decay: Float = 0.45, delay: Float = 0) {
+        ripples.removeAll { !$0.isActive }
+        ripples.append(Ripple(center: local, time: -delay, amplitude: amplitude, wavelength: wavelength, speed: speed,
+                              duration: duration, decay: decay))
     }
 
     private func rippleOffset(u: Float, v: Float) -> SIMD2<Float> {
-        guard isRippling else { return .zero }
-        let delta = SIMD2(u * size.x, v * size.y) - rippleCenter
-        let radius = simd_length(delta)
-        guard radius > 0.001 else { return .zero }
-        let front = Self.rippleSpeed * rippleTime
-        let behind = front - radius
-        // Nothing ahead of the wavefront; a soft leading edge, then a train of waves that fades with time and distance.
-        let leading = min(max(behind / Self.rippleWavelength, 0), 1)
-        let envelope = exp(-rippleTime / 0.45) * exp(-radius / 600)
-        let phase = 2 * Float.pi * behind / Self.rippleWavelength
-        return delta / radius * (Self.rippleAmplitude * leading * envelope * sin(phase))
+        var total = SIMD2<Float>.zero
+        for ripple in ripples where ripple.isActive && ripple.time > 0 {
+            let delta = SIMD2(u * size.x, v * size.y) - ripple.center
+            let radius = simd_length(delta)
+            guard radius > 0.001 else { continue }
+            let behind = ripple.speed * ripple.time - radius
+            // Nothing ahead of the wavefront; a soft leading edge, then a train of waves that fades with time and distance.
+            let leading = min(max(behind / ripple.wavelength, 0), 1)
+            let envelope = exp(-ripple.time / ripple.decay) * exp(-radius / 600)
+            let phase = 2 * Float.pi * behind / ripple.wavelength
+            total += delta / radius * (ripple.amplitude * leading * envelope * sin(phase))
+        }
+        return total
+    }
+
+    /// Squeezes the window along `axis` (0: horizontal, 1: vertical) and lets it bounce back like jelly. The impulses add
+    /// up to zero, so the window is not carried away.
+    public func squeeze(axis: Int, amount: Float) {
+        restPull = true
+        for i in positions.indices {
+            let row = Float(axis == 0 ? i % Self.gridWidth : i / Self.gridWidth)
+            let factor = (row - Float(Self.gridWidth - 1) / 2) / (Float(Self.gridWidth - 1) / 2)
+            velocities[i][axis] -= factor * amount * size[axis]
+        }
+    }
+
+    /// Shakes the window sideways: neighbouring rows are thrown in opposite directions.
+    public func shear(amount: Float) {
+        restPull = true
+        for i in positions.indices {
+            let row = i / Self.gridWidth
+            velocities[i].x += (row.isMultiple(of: 2) ? 1 : -1) * amount * size.x
+        }
+    }
+
+    /// Keeps every node pulled to its rest position (for effects that start from a rest shape, with nothing pinned).
+    public func pullToRest() {
+        restPull = true
     }
 
     /// Maximize effect: corners pinned and an inward kick on their neighbours.
@@ -279,25 +314,28 @@ public final class KinetiqModel: WindowDeformer {
     }
 
     /// Unmaximize effect: center pinned and an inward kick on its neighbours.
-    public func unmaximize() {
+    public func unmaximize(intensity: Float = KinetiqModel.intensity) {
         let center = nearestObject(origin + size / 2)
         anchor = nil
         immobile[center] = true
         friction = min(friction * 2, 10)
         for spring in springs where spring.a == center || spring.b == center {
-            kick(spring.a == center ? spring.b : spring.a, spring.offset)
+            kick(spring.a == center ? spring.b : spring.a, spring.offset, intensity)
         }
         _ = singleStep()
     }
 
-    private func kick(_ index: Int, _ offset: SIMD2<Float>) {
-        velocities[index] -= offset * Self.intensity
+    private func kick(_ index: Int, _ offset: SIMD2<Float>, _ intensity: Float = KinetiqModel.intensity) {
+        velocities[index] -= offset * intensity
     }
 
     // MARK: - Simulation
 
     public func step(_ dt: Float) {
-        if isRippling { rippleTime += min(max(dt, 0), 1.0 / 15.0) }
+        if isRippling {
+            let step = min(max(dt, 0), 1.0 / 15.0)
+            for index in ripples.indices { ripples[index].time += step }
+        }
         if isGliding { advanceGlide(min(max(dt, 0), 1.0 / 15.0)) }
         accumulator += min(max(dt, 0), 1.0 / 15.0) * stepsPerSecond
         guard accumulator >= 1 else { return }
@@ -334,13 +372,15 @@ public final class KinetiqModel: WindowDeformer {
     /// left and vanish abruptly. We keep going until every node is within half a point of rest.
     public var isSettled: Bool {
         guard !isGrabbed, !isGliding, !isRippling, !movement else { return false }
+        // A node thrown by an impulse is still moving even while no force acts on it yet.
+        guard velocities.allSatisfy({ simd_length($0) < 0.05 }) else { return false }
         return positions.indices.allSatisfy { simd_length(positions[$0] - restPosition($0)) < 0.5 }
     }
 
     public func snapToRest() {
         isGliding = false
         restPull = false
-        rippleTime = .infinity
+        ripples.removeAll()
         for i in positions.indices {
             positions[i] = restPosition(i)
             velocities[i] = .zero

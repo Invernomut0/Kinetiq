@@ -17,6 +17,7 @@ struct Uniforms {
     float2 uvScale;
     float2 uvOffset;
     float shadow;
+    float alpha;
 };
 
 struct VOut {
@@ -42,7 +43,7 @@ fragment float4 windowFragment(VOut in [[stage_in]],
     constexpr sampler s(filter::linear, address::clamp_to_edge);
     float4 color = texture.sample(s, in.uv * u.uvScale + u.uvOffset);
     bool inShadow = any(in.uv < 0.0) || any(in.uv > 1.0);
-    return inShadow ? color * u.shadow : color;
+    return inShadow ? color * u.shadow * u.alpha : color * u.alpha;
 }
 """
 
@@ -52,6 +53,7 @@ private struct Uniforms {
     var uvScale: SIMD2<Float>
     var uvOffset: SIMD2<Float>
     var shadow: Float
+    var alpha: Float
 }
 
 /// Draws the window capture, native shadow included, onto the deformed mesh: the shadow sits on an outer
@@ -62,6 +64,8 @@ final class MeshRenderer: OverlayContent {
     /// 0 while the real window (with its own shadow) is still underneath, so the two don't add up;
     /// in between while handing over to or from it.
     var shadowOpacity: Float = 1
+    /// Opacity of everything drawn (window and shadow), for effects that fade the window out.
+    var alpha: Float = 1
     /// Perspective lean `(pitch, yaw)` in radians around the window's center; zero draws the window flat.
     var tilt = SIMD2<Float>.zero
     private(set) var hasScene = false
@@ -194,7 +198,8 @@ final class MeshRenderer: OverlayContent {
                 size: SIMD2(Float(screenRect.width), Float(screenRect.height)),
                 uvScale: uvScale,
                 uvOffset: uvOffset,
-                shadow: shadowOpacity)
+                shadow: shadowOpacity,
+                alpha: alpha)
             encoder.setRenderPipelineState(windowPipeline)
             encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)

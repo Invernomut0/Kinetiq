@@ -4,7 +4,9 @@
 
 import AppKit
 @preconcurrency import ApplicationServices
+import KinetiqCore
 import QuartzCore
+import os
 
 /// Plays an effect when a window is minimized with its yellow button.
 ///
@@ -21,6 +23,7 @@ final class MinimizeEffectTrigger {
         let down: CGEvent
         let capture: Task<CapturedFrame?, Never>
         let shield: Task<ScreenShield?, Never>
+        let icon: Task<CGRect?, Never>
         let startedAt: CFTimeInterval
     }
 
@@ -35,16 +38,17 @@ final class MinimizeEffectTrigger {
 
     private let settings: Settings
     private let capture: WindowCapture
-    private let player: CloseEffectPlayer
+    private let morph: MorphPlayer
     private let isBusy: () -> Bool
+    private static let log = Logger(subsystem: "io.github.invernomut0.Kinetiq", category: "minimize")
     private let replay: (CGEvent, CGEvent) -> Void
     private var pending: Pending?
 
-    init(settings: Settings, capture: WindowCapture, player: CloseEffectPlayer, isBusy: @escaping () -> Bool,
+    init(settings: Settings, capture: WindowCapture, morph: MorphPlayer, isBusy: @escaping () -> Bool,
          replay: @escaping (CGEvent, CGEvent) -> Void) {
         self.settings = settings
         self.capture = capture
-        self.player = player
+        self.morph = morph
         self.isBusy = isBusy
         self.replay = replay
     }
@@ -54,6 +58,7 @@ final class MinimizeEffectTrigger {
 
     func cancel() {
         pending = nil
+        morph.cancel()
     }
 
     /// Returns true if the click is held back.
@@ -67,7 +72,13 @@ final class MinimizeEffectTrigger {
         // The capture starts with the click: it is what takes longest.
         let task = Task { try? await capture.capture(info) }
         let shield = Task { await ScreenShield.capture(hiding: [info.id]) }
-        pending = Pending(info: info, buttonFrame: button, down: down, capture: task, shield: shield,
+        let pid = info.pid
+        let icon = Task<CGRect?, Never> {
+            await withCheckedContinuation { continuation in
+                AXBridge.urgentQueue.async { continuation.resume(returning: DockIcon.frame(forApp: pid)) }
+            }
+        }
+        pending = Pending(info: info, buttonFrame: button, down: down, capture: task, shield: shield, icon: icon,
                           startedAt: CACurrentMediaTime())
         return true
     }
@@ -88,9 +99,10 @@ final class MinimizeEffectTrigger {
         let info = click.info
         let frame = await click.capture.value
         let shield = await click.shield.value
+        let icon = await click.icon.value
         guard let frame, frame.isPainted, frame.pointSize == info.frame.size,
-              CACurrentMediaTime() - click.startedAt < Self.captureTimeout, !isBusy(),
-              let effect = player.effect(for: settings.minimizeEffect) else {
+              CACurrentMediaTime() - click.startedAt < Self.captureTimeout, !isBusy(), !morph.isPlaying,
+              let style = resolvedStyle() else {
             shield?.hide()
             replay(click.down, up)
             return
@@ -106,11 +118,12 @@ final class MinimizeEffectTrigger {
             return
         }
 
-        // The shield goes up first, and the effect over it: the real window can then shrink towards the Dock unseen.
+        // The shield goes up first, and the morph over it: the real window can then shrink towards the Dock unseen.
         shield?.show()
-        let started = player.play(
-            frame, windowFrame: info.frame, effect: effect, pointer: CGPoint(x: click.buttonFrame.midX, y: click.buttonFrame.midY),
-            durationScale: settings.closeDuration, nativeFade: shield == nil)
+        let target = icon ?? fallbackIcon(near: info.frame)
+        Self.log.notice("\(style.title, privacy: .public) into \(target.minX), \(target.minY) \(target.width)x\(target.height) (dock icon found: \(icon != nil))")
+        let started = morph.play(frame, windowFrame: info.frame, icon: target, style: style,
+                                 durationScale: settings.closeDuration) {}
         guard started else {
             shield?.hide()
             replay(click.down, up)
@@ -126,6 +139,21 @@ final class MinimizeEffectTrigger {
             }
             self?.finishWhenGone(info.id, element: element, origin: info.frame.origin, shield: shield)
         }
+    }
+
+    private func resolvedStyle() -> DockMorphStyle? {
+        switch settings.minimizeEffect {
+        case .off: return nil
+        case .morph(let style): return style
+        case .random: return DockMorphStyle.allCases.randomElement()
+        }
+    }
+
+    /// Without a Dock icon to aim at, the window goes to the bottom middle of its screen.
+    private func fallbackIcon(near frame: CGRect) -> CGRect {
+        let screen = NSScreen.containing(cgPoint: CGPoint(x: frame.midX, y: frame.midY)) ?? NSScreen.screens.first
+        let bounds = screen?.cgFrame ?? frame
+        return CGRect(x: bounds.midX - 28, y: bounds.maxY - 70, width: 56, height: 56)
     }
 
     /// Once the system animation has taken the window off screen, puts it back at its position (it stays minimized,

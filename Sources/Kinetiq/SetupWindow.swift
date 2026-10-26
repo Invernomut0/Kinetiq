@@ -46,13 +46,13 @@ final class SetupModel: ObservableObject {
     }
 
     func selectOpenEffect(_ raw: String) {
-        settings.openEffect = CloseEffectChoice(rawValue: raw)
+        settings.openEffect = OpenEffectChoice(rawValue: raw)
         closeEffectChanged()
         refresh()
     }
 
     func selectMinimizeEffect(_ raw: String) {
-        settings.minimizeEffect = CloseEffectChoice(rawValue: raw)
+        settings.minimizeEffect = MinimizeEffectChoice(rawValue: raw)
         DockGenie.sync(enabled: settings.minimizeEffect != .off)
         closeEffectChanged()
         refresh()
@@ -173,21 +173,24 @@ struct SetupView: View {
                     ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 }
                 Picker("Open", selection: model.binding({ settings.openEffect.rawValue }, { model.selectOpenEffect($0) })) {
-                    Text("Off").tag(CloseEffectChoice.off.rawValue)
-                    Text("Random").tag(CloseEffectChoice.random.rawValue)
+                    Text("Off").tag(OpenEffectChoice.off.rawValue)
+                    Text("Random").tag(OpenEffectChoice.random.rawValue)
+                    Divider()
+                    ForEach(WobbleEntrance.allCases, id: \.rawValue) {
+                        Text($0.title).tag(OpenEffectChoice.wobble($0).rawValue)
+                    }
                     Divider()
                     ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 }
                 Picker("Minimize", selection: model.binding({ settings.minimizeEffect.rawValue }, { model.selectMinimizeEffect($0) })) {
-                    Text("Off").tag(CloseEffectChoice.off.rawValue)
-                    Text("Random").tag(CloseEffectChoice.random.rawValue)
+                    Text("Off").tag(MinimizeEffectChoice.off.rawValue)
+                    Text("Random").tag(MinimizeEffectChoice.random.rawValue)
                     Divider()
-                    ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+                    ForEach(DockMorphStyle.allCases, id: \.rawValue) {
+                        Text($0.title).tag(MinimizeEffectChoice.morph($0).rawValue)
+                    }
                 }
-                Picker("Open Trick", selection: model.binding({ settings.openTrick }, { settings.openTrick = $0 })) {
-                    ForEach(OpenTrick.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                Text("Apps show a new window before Kinetiq can hide it. \"Skip the start\" shortens the empty moment before the effect; \"Keep visible\" never hides the window and gives it a jelly pop instead of the Open effect.")
+                Text("Jelly entrances keep the window visible while it arrives, so there is no flash; shader effects hide it for a moment first. Minimize morphs the window into its Dock icon.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 SliderRow(title: "Duration",
