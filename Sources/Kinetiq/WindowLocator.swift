@@ -32,15 +32,17 @@ enum WindowLocator {
     /// where macOS lets you grab the edges to resize.
     static func window(near point: CGPoint, margin: CGFloat, in list: WindowList = WindowList()) -> WindowInfo? {
         for entry in list.entries {
-            guard let info = parse(entry), info.pid != ownPID, info.frame.insetBy(dx: -margin, dy: -margin).contains(point) else { continue }
-            if let alpha = entry[kCGWindowAlpha as String] as? Double, alpha < 0.01 { continue }
+            guard let info = parse(entry), info.frame.insetBy(dx: -margin, dy: -margin).contains(point) else { continue }
             let layer = entry[kCGWindowLayer as String] as? Int ?? 0
+            // Our own overlays are never a target; our normal windows are (unless excluded).
+            if info.pid == ownPID, layer != 0 { continue }
+            if let alpha = entry[kCGWindowAlpha as String] as? Double, alpha < 0.01 { continue }
             if layer != 0 {
                 if isPassThroughOverlay(entry, frame: info.frame, layer: layer, point: point) { continue }
                 logBlocker(entry, frame: info.frame, layer: layer)
                 return nil
             }
-            guard info.frame.width >= 80, info.frame.height >= 40 else { return nil }
+            guard info.frame.width >= 80, info.frame.height >= 40, !AppExclusions.contains(pid: info.pid) else { return nil }
             return info
         }
         return nil
@@ -100,6 +102,7 @@ enum WindowLocator {
 
     /// Normal window of `pid` whose frame matches `frame` (to map an AX element to its CGWindowID).
     static func window(pid: pid_t, frame: CGRect) -> WindowInfo? {
+        guard !AppExclusions.contains(pid: pid) else { return nil }
         for entry in onScreenWindows() {
             guard let info = parse(entry), info.pid == pid,
                   (entry[kCGWindowLayer as String] as? Int ?? 0) == 0,

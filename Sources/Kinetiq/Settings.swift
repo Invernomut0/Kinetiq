@@ -2,6 +2,7 @@
 // Copyright (C) 2026 José Gurruchaga
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import AppKit
 import CoreGraphics
 import Foundation
 import KinetiqCore
@@ -72,6 +73,8 @@ final class Settings {
     /// Multiplies the default animation time of the close effects.
     static let closeSpeedRange: ClosedRange<Double> = 0.25...3
     static let defaultCloseEffect = CloseEffectChoice.effect(.fire)
+    /// Kinetiq's own windows (the Setup window) start excluded, like before exclusions were configurable.
+    static let defaultExcludedApps = ["io.github.invernomut0.Kinetiq"]
 
     private static let defaultTilesX = 16
     private static let defaultTilesY = 14
@@ -156,8 +159,15 @@ final class Settings {
         set { defaults.set(newValue, forKey: "closeDuration") }
     }
 
+    /// Bundle identifiers of the apps whose windows get no effect at all.
+    var excludedApps: [String] {
+        get { defaults.stringArray(forKey: "excludedApps") ?? Self.defaultExcludedApps }
+        set { defaults.set(newValue, forKey: "excludedApps") }
+    }
+
     func resetToDefaults() {
         preset = .realistic
+        excludedApps = Self.defaultExcludedApps
         tilesX = Self.defaultTilesX
         tilesY = Self.defaultTilesY
         maximizeEffect = true
@@ -168,5 +178,13 @@ final class Settings {
 
     private func float(_ key: String) -> Float? {
         (defaults.object(forKey: key) as? Double).map(Float.init)
+    }
+}
+
+/// Whether the app owning a window is on the exclusion list; read straight from the defaults so it is cheap in the event tap.
+enum AppExclusions {
+    static func contains(pid: pid_t) -> Bool {
+        guard let id = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return false }
+        return (UserDefaults.standard.stringArray(forKey: "excludedApps") ?? Settings.defaultExcludedApps).contains(id)
     }
 }

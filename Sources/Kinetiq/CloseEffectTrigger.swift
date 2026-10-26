@@ -117,7 +117,8 @@ final class CloseEffectTrigger {
 
     private func captureFocusedWindow() {
         guard enabled, !isBusy(), let app = NSWorkspace.shared.frontmostApplication,
-              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              !AppExclusions.contains(pid: app.processIdentifier) else { return }
         let pid = app.processIdentifier
         // Accessibility calls go through the app's own queue: a slow app must not freeze the event tap.
         AXBridge.queue(for: pid).async { [weak self] in

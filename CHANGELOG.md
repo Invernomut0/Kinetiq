@@ -5,6 +5,14 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8]
+
+### Added
+
+- **Exclusions in Setup.** A list of apps (by bundle identifier) whose windows get no wobble, resize, maximize or close
+  effect. Add a running app or choose one from disk, remove with the minus button. Kinetiq's own windows are in the
+  list by default, which was previously hard-coded; removing it lets the Setup window wobble too.
+
 ## [0.1.7]
 
 ### Fixed

@@ -17,7 +17,7 @@ Download the DMG from Releases and drag Kinetiq to `/Applications`. The app is n
 - **Drag from the title bar** as usual, or
 - **Hold the shortcut** (⌃⌘ by default) and drag a window from anywhere.
 
-The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from Title Bar** and the **Shortcut** modifier. Everything else lives in a separate **Setup** window (menu item **Setup…**, ⌘,): pick a preset (Subtle, Realistic, Exaggerated, Extreme), fine-tune friction, spring, speedup, mass and mesh density, toggle the shadow and the maximize and resize effects, choose the close effect and its duration, check the permissions and reset to defaults. Changes apply immediately and the window can stay open next to your work.
+The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from Title Bar** and the **Shortcut** modifier. Everything else lives in a separate **Setup** window (menu item **Setup…**, ⌘,): pick a preset (Subtle, Realistic, Exaggerated, Extreme), fine-tune friction, spring, speedup, mass and mesh density, toggle the shadow and the maximize and resize effects, choose the close effect and its duration, check the permissions and reset to defaults. The **Exclusions** list there holds the apps whose windows get no effect at all: add a running app or pick one from disk, and remove it with the minus button (Kinetiq's own Setup window is excluded by default; remove it to make it wobble). Changes apply immediately and the window can stay open next to your work.
 
 ### Close effects
 

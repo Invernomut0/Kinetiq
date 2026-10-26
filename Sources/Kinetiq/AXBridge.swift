@@ -80,6 +80,10 @@ enum AXBridge {
     /// windows without a close button (games, borderless windows) are skipped.
     /// Called from the event tap, so it uses a short timeout.
     static func titleBarHeight(_ info: WindowInfo, at point: CGPoint) -> CGFloat? {
+        // Asking our own process through Accessibility from the event tap (main thread) would only time out.
+        if info.pid == ProcessInfo.processInfo.processIdentifier {
+            return MainActor.assumeIsolated { ownTitleBarHeight(info, at: point) }
+        }
         enableChromiumAccessibility(pid: info.pid)
         guard let hit = hitTest(info.pid, at: point, timeout: 0.1).map({ limit($0, 0.1) }),
               let hitWindow = draggableWindow(from: hit) else { return nil }
@@ -102,6 +106,14 @@ enum AXBridge {
     }
 
     private static let unknownTitleBarHeight: CGFloat = 28
+
+    @MainActor
+    private static func ownTitleBarHeight(_ info: WindowInfo, at point: CGPoint) -> CGFloat? {
+        guard let window = NSApp.window(withWindowNumber: Int(info.id)) else { return nil }
+        let height = window.frame.height - window.contentLayoutRect.height
+        guard height >= 20, point.y - info.frame.minY <= height else { return nil }
+        return height
+    }
 
     private static var manualAccessibilityPIDs: Set<pid_t> = []
 

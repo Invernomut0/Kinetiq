@@ -6,6 +6,7 @@ import AppKit
 import KinetiqCore
 import KinetiqEffects
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Bridges `Settings` (UserDefaults) to SwiftUI: every binding writes through and refreshes the view.
 @MainActor
@@ -48,6 +49,40 @@ final class SetupModel: ObservableObject {
         settings.resetToDefaults()
         closeEffectChanged()
         refresh()
+    }
+
+    func addExclusion(_ bundleID: String) {
+        guard !settings.excludedApps.contains(bundleID) else { return }
+        settings.excludedApps.append(bundleID)
+        refresh()
+    }
+
+    func removeExclusion(_ bundleID: String) {
+        settings.excludedApps.removeAll { $0 == bundleID }
+        refresh()
+    }
+
+    /// Regular running apps that are not excluded yet, sorted by name.
+    func runningCandidates() -> [(name: String, id: String)] {
+        let excluded = Set(settings.excludedApps)
+        var seen = Set<String>()
+        return NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .compactMap { app -> (name: String, id: String)? in
+                guard let id = app.bundleIdentifier, !excluded.contains(id), seen.insert(id).inserted else { return nil }
+                return (app.localizedName ?? id, id)
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func chooseApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose an app to exclude"
+        guard panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier else { return }
+        addExclusion(id)
     }
 }
 
@@ -94,6 +129,27 @@ struct SetupView: View {
                           range: Settings.closeSpeedRange, decimals: 2)
             }
 
+            Section {
+                if settings.excludedApps.isEmpty {
+                    Text("No excluded apps").foregroundStyle(.secondary)
+                }
+                ForEach(settings.excludedApps, id: \.self) { id in
+                    ExclusionRow(bundleID: id) { model.removeExclusion(id) }
+                }
+                HStack {
+                    Menu("Add Running App") {
+                        ForEach(model.runningCandidates(), id: \.id) { candidate in
+                            Button(candidate.name) { model.addExclusion(candidate.id) }
+                        }
+                    }
+                    Button("Choose App…") { model.chooseApp() }
+                }
+            } header: {
+                Text("Exclusions")
+            } footer: {
+                Text("Windows of these apps get no wobble, resize, maximize or close effect. Kinetiq's own windows (this one) are excluded by default.")
+            }
+
             Section("Permissions") {
                 PermissionRow(title: "Accessibility", granted: Permissions.accessibilityGranted(prompt: false)) {
                     Permissions.openPrivacySettings("Privacy_Accessibility")
@@ -109,7 +165,7 @@ struct SetupView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 440, idealWidth: 440, minHeight: 480, idealHeight: 680)
+        .frame(minWidth: 440, idealWidth: 440, minHeight: 480, idealHeight: 760)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refresh()
         }
@@ -132,6 +188,29 @@ private struct SliderRow: View {
                     .frame(width: 44, alignment: .trailing)
             }
             .frame(width: 240)
+        }
+    }
+}
+
+private struct ExclusionRow: View {
+    let bundleID: String
+    let remove: () -> Void
+
+    private var url: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) }
+
+    var body: some View {
+        HStack {
+            if let url {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 20, height: 20)
+            }
+            VStack(alignment: .leading) {
+                Text(url.map { FileManager.default.displayName(atPath: $0.path) } ?? bundleID)
+                Text(bundleID).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(role: .destructive, action: remove) { Image(systemName: "minus.circle") }
+                .buttonStyle(.borderless)
+                .help("Remove from exclusions")
         }
     }
 }
@@ -169,7 +248,7 @@ final class SetupWindowController {
             window.title = "Kinetiq Setup"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 440, height: 680))
+            window.setContentSize(NSSize(width: 440, height: 760))
             window.center()
             self.window = window
         }
