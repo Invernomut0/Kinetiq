@@ -32,7 +32,7 @@ public struct ChaosScene: @unchecked Sendable {
 
 public enum ChaosSceneBuilder {
     /// `windows` are ordered back to front.
-    public static func build(windows: [ChaosWindowInput], maxTiles: Int = 2600) -> ChaosScene {
+    public static func build(windows: [ChaosWindowInput], maxTiles: Int = 1400) -> ChaosScene {
         let area = windows.reduce(CGFloat(0)) { $0 + $1.frame.width * $1.frame.height }
         let tile = ChaosTiling.tileSize(forTotalArea: area, maxTiles: maxTiles)
         var scene = ChaosScene(seeds: [], sprites: [], tiles: [], pictures: [], frames: [])
@@ -45,9 +45,11 @@ public enum ChaosSceneBuilder {
             for t in ChaosTiling.tiles(of: image, size: window.frame.size, tile: tile) {
                 let origin = SIMD2(Float(window.frame.minX), Float(window.frame.minY))
                 let centroid = t.centroid
-                let shape = ChaosShape(a: t.a - centroid, b: t.b - centroid, c: t.c - centroid, ua: t.ua, ub: t.ub, uc: t.uc)
-                let size = shape.boundsMax - shape.boundsMin
-                scene.seeds.append(ChaosSeed(kind: .shard, center: origin + centroid, size: size, group: group, sprite: scene.tiles.count, shape: shape))
+                let local = t.verts.map { $0 - centroid }
+                let uvScale = SIMD2(1 / Float(window.frame.width), 1 / Float(window.frame.height))
+                let polygon = ChaosPolygon(verts: local, uvOffset: centroid * uvScale, uvScale: uvScale)
+                let size = (local.dropFirst().reduce(local[0]) { simd_max($0, $1) }) - (local.dropFirst().reduce(local[0]) { simd_min($0, $1) })
+                scene.seeds.append(ChaosSeed(kind: .shard, center: origin + centroid, size: size, group: group, sprite: scene.tiles.count, polygon: polygon))
                 scene.tiles.append(t)
             }
             for object in window.extraction.objects {

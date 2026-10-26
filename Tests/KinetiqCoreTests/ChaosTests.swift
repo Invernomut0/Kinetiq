@@ -43,45 +43,62 @@ final class ChaosTests: XCTestCase {
         let tiles = ChaosTiling.tiles(of: window.image, size: window.size, tile: 48)
         let windowArea = Float(window.size.width * window.size.height)
         XCTAssertEqual(tiles.reduce(0) { $0 + $1.area }, windowArea, accuracy: windowArea * 0.01)
-        let toPoints = SIMD2(Float(window.size.width), Float(window.size.height))
         for t in tiles {
-            for (p, u) in [(t.a, t.ua), (t.b, t.ub), (t.c, t.uc)] {
-                XCTAssertTrue(u.x >= 0 && u.x <= 1 && u.y >= 0 && u.y <= 1)
-                XCTAssertEqual(p.x, u.x * toPoints.x, accuracy: 0.01)
-                XCTAssertEqual(p.y, u.y * toPoints.y, accuracy: 0.01)
+            XCTAssertGreaterThanOrEqual(t.verts.count, 3)
+            XCTAssertGreaterThan(t.area, 4, "no degenerate pieces")
+            for p in t.verts {
+                XCTAssertTrue(p.x >= -0.01 && p.y >= -0.01 && p.x <= Float(window.size.width) + 0.01 && p.y <= Float(window.size.height) + 0.01)
             }
-            XCTAssertGreaterThan(t.area, 1, "no degenerate triangles")
         }
     }
 
-    func testTheTilesAreIrregularTriangles() throws {
+    func testTheTilesAreIrregularConvexPolygons() throws {
         let window = try XCTUnwrap(ChaosFixture.window())
         let tiles = ChaosTiling.tiles(of: window.image, size: window.size, tile: 48)
-        func axisAligned(_ t: ChaosTile) -> Bool {
-            [(t.a, t.b), (t.b, t.c), (t.c, t.a)].contains { abs($0.0.x - $0.1.x) < 0.01 || abs($0.0.y - $0.1.y) < 0.01 }
+        for t in tiles {
+            var signs = Set<Bool>()
+            for i in t.verts.indices {
+                let a = t.verts[i], b = t.verts[(i + 1) % t.verts.count], c = t.verts[(i + 2) % t.verts.count]
+                let cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
+                if abs(cross) > 1e-3 { signs.insert(cross > 0) }
+            }
+            XCTAssertLessThanOrEqual(signs.count, 1, "convex")
         }
-        let inner = tiles.filter { t in [t.a, t.b, t.c].allSatisfy { $0.x > 1 && $0.y > 1 && $0.x < Float(window.size.width) - 1 && $0.y < Float(window.size.height) - 1 } }
-        XCTAssertGreaterThan(inner.count, 20)
-        XCTAssertLessThan(inner.filter(axisAligned).count, inner.count / 10, "no rectangles: the corners are moved at random")
+        let inner = tiles.filter { t in t.verts.allSatisfy { $0.x > 1 && $0.y > 1 && $0.x < Float(window.size.width) - 1 && $0.y < Float(window.size.height) - 1 } }
+        XCTAssertGreaterThan(inner.count, 10)
+        XCTAssertGreaterThan(Set(inner.map(\.verts.count)).count, 1, "pieces with different numbers of sides")
+        XCTAssertGreaterThanOrEqual(inner.filter { $0.verts.count >= 5 }.count, inner.count / 3, "mostly more than four sides")
         let areas = tiles.map(\.area)
-        XCTAssertGreaterThan(areas.max()! / areas.min()!, 1.5, "triangles of different sizes")
-        XCTAssertEqual(ChaosTiling.tiles(of: window.image, size: window.size, tile: 48).map(\.a), tiles.map(\.a), "the same window breaks the same way")
+        XCTAssertGreaterThan(areas.max()! / areas.min()!, 1.8, "pieces of different sizes")
+        XCTAssertEqual(ChaosTiling.tiles(of: window.image, size: window.size, tile: 48).map(\.verts), tiles.map(\.verts), "the same window breaks the same way")
     }
 
-    func testAShapeKnowsWhichPointsAreInside() {
-        let shape = ChaosShape(a: SIMD2(-10, -10), b: SIMD2(20, -10), c: SIMD2(-10, 20), ua: .zero, ub: .zero, uc: .zero)
-        XCTAssertTrue(shape.contains(SIMD2(0, 0)))
-        XCTAssertTrue(shape.contains(SIMD2(-9, -9)))
-        XCTAssertFalse(shape.contains(SIMD2(15, 15)))
-        XCTAssertFalse(shape.contains(SIMD2(-12, 0)))
-        XCTAssertEqual(shape.area, 450, accuracy: 0.01)
+    func testAPolygonKnowsWhichPointsAreInside() {
+        let polygon = ChaosPolygon(verts: [SIMD2(-10, -10), SIMD2(20, -10), SIMD2(-10, 20)], uvOffset: .zero, uvScale: SIMD2(1, 1))
+        XCTAssertTrue(polygon.contains(SIMD2(0, 0)))
+        XCTAssertTrue(polygon.contains(SIMD2(-9, -9)))
+        XCTAssertFalse(polygon.contains(SIMD2(15, 15)))
+        XCTAssertFalse(polygon.contains(SIMD2(-12, 0)))
+        XCTAssertEqual(polygon.area, 450, accuracy: 0.01)
     }
 
-    func testTransparentTrianglesAreLeftOut() throws {
+    func testVoronoiCellsShareTheSquareBetweenThem() {
+        let square: [SIMD2<Float>] = [SIMD2(0, 0), SIMD2(100, 0), SIMD2(100, 100), SIMD2(0, 100)]
+        let sites: [SIMD2<Float>] = [SIMD2(20, 30), SIMD2(70, 20), SIMD2(50, 80), SIMD2(90, 70)]
+        var total: Float = 0
+        for i in sites.indices {
+            let cell = ChaosGeometry.cell(of: i, in: sites, bounds: square)
+            XCTAssertTrue(ChaosGeometry.contains(cell, sites[i]), "each cell holds its own site")
+            total += ChaosGeometry.area(cell)
+        }
+        XCTAssertEqual(total, 10_000, accuracy: 0.5)
+    }
+
+    func testTransparentChunksAreLeftOut() throws {
         let dock = try XCTUnwrap(ChaosFixture.dock())
         let tiles = ChaosTiling.tiles(of: dock.image, size: dock.size, tile: 20)
         let cells = Int((dock.size.width / 20).rounded()) * Int((dock.size.height / 20).rounded())
-        XCTAssertEqual(tiles.count, cells * 2, "the dock bar is painted everywhere")
+        XCTAssertEqual(tiles.count, cells, "the dock bar is painted everywhere")
 
         let w = 200, h = 200
         let context = try XCTUnwrap(CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
@@ -91,8 +108,8 @@ final class ChaosTests: XCTestCase {
         let half = try XCTUnwrap(context.makeImage())
         let kept = ChaosTiling.tiles(of: half, size: CGSize(width: 200, height: 200), tile: 50)
         XCTAssertGreaterThan(kept.count, 0)
-        XCTAssertLessThan(kept.count, 24, "the unpainted area is mostly left out (of 32 triangles)")
-        for t in kept { XCTAssertTrue(min(t.a.x, t.b.x, t.c.x) < 110 && max(t.a.y, t.b.y, t.c.y) > 90) }
+        XCTAssertLessThan(kept.count, 12, "the unpainted area is mostly left out (of 16 chunks)")
+        for t in kept { XCTAssertTrue(t.verts.map(\.x).min()! < 110 && t.verts.map(\.y).max()! > 90) }
     }
 
     func testTheSceneHasShardsAndObjects() {
@@ -124,20 +141,30 @@ final class ChaosTests: XCTestCase {
         XCTAssertFalse(world.puffs.isEmpty, "flames, sparks and smoke")
     }
 
-    func testFragmentsAreTrianglesOfTheirParent() {
+    func testFragmentsAreCracksOfTheirParentPieces() {
         let world = world(intensity: 2, automatic: false)
+        let source = Self.fixture.scene
         world.run(.bomb)
-        run(world, seconds: 0.2)
         let fragments = world.bodies.filter { $0.isChild }
-        XCTAssertFalse(fragments.isEmpty)
-        XCTAssertEqual(fragments.count % 3, 0, "a shard breaks into three")
+        XCTAssertGreaterThanOrEqual(fragments.count, 3)
         for b in fragments {
-            XCTAssertGreaterThan(b.shape.area, 1)
-            for u in [b.shape.ua, b.shape.ub, b.shape.uc] { XCTAssertTrue(u.x >= 0 && u.x <= 1 && u.y >= 0 && u.y <= 1) }
+            let poly = world.polygons[Int(b.polygon)]
+            XCTAssertGreaterThanOrEqual(poly.verts.count, 3)
+            XCTAssertGreaterThan(poly.area, 6)
+            // The picture on a fragment is the same picture that was on the parent at that place.
+            let frame = source.frames[b.group]
+            for v in poly.verts {
+                let uv = poly.uv(v)
+                XCTAssertEqual(uv.x * Float(frame.width) + Float(frame.minX), b.home.x + v.x, accuracy: 0.05)
+                XCTAssertEqual(uv.y * Float(frame.height) + Float(frame.minY), b.home.y + v.y, accuracy: 0.05)
+            }
         }
-        let intact = world.bodies.prefix(world.originalCount).filter { $0.kind == .shard && $0.state == .gone }
-        let parentArea = intact.reduce(Float(0)) { $0 + $1.shape.area }
-        XCTAssertEqual(fragments.reduce(Float(0)) { $0 + $1.shape.area }, parentArea, accuracy: parentArea * 0.02, "the fragments add up to the broken shards")
+        let parents = world.bodies.prefix(world.originalCount).filter { $0.kind == .shard && $0.state == .gone }
+        let parentArea = parents.reduce(Float(0)) { $0 + world.polygons[Int($1.polygon)].area }
+        let fragmentArea = fragments.reduce(Float(0)) { $0 + world.polygons[Int($1.polygon)].area }
+        XCTAssertEqual(fragmentArea, parentArea, accuracy: parentArea * 0.05, "the fragments add up to the broken pieces")
+        XCTAssertLessThan(fragmentArea / Float(fragments.count), parentArea / Float(parents.count) / 2, "the fragments are much smaller than the pieces")
+        XCTAssertGreaterThan(Set(fragments.map { world.polygons[Int($0.polygon)].verts.count }).count, 1, "fragments with different numbers of sides")
     }
 
     func testAButtonBlinksThenExplodesAndHurtsItsNeighbours() {

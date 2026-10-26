@@ -5,6 +5,15 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.24]
+
+### Changed
+
+- **Screen saver: windows break like glass.** The pieces are no longer rectangles or triangles: a window is divided into
+  irregular convex Voronoi chunks, and a chunk hit by a blast cracks again along rings of seeds around the impact
+  (small radial fragments near the hit, bigger ones away from it). Fallen pieces have anti-aliased edges and a faint
+  pale rim. `ChaosPolygon` and `ChaosGeometry` in `KinetiqCore`.
+
 ## [0.1.23]
 
 ### Added

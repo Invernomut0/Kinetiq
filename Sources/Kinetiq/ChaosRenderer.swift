@@ -109,8 +109,12 @@ private enum ChaosShaders {
         float4 t = tex.sample(smp, in.uv);
         float3 rgb = mix(t.rgb, in.tint.rgb * t.a, in.tint.a);
         rgb += in.flash * t.a * float3(1., .9, .7);
-        float m = min(min(in.bary.x, in.bary.y), in.bary.z);
-        float edge = in.feather > .5 ? clamp(m / max(fwidth(m), 1e-5), 0., 1.) : 1.;
+        float m = in.bary.x;   // 1 at the centre of the piece, 0 along its outer edge
+        float d = m / max(fwidth(m), 1e-5);   // distance to the edge in pixels
+        float soft = in.feather > .5;
+        float edge = soft > .5 ? clamp(d, 0., 1.) : 1.;
+        // A thin pale rim, like the edge of broken glass.
+        rgb += (soft > .5 ? (1. - clamp(d / 3., 0., 1.)) * .22 : 0.) * t.a * float3(.8, .9, 1.);
         return float4(rgb, t.a) * (in.alpha * edge);
     }
 
@@ -290,6 +294,7 @@ final class ChaosRenderer {
     private let atlas: ChaosAtlas?
 
     private let spriteCapacity: Int
+    private let triCapacity: Int
     private let puffCapacity = ChaosWorld.maxPuffs
     private static let slots = 3
     private let spriteBuffers: [MTLBuffer]
@@ -353,10 +358,11 @@ final class ChaosRenderer {
         fadePipeline = try pipeline("chaos_fade_vertex", "chaos_fade_fragment")
 
         spriteCapacity = world.maxBodies + 8
+        triCapacity = world.maxBodies * 5
         var sprites: [MTLBuffer] = [], tris: [MTLBuffer] = [], puffs: [MTLBuffer] = []
         for _ in 0..<Self.slots {
             guard let s = device.makeBuffer(length: spriteCapacity * MemoryLayout<SpriteInstance>.stride, options: .storageModeShared),
-                  let t = device.makeBuffer(length: spriteCapacity * MemoryLayout<TriInstance>.stride, options: .storageModeShared),
+                  let t = device.makeBuffer(length: triCapacity * MemoryLayout<TriInstance>.stride, options: .storageModeShared),
                   let p = device.makeBuffer(length: puffCapacity * MemoryLayout<PuffInstance>.stride, options: .storageModeShared)
             else { throw ChaosRendererError.noDevice }
             sprites.append(s)
@@ -399,7 +405,7 @@ final class ChaosRenderer {
         buildInstances()
         var spriteOffset = 0, triOffset = 0
         let spritePointer = spriteBuffers[s].contents().bindMemory(to: SpriteInstance.self, capacity: spriteCapacity)
-        let triPointer = triBuffers[s].contents().bindMemory(to: TriInstance.self, capacity: spriteCapacity)
+        let triPointer = triBuffers[s].contents().bindMemory(to: TriInstance.self, capacity: triCapacity)
         struct Segment { var start: Int; var count: Int; var texture: MTLTexture; var triangles: Bool }
         var segments: [Segment] = []
         func add(_ instances: [SpriteInstance], _ texture: MTLTexture?) {
@@ -409,7 +415,7 @@ final class ChaosRenderer {
             spriteOffset += instances.count
         }
         func add(_ instances: [TriInstance], _ texture: MTLTexture?) {
-            guard !instances.isEmpty, let texture, triOffset + instances.count <= spriteCapacity else { return }
+            guard !instances.isEmpty, let texture, triOffset + instances.count <= triCapacity else { return }
             instances.withUnsafeBufferPointer { (triPointer + triOffset).update(from: $0.baseAddress!, count: instances.count) }
             segments.append(Segment(start: triOffset, count: instances.count, texture: texture, triangles: true))
             triOffset += instances.count
@@ -506,19 +512,16 @@ final class ChaosRenderer {
         for b in world.bodies where b.state != .gone {
             let inPlace = b.state != .loose
             if b.kind == .shard {
-                var s = b.shape
-                if b.state == .attached {
-                    // Grow the triangle about its centre so neighbours overlap a little and no seam shows.
-                    let k = 1 + 2 * pad / max(s.meanRadius, 1)
-                    let uvCenter = (s.ua + s.ub + s.uc) / 3
-                    s.a *= k; s.b *= k; s.c *= k
-                    s.ua = uvCenter + (s.ua - uvCenter) * k
-                    s.ub = uvCenter + (s.ub - uvCenter) * k
-                    s.uc = uvCenter + (s.uc - uvCenter) * k
+                let poly = world.polygons[Int(b.polygon)]
+                // In place, the piece grows a little about its centre so neighbours overlap and no seam shows.
+                let k: Float = b.state == .attached ? 1 + 2 * pad / max(poly.meanRadius, 1) : 1
+                let n = poly.verts.count
+                for v in 0..<n {
+                    let p1 = poly.verts[v] * k, p2 = poly.verts[(v + 1) % n] * k
+                    let instance = TriInstance(pos: b.pos, a: .zero, b: p1, c: p2, ua: poly.uv(.zero), ub: poly.uv(p1), uc: poly.uv(p2),
+                                               angle: b.angle, alpha: b.alpha, flash: b.flash, feather: inPlace ? 0 : 1, tint: b.tint)
+                    if inPlace { attachedShards[b.group].append(instance) } else { looseShards[b.group].append(instance) }
                 }
-                let instance = TriInstance(pos: b.pos, a: s.a, b: s.b, c: s.c, ua: s.ua, ub: s.ub, uc: s.uc, angle: b.angle, alpha: b.alpha,
-                                           flash: b.flash, feather: inPlace ? 0 : 1, tint: b.tint)
-                if inPlace { attachedShards[b.group].append(instance) } else { looseShards[b.group].append(instance) }
             } else if let atlas, let uv = atlas.rects[b.sprite] {
                 let instance = SpriteInstance(pos: b.pos, size: b.size * b.scale, uv: uv, angle: b.angle, alpha: b.alpha, flash: b.flash, tint: b.tint)
                 if inPlace { attachedSprites[b.group].append(instance) } else { looseSprites.append(instance) }

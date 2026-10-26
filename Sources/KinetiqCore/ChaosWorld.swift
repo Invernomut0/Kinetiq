@@ -113,8 +113,8 @@ public struct ChaosBody: Sendable {
     public var pos: SIMD2<Float>
     /// Drawn size in points (the bounding box for a shard).
     public var size: SIMD2<Float>
-    /// Outline and picture coordinates of a shard.
-    public var shape = ChaosShape.zero
+    /// Index into `ChaosWorld.polygons` for a shard, -1 otherwise.
+    public var polygon: Int32 = -1
     public var vel = SIMD2<Float>(0, 0)
     public var angle: Float = 0
     public var angVel: Float = 0
@@ -151,56 +151,18 @@ public struct ChaosSeed: Sendable {
     public var bodySize: SIMD2<Float>
     public var group: Int
     public var sprite: Int
-    /// Outline of a shard; nil for letters, buttons and icons.
-    public var shape: ChaosShape?
+    /// Outline of a shard (corners relative to `center`); nil for letters, buttons and icons.
+    public var polygon: ChaosPolygon?
 
     public init(kind: ChaosPieceKind, center: SIMD2<Float>, size: SIMD2<Float>, bodySize: SIMD2<Float>? = nil, group: Int, sprite: Int,
-                shape: ChaosShape? = nil) {
+                polygon: ChaosPolygon? = nil) {
         self.kind = kind
         self.center = center
         self.size = size
         self.bodySize = bodySize ?? size
         self.group = group
         self.sprite = sprite
-        self.shape = shape
-    }
-}
-
-/// An irregular triangle cut out of a window picture.
-public struct ChaosShape: Sendable {
-    /// Corners relative to the position of the piece (its centroid).
-    public var a: SIMD2<Float>, b: SIMD2<Float>, c: SIMD2<Float>
-    /// The same corners in the window picture (0...1, row 0 on top).
-    public var ua: SIMD2<Float>, ub: SIMD2<Float>, uc: SIMD2<Float>
-
-    public static let zero = ChaosShape(a: .zero, b: .zero, c: .zero, ua: .zero, ub: .zero, uc: .zero)
-
-    public init(a: SIMD2<Float>, b: SIMD2<Float>, c: SIMD2<Float>, ua: SIMD2<Float>, ub: SIMD2<Float>, uc: SIMD2<Float>) {
-        self.a = a; self.b = b; self.c = c
-        self.ua = ua; self.ub = ub; self.uc = uc
-    }
-
-    public var area: Float {
-        abs((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)) / 2
-    }
-
-    /// Average distance of the corners from the centroid.
-    public var meanRadius: Float {
-        (simd_length(a) + simd_length(b) + simd_length(c)) / 3
-    }
-
-    public var boundsMin: SIMD2<Float> { simd_min(simd_min(a, b), c) }
-    public var boundsMax: SIMD2<Float> { simd_max(simd_max(a, b), c) }
-
-    /// Whether a point, relative to the position of the piece, lies inside.
-    public func contains(_ p: SIMD2<Float>) -> Bool {
-        func side(_ p1: SIMD2<Float>, _ p2: SIMD2<Float>, _ q: SIMD2<Float>) -> Float {
-            (p1.x - q.x) * (p2.y - q.y) - (p2.x - q.x) * (p1.y - q.y)
-        }
-        let d1 = side(p, a, b), d2 = side(p, b, c), d3 = side(p, c, a)
-        let negative = d1 < 0 || d2 < 0 || d3 < 0
-        let positive = d1 > 0 || d2 > 0 || d3 > 0
-        return !(negative && positive)
+        self.polygon = polygon
     }
 }
 
@@ -211,6 +173,9 @@ public final class ChaosWorld {
     public let size: SIMD2<Float>
     public let settings: ChaosSettings
     public private(set) var bodies: [ChaosBody] = []
+    /// Outlines of the shards; `ChaosBody.polygon` indexes this list.
+    public private(set) var polygons: [ChaosPolygon] = []
+    private var originalPolygonCount = 0
     public private(set) var puffs: [ChaosPuff] = []
     public private(set) var time: Float = 0
     public private(set) var eventCount = 0
@@ -262,14 +227,17 @@ public final class ChaosWorld {
             case .icon:
                 body = Self.makeBody(s, radius: 0.46 * (s.bodySize.x + s.bodySize.y) * 0.5, restitution: 0.5, friction: 0.6, massDivisor: 80)
             case .shard:
-                var shard = Self.makeBody(s, radius: 0.75 * (s.shape?.meanRadius ?? 10), restitution: 0.22, friction: 0.7,
-                                          mass: max(1, (s.shape?.area ?? 100) / 160))
-                shard.shape = s.shape ?? .zero
+                let poly = s.polygon ?? ChaosPolygon(verts: [], uvOffset: .zero, uvScale: .zero)
+                var shard = Self.makeBody(s, radius: max(3, 0.9 * (poly.area / .pi).squareRoot()), restitution: 0.22, friction: 0.7,
+                                          mass: max(1, poly.area / 160))
+                polygons.append(poly)
+                shard.polygon = Int32(polygons.count - 1)
                 body = shard
             }
             bodies.append(body)
         }
         originalCount = bodies.count
+        originalPolygonCount = polygons.count
         maxBodies = originalCount + 12_000
         nextEvent = 0.6
         buildCoverGrid()
@@ -296,7 +264,8 @@ public final class ChaosWorld {
         coverNodes.removeAll()
         for i in 0..<originalCount where bodies[i].kind == .shard {
             let b = bodies[i]
-            let lo = b.home + b.shape.boundsMin, hi = b.home + b.shape.boundsMax
+            let poly = polygons[Int(b.polygon)]
+            let lo = b.home + poly.boundsMin, hi = b.home + poly.boundsMax
             let x0 = max(0, Int(lo.x / coverCell)), x1 = min(coverCols - 1, Int(hi.x / coverCell))
             let y0 = max(0, Int(lo.y / coverCell)), y1 = min(coverRows - 1, Int(hi.y / coverCell))
             guard x0 <= x1, y0 <= y1 else { continue }
@@ -319,7 +288,7 @@ public final class ChaosWorld {
         while n >= 0 {
             let node = coverNodes[Int(n)]
             let s = bodies[Int(node.shard)]
-            if s.group > b.group, inPlace(s.state), s.shape.contains(b.home - s.home) { return true }
+            if s.group > b.group, inPlace(s.state), polygons[Int(s.polygon)].contains(b.home - s.home) { return true }
             n = node.next
         }
         return false
@@ -462,7 +431,7 @@ public final class ChaosWorld {
         guard bodies[shard].kind == .shard else { return }
         let s = bodies[shard]
         for j in 0..<originalCount where bodies[j].state == .attached && bodies[j].kind != .shard && bodies[j].group == s.group {
-            guard s.shape.contains(bodies[j].home - s.home) else { continue }
+            guard polygons[Int(s.polygon)].contains(bodies[j].home - s.home) else { continue }
             bodies[j].state = .pending
             bodies[j].timer = delay + random(0...0.05)
             bodies[j].vel = velocity + SIMD2(random(-30...30), random(-30...10))
@@ -523,8 +492,8 @@ public final class ChaosWorld {
                     continue
                 }
                 guard dist < R * (0.72 + 0.28 * random(0...1)) else { continue }
-                if bodies[i].kind == .shard, falloff > 0.6, bodies.count < maxBodies - 4 {
-                    shatter(i, from: p, strength: S)
+                if bodies[i].kind == .shard, falloff > 0.4, bodies.count < maxBodies - 16 {
+                    fracture(i, from: p, strength: S, falloff: falloff)
                 } else {
                     launch(i, velocity: velocity, spin: spin)
                 }
@@ -538,32 +507,71 @@ public final class ChaosWorld {
         }
     }
 
-    /// A shard close to a blast breaks into three fragments around its centre.
-    private func shatter(_ i: Int, from p: SIMD2<Float>, strength S: Float) {
+    /// Seeds of the cracks of a shard hit at `p`, like in glass: rings of points around the impact that grow farther apart
+    /// (small, sharp pieces near the hit, bigger ones away from it) and are shifted a little so no two are alike.
+    private func crackSites(around p: SIMD2<Float>, in lo: SIMD2<Float>, _ hi: SIMD2<Float>, falloff: Float) -> [SIMD2<Float>] {
+        let margin: Float = 28
+        let farthest = max(simd_length(SIMD2(lo.x, lo.y) - p), simd_length(SIMD2(hi.x, lo.y) - p),
+                           simd_length(SIMD2(lo.x, hi.y) - p), simd_length(SIMD2(hi.x, hi.y) - p))
+        var sites: [SIMD2<Float>] = []
+        var r = random(10...22) * (1.3 - 0.5 * falloff)
+        while r < farthest + margin {
+            let spacing = (24 + 0.32 * r) * (1.35 - 0.45 * falloff)
+            let n = max(5, Int(2 * Float.pi * r / spacing))
+            let a0 = random(0...(2 * .pi))
+            for k in 0..<n {
+                let a = a0 + (Float(k) + random(-0.32...0.32)) * 2 * .pi / Float(n)
+                let s = p + SIMD2(cos(a), sin(a)) * r * random(0.88...1.12)
+                if s.x > lo.x - margin, s.x < hi.x + margin, s.y > lo.y - margin, s.y < hi.y + margin { sites.append(s) }
+            }
+            r *= random(1.5...1.8)
+        }
+        if sites.count > 14 { sites = Array(sites.shuffled(using: &rng).prefix(14)) }
+        return sites
+    }
+
+    /// A shard close to a blast breaks into jagged convex fragments along cracks that spread from the impact.
+    private func fracture(_ i: Int, from p: SIMD2<Float>, strength S: Float, falloff: Float) {
         let parent = bodies[i]
+        let poly = polygons[Int(parent.polygon)]
+        let outline = poly.verts.map { parent.home + $0 }
+        let lo = parent.home + poly.boundsMin, hi = parent.home + poly.boundsMax
+        var sites = crackSites(around: p, in: lo, hi, falloff: falloff)
+        // At least three sites inside the piece, or it would not break.
+        var inside = sites.filter { ChaosGeometry.contains(outline, $0) }.count
+        var attempts = 0
+        while inside < 3, attempts < 40 {
+            attempts += 1
+            let s = SIMD2(random(lo.x...hi.x), random(lo.y...hi.y))
+            if ChaosGeometry.contains(outline, s) { sites.append(s); inside += 1 }
+        }
+
         let dirToParent = parent.pos - p
         let base = simd_length(dirToParent) > 0.5 ? dirToParent / simd_length(dirToParent) : SIMD2<Float>(0, -1)
         carry(from: i, delay: 0, velocity: base * 400 * S, spin: random(-4...4))
         bodies[i].state = .gone
         wakePoints.append(parent.pos)
-        let s = parent.shape
-        let uvCenter = (s.ua + s.ub + s.uc) / 3
-        let corners = [(s.a, s.ua), (s.b, s.ub), (s.c, s.uc)]
-        for q in 0..<3 {
-            let (p1, u1) = corners[q], (p2, u2) = corners[(q + 1) % 3]
-            let g = (p1 + p2) / 3   // centroid of (centre, p1, p2); the centre is the origin
+
+        for index in sites.indices {
+            let cell = ChaosGeometry.cell(of: index, in: sites, bounds: outline)
+            guard cell.count >= 3 else { continue }
+            let area = ChaosGeometry.area(cell)
+            guard area > 6 else { continue }
+            let g = ChaosGeometry.centroid(cell)
             var child = parent
-            child.shape = ChaosShape(a: -g, b: p1 - g, c: p2 - g, ua: uvCenter, ub: u1, uc: u2)
-            child.pos = parent.home + g
-            child.home = child.pos
-            let lo = child.shape.boundsMin, hi = child.shape.boundsMax
-            child.size = hi - lo
-            child.radius = 0.75 * child.shape.meanRadius
-            child.invMass = 1 / max(1, child.shape.area / 160)
-            let d = child.pos - p
+            let local = g - parent.home
+            polygons.append(ChaosPolygon(verts: cell.map { $0 - g }, uvOffset: poly.uvOffset + local * poly.uvScale, uvScale: poly.uvScale))
+            child.polygon = Int32(polygons.count - 1)
+            child.pos = g
+            child.home = g
+            let bounds = (cell.map { $0 - g })
+            child.size = bounds.dropFirst().reduce(bounds[0]) { simd_max($0, $1) } - bounds.dropFirst().reduce(bounds[0]) { simd_min($0, $1) }
+            child.radius = max(2.5, 0.9 * (area / .pi).squareRoot())
+            child.invMass = 1 / max(1, area / 160)
+            let d = g - p
             let dist = max(simd_length(d), 1)
-            let speed = S * random(260...700) / (1 + 0.004 * dist)
-            child.vel = d / dist * speed + SIMD2(0, -random(60...180))
+            let speed = S * random(240...640) / (1 + 0.005 * dist)
+            child.vel = d / dist * speed + SIMD2(0, -random(50...170))
             child.angVel = random(-8...8)
             child.angle = 0
             child.state = .loose
@@ -716,14 +724,21 @@ public final class ChaosWorld {
         intactFraction = originalCount > 0 ? Float(intact) / Float(originalCount) : 0
     }
 
-    /// Drops the fragments that are gone; the original pieces keep their place (the cover grid refers to them).
+    /// Drops the fragments that are gone (and their outlines); the original pieces keep their place (the cover grid refers to them).
     private func compact() {
         guard bodies.count > originalCount else { return }
+        var kept = Array(polygons[0..<originalPolygonCount])
         var write = originalCount
         for read in originalCount..<bodies.count where bodies[read].state != .gone {
-            if write != read { bodies[write] = bodies[read] }
+            var b = bodies[read]
+            if b.polygon >= Int32(originalPolygonCount) {
+                kept.append(polygons[Int(b.polygon)])
+                b.polygon = Int32(kept.count - 1)
+            }
+            bodies[write] = b
             write += 1
         }
+        polygons = kept
         if write < bodies.count { bodies.removeSubrange(write...) }
     }
 

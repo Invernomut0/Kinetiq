@@ -6,29 +6,26 @@ import CoreGraphics
 import Foundation
 import simd
 
-/// One irregular triangle of a window picture that can break off.
+/// One convex chunk of a window picture that can break off.
 public struct ChaosTile: Sendable {
     /// Corners in window-local points, y down.
-    public var a: SIMD2<Float>, b: SIMD2<Float>, c: SIMD2<Float>
-    /// The same corners in the picture (0...1, row 0 on top).
-    public var ua: SIMD2<Float>, ub: SIMD2<Float>, uc: SIMD2<Float>
+    public var verts: [SIMD2<Float>]
 
-    public var centroid: SIMD2<Float> { (a + b + c) / 3 }
-
-    public var area: Float { abs((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)) / 2 }
+    public var centroid: SIMD2<Float> { ChaosGeometry.centroid(verts) }
+    public var area: Float { ChaosGeometry.area(verts) }
 }
 
 public enum ChaosTiling {
-    /// Cuts a window picture into irregular triangles: a lattice of about `tile` points whose inner corners are moved
-    /// at random and whose cells are split along a random diagonal. The border of the window stays straight and
-    /// triangles side by side share their corners, so together they reproduce the picture exactly. Triangles with
-    /// nothing painted in them (transparent corners, desktop layers) are left out.
+    /// Cuts a window picture into irregular convex chunks: the Voronoi cells of a jittered grid of points, which gives
+    /// four to seven sides of different lengths and angles instead of squares or triangles. The border of the window
+    /// stays straight and chunks side by side share their edges, so together they reproduce the picture exactly.
+    /// Chunks with nothing painted in them (transparent corners, desktop layers) are left out.
     public static func tiles(of image: CGImage, size: CGSize, tile: CGFloat) -> [ChaosTile] {
         let W = image.width, H = image.height
         guard W > 0, H > 0, size.width > 0, size.height > 0, tile > 4 else { return [] }
         let cols = max(1, Int((size.width / tile).rounded())), rows = max(1, Int((size.height / tile).rounded()))
 
-        // Alpha at a quarter of the resolution is enough to tell whether a triangle has anything in it.
+        // Alpha at a quarter of the resolution is enough to tell whether a chunk has anything in it.
         let step = 4
         let mw = max(1, (W + step - 1) / step), mh = max(1, (H + step - 1) / step)
         guard let context = CGContext(data: nil, width: mw, height: mh, bitsPerComponent: 8, bytesPerRow: mw,
@@ -37,9 +34,10 @@ public enum ChaosTiling {
         context.interpolationQuality = .low
         context.draw(image, in: CGRect(x: 0, y: 0, width: mw, height: mh))
         let alpha = data.bindMemory(to: UInt8.self, capacity: mw * mh)
+        let toPixels = SIMD2(Float(W) / Float(size.width), Float(H) / Float(size.height))
         func painted(_ lo: SIMD2<Float>, _ hi: SIMD2<Float>) -> Bool {
-            let x0 = max(0, Int(lo.x) / step), x1 = min(mw, (Int(hi.x) + step) / step + 1)
-            let y0 = max(0, Int(lo.y) / step), y1 = min(mh, (Int(hi.y) + step) / step + 1)
+            let x0 = max(0, Int(lo.x * toPixels.x) / step), x1 = min(mw, (Int(hi.x * toPixels.x) + step) / step + 1)
+            let y0 = max(0, Int(lo.y * toPixels.y) / step), y1 = min(mh, (Int(hi.y * toPixels.y) + step) / step + 1)
             guard x0 < x1, y0 < y1 else { return false }
             for y in y0..<y1 {
                 for x in x0..<x1 where alpha[y * mw + x] > 20 { return true }
@@ -49,44 +47,39 @@ public enum ChaosTiling {
 
         // The same window always breaks along the same lines.
         var rng = SplitMix64(seed: UInt64(W) &* 73_856_093 ^ UInt64(H) &* 19_349_663 ^ UInt64(cols * 31 + rows))
-        let cellW = Float(W) / Float(cols), cellH = Float(H) / Float(rows)
-        var grid = [SIMD2<Float>](repeating: .zero, count: (cols + 1) * (rows + 1))
-        for j in 0...rows {
-            for i in 0...cols {
-                var p = SIMD2(Float(i) * cellW, Float(j) * cellH)
-                if i > 0, i < cols { p.x += Float.random(in: -0.34...0.34, using: &rng) * cellW }
-                if j > 0, j < rows { p.y += Float.random(in: -0.34...0.34, using: &rng) * cellH }
-                // Along the border the corners also slide a little, so the cracks do not all start at the same distance.
-                if (j == 0 || j == rows), i > 0, i < cols { p.x += Float.random(in: -0.2...0.2, using: &rng) * cellW }
-                if (i == 0 || i == cols), j > 0, j < rows { p.y += Float.random(in: -0.2...0.2, using: &rng) * cellH }
-                grid[j * (cols + 1) + i] = p
+        let width = Float(size.width), height = Float(size.height)
+        let cellW = width / Float(cols), cellH = height / Float(rows)
+        var sites = [SIMD2<Float>](repeating: .zero, count: cols * rows)
+        for j in 0..<rows {
+            for i in 0..<cols {
+                sites[j * cols + i] = SIMD2((Float(i) + 0.5 + Float.random(in: -0.45...0.45, using: &rng)) * cellW,
+                                            (Float(j) + 0.5 + Float.random(in: -0.45...0.45, using: &rng)) * cellH)
             }
         }
 
-        let toPoints = SIMD2(Float(size.width) / Float(W), Float(size.height) / Float(H))
-        let toUV = SIMD2(1 / Float(W), 1 / Float(H))
+        let window = [SIMD2<Float>(0, 0), SIMD2(width, 0), SIMD2(width, height), SIMD2(0, height)]
         var result: [ChaosTile] = []
-        func add(_ p0: SIMD2<Float>, _ p1: SIMD2<Float>, _ p2: SIMD2<Float>) {
-            guard painted(simd_min(simd_min(p0, p1), p2), simd_max(simd_max(p0, p1), p2)) else { return }
-            result.append(ChaosTile(a: p0 * toPoints, b: p1 * toPoints, c: p2 * toPoints, ua: p0 * toUV, ub: p1 * toUV, uc: p2 * toUV))
-        }
         for j in 0..<rows {
             for i in 0..<cols {
-                let tl = grid[j * (cols + 1) + i], tr = grid[j * (cols + 1) + i + 1]
-                let bl = grid[(j + 1) * (cols + 1) + i], br = grid[(j + 1) * (cols + 1) + i + 1]
-                if Bool.random(using: &rng) {
-                    add(tl, tr, br); add(tl, br, bl)
-                } else {
-                    add(tl, tr, bl); add(tr, br, bl)
+                // Sites farther than two cells away cannot touch this cell.
+                var near: [SIMD2<Float>] = [sites[j * cols + i]]
+                for dj in -2...2 {
+                    for di in -2...2 where (di != 0 || dj != 0) && i + di >= 0 && i + di < cols && j + dj >= 0 && j + dj < rows {
+                        near.append(sites[(j + dj) * cols + i + di])
+                    }
                 }
+                let cell = ChaosGeometry.cell(of: 0, in: near, bounds: window)
+                guard cell.count >= 3, ChaosGeometry.area(cell) > 4 else { continue }
+                let lo = cell.dropFirst().reduce(cell[0]) { simd_min($0, $1) }, hi = cell.dropFirst().reduce(cell[0]) { simd_max($0, $1) }
+                if painted(lo, hi) { result.append(ChaosTile(verts: cell)) }
             }
         }
         return result
     }
 
-    /// Tile size in points that keeps the number of triangles of all windows under `maxTiles` (a cell makes two).
+    /// Tile size in points that keeps the number of chunks of all windows under `maxTiles`.
     public static func tileSize(forTotalArea area: CGFloat, maxTiles: Int, minimum: CGFloat = 56, maximum: CGFloat = 130) -> CGFloat {
         guard area > 0, maxTiles > 0 else { return minimum }
-        return min(max((2 * area / CGFloat(maxTiles)).squareRoot(), minimum), maximum)
+        return min(max((area / CGFloat(maxTiles)).squareRoot(), minimum), maximum)
     }
 }
