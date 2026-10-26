@@ -20,6 +20,8 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
         let underFade: Bool
         /// Keeps the capture's IOSurface mapped while the GPU may read it.
         let backing: CVMetalTexture
+        /// Called once, shortly before the effect ends (the real window is brought back under the last frames).
+        var nearEnd: (() -> Void)?
     }
 
     /// How long macOS takes to fade a closing window out.
@@ -59,14 +61,17 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
     // MARK: - Shaders
 
     /// Compiles the shaders the user may need, in the background, so the first close doesn't wait for the compiler.
-    func warmUp(_ choice: CloseEffectChoice) {
-        let effects: [CloseEffect]
-        switch choice {
-        case .off: return
-        case .random: effects = CloseEffect.allCases
-        case .effect(let effect): effects = [effect]
+    func warmUp(_ choices: CloseEffectChoice...) {
+        var effects: [CloseEffect] = []
+        for choice in choices {
+            switch choice {
+            case .off: break
+            case .random: effects.append(contentsOf: CloseEffect.allCases)
+            case .effect(let effect): effects.append(effect)
+            }
         }
-        let pending = effects.filter { !ready.contains($0) }
+        var seen = Set<CloseEffect>()
+        let pending = effects.filter { !ready.contains($0) && seen.insert($0).inserted }
         guard !pending.isEmpty else { return }
 
         let renderer = renderer
@@ -131,7 +136,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
     /// `nativeFade`: the real window is still fading out underneath, with its own shadow.
     @discardableResult
     func play(_ frame: CapturedFrame, windowFrame: CGRect, effect: CloseEffect, pointer: CGPoint, durationScale: Double,
-              nativeFade: Bool) -> Bool {
+              nativeFade: Bool, opening: Bool = false, nearEnd: (() -> Void)? = nil) -> Bool {
         guard let textureCache else { return false }
         do {
             try renderer.prepare(effect)
@@ -151,17 +156,21 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
         let insets = frame.shadow
         let screen = NSScreen.containing(cgPoint: CGPoint(x: windowFrame.midX, y: windowFrame.midY)) ?? NSScreen.screens.first
         let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB)
-        let scene = EffectScene(
-            effect: effect, texture: texture,
-            uvScale: SIMD2(Float(rect.width), Float(rect.height)) / bufferSize,
-            uvOffset: SIMD2(Float(rect.minX), Float(rect.minY)) / bufferSize,
-            windowFrame: windowFrame, padding: Float(max(insets.left, insets.top, insets.right, insets.bottom)),
-            pointer: pointer, screenHeight: Float(screen?.frame.height ?? 1080),
-            accentColor: accent.map { SIMD3(Float($0.redComponent), Float($0.greenComponent), Float($0.blueComponent)) }
-                ?? SIMD3(0.04, 0.52, 1),
-            durationScale: Float(durationScale))
+        let scene = {
+            var scene = EffectScene(
+                effect: effect, texture: texture,
+                uvScale: SIMD2(Float(rect.width), Float(rect.height)) / bufferSize,
+                uvOffset: SIMD2(Float(rect.minX), Float(rect.minY)) / bufferSize,
+                windowFrame: windowFrame, padding: Float(max(insets.left, insets.top, insets.right, insets.bottom)),
+                pointer: pointer, screenHeight: Float(screen?.frame.height ?? 1080),
+                accentColor: accent.map { SIMD3(Float($0.redComponent), Float($0.greenComponent), Float($0.blueComponent)) }
+                    ?? SIMD3(0.04, 0.52, 1),
+                durationScale: Float(durationScale))
+            scene.forOpening = opening
+            return scene
+        }()
 
-        playing.append(Playing(scene: scene, startedAt: nil, underFade: nativeFade, backing: backing))
+        playing.append(Playing(scene: scene, startedAt: nil, underFade: nativeFade, backing: backing, nearEnd: nearEnd))
         playing[playing.count - 1].scene.shadowOpacity = nativeFade ? 0 : 1
         refreshBounds()
         ensureOverlays()
@@ -173,7 +182,9 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
 
     /// Stops every running effect (the screens changed, or the app is quitting).
     func cancelAll() {
+        let pending = playing.compactMap(\.nearEnd)
         playing.removeAll()
+        pending.forEach { $0() }
         refreshBounds()
         finishIfIdle()
     }
@@ -201,6 +212,10 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
             playing[index].scene.progress = Float(elapsed / Double(playing[index].scene.duration))
             if playing[index].underFade {
                 playing[index].scene.shadowOpacity = Float(min(1, elapsed / Self.nativeFadeTime))
+            }
+            if playing[index].scene.progress >= 0.9, let nearEnd = playing[index].nearEnd {
+                playing[index].nearEnd = nil
+                nearEnd()
             }
         }
         playing.removeAll { $0.scene.progress >= 1 }

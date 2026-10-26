@@ -10,7 +10,7 @@ import AppKit
 @MainActor
 final class WindowObserver {
     var onResize: ((AXUIElement, pid_t) -> Void)?
-    var onWindowCreated: (() -> Void)?
+    var onWindowCreated: ((AXUIElement, pid_t) -> Void)?
 
     private var observer: AXObserver?
     private var observedPID: pid_t = 0
@@ -67,7 +67,7 @@ final class WindowObserver {
             if let observer {
                 AXObserverAddNotification(observer, element, kAXResizedNotification as CFString, Unmanaged.passUnretained(self).toOpaque())
             }
-            onWindowCreated?()
+            onWindowCreated?(element, observedPID)
             return
         }
         onResize?(element, observedPID)

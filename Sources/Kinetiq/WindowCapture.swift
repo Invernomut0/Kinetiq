@@ -150,3 +150,21 @@ final class WindowCapture {
         return (CGRect(x: left, y: top, width: right - left + 1, height: bottom - top + 1), shadow)
     }
 }
+
+extension CapturedFrame {
+    /// Whether the window already has content: a window captured before its app painted it is fully transparent.
+    var isPainted: Bool {
+        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer)?.assumingMemoryBound(to: UInt8.self) else { return false }
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+        let rect = windowRect.integral
+        for row in 1...8 {
+            for column in 1...8 {
+                let x = Int(rect.minX + rect.width * CGFloat(column) / 9), y = Int(rect.minY + rect.height * CGFloat(row) / 9)
+                if base[y * bytesPerRow + x * 4 + 3] > 0 { return true }
+            }
+        }
+        return false
+    }
+}

@@ -21,7 +21,9 @@ The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from
 
 ### Close effects
 
-When a window closes, it is replaced by an animation drawn on the GPU. Pick the effect in the Setup window under **Close Effect**: one of the 30 effects below, **Random** (a different one every time) or **Off**. The **Duration** slider scales the animation time of every effect (0.25× to 3×). Fire is the default.
+When a window closes, it is replaced by an animation drawn on the GPU. Pick the effect in the Setup window under **Window Effects › Close**: one of the 30 effects below, **Random** (a different one every time) or **Off**. The **Duration** slider scales the animation time of every effect (0.25× to 3×). Fire is the default.
+
+The same effects can play in reverse when a window opens (**Window Effects › Open**, off by default). The new window is hidden as soon as its app creates it, captured once it has been painted and revealed by the effect, so opening takes a fraction of a second longer. Dialogs, sheets and popovers are not affected.
 
 Aperture Panels, Apparition, Aura Glow, Broken Glass, Doom, Energize A, Energize B, Fire, Focus, Glide, Glitch, Hexagon, Incinerate, Materialize, Matrix, Morph, Mushroom, Paint Brush, Pixelate, Pixel Wheel, Pixel Wipe, Portal, RGB Warp, Snap of Disintegration, Team Rocket, T-Rex Attack, TV Effect, TV Glitch, Wisps and Wormhole.
 

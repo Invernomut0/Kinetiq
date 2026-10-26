@@ -120,6 +120,21 @@ final class CloseEffectRenderTests: XCTestCase {
         }
     }
 
+    /// Opening is the reverse: the window is gone at the start and fully there at the end.
+    func testOpeningEffectsEndWithTheWindow() throws {
+        for effect in CloseEffect.allCases {
+            var scene = preview.scene(for: effect)
+            scene.forOpening = true
+            let interior = EffectPreview.interior(of: scene)
+            let start = try preview.render(scene, progress: 0).meanAlpha(in: interior)
+            let end = try preview.render(scene, progress: 1).meanAlpha(in: interior)
+            XCTAssertGreaterThan(end, 0.85, "\(effect.title) doesn't show the window at the end of opening")
+            if effect.vanishesCompletely {
+                XCTAssertLessThan(start, 0.2, "\(effect.title) shows the window at the start of opening")
+            }
+        }
+    }
+
     /// The window must go away monotonically enough: halfway through there is still something, but less than at the start.
     func testWindowFadesOverTheAnimation() throws {
         for effect in CloseEffect.allCases where effect.vanishesCompletely {

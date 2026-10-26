@@ -45,6 +45,12 @@ final class SetupModel: ObservableObject {
         refresh()
     }
 
+    func selectOpenEffect(_ raw: String) {
+        settings.openEffect = CloseEffectChoice(rawValue: raw)
+        closeEffectChanged()
+        refresh()
+    }
+
     func resetToDefaults() {
         settings.resetToDefaults()
         closeEffectChanged()
@@ -117,8 +123,14 @@ struct SetupView: View {
                 Toggle("Shadow", isOn: model.binding({ settings.shadow }, { settings.shadow = $0 }))
             }
 
-            Section("Close Effect") {
-                Picker("Effect", selection: model.binding({ settings.closeEffect.rawValue }, { model.selectCloseEffect($0) })) {
+            Section("Window Effects") {
+                Picker("Close", selection: model.binding({ settings.closeEffect.rawValue }, { model.selectCloseEffect($0) })) {
+                    Text("Off").tag(CloseEffectChoice.off.rawValue)
+                    Text("Random").tag(CloseEffectChoice.random.rawValue)
+                    Divider()
+                    ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+                }
+                Picker("Open", selection: model.binding({ settings.openEffect.rawValue }, { model.selectOpenEffect($0) })) {
                     Text("Off").tag(CloseEffectChoice.off.rawValue)
                     Text("Random").tag(CloseEffectChoice.random.rawValue)
                     Divider()

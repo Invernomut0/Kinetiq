@@ -5,6 +5,15 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9]
+
+### Added
+
+- **Open effects.** The close shaders also play in reverse when a window appears (new **Open** picker in Setup, off by
+  default; **Duration** applies to both). The new window is parked off-screen as soon as its app announces it, captured
+  once painted, and moved back under the last frames of the effect. Only standard windows of the frontmost app are
+  affected; dialogs, sheets and popovers are not.
+
 ## [0.1.8]
 
 ### Added

@@ -153,6 +153,12 @@ final class Settings {
         set { defaults.set(newValue.rawValue, forKey: "closeEffect") }
     }
 
+    /// Effect played when a window opens (the same shaders, reversed); off by default.
+    var openEffect: CloseEffectChoice {
+        get { defaults.string(forKey: "openEffect").map { CloseEffectChoice(rawValue: $0) } ?? .off }
+        set { defaults.set(newValue.rawValue, forKey: "openEffect") }
+    }
+
     /// Animation time of the close effects relative to the default of each effect.
     var closeDuration: Double {
         get { min(max(defaults.object(forKey: "closeDuration") as? Double ?? 1, Self.closeSpeedRange.lowerBound), Self.closeSpeedRange.upperBound) }
@@ -173,6 +179,7 @@ final class Settings {
         maximizeEffect = true
         resizeEffect = false
         closeEffect = Self.defaultCloseEffect
+        openEffect = .off
         closeDuration = 1
     }
 

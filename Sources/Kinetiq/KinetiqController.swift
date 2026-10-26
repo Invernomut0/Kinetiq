@@ -88,6 +88,7 @@ final class KinetiqController: NSObject {
     private let windowObserver = WindowObserver()
     private let closePlayer: CloseEffectPlayer?
     private var closeTrigger: CloseEffectTrigger?
+    private var openTrigger: OpenEffectTrigger?
     private var overlays: [OverlayWindow] = []
     private var session: DragSession?
     private var pendingClick: PendingClick?
@@ -110,10 +111,16 @@ final class KinetiqController: NSObject {
         closeTrigger = closePlayer.map { player in
             CloseEffectTrigger(settings: settings, capture: capture, player: player, isBusy: { [weak self] in self?.session != nil })
         }
+        openTrigger = closePlayer.map { player in
+            OpenEffectTrigger(settings: settings, capture: capture, player: player, isBusy: { [weak self] in self?.session != nil })
+        }
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         windowObserver.onResize = { [weak self] element, pid in self?.windowResized(element, pid: pid) }
-        windowObserver.onWindowCreated = { [weak self] in self?.refreshCaptureContent() }
+        windowObserver.onWindowCreated = { [weak self] element, pid in
+            self?.refreshCaptureContent()
+            self?.openTrigger?.windowCreated(element, pid: pid)
+        }
         for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification] {
             NSWorkspace.shared.notificationCenter.addObserver(
                 self, selector: #selector(refreshCaptureContent), name: name, object: nil)
@@ -125,9 +132,9 @@ final class KinetiqController: NSObject {
         windowObserver.start()
     }
 
-    /// Compiles the shaders of the chosen close effect(s) in the background.
+    /// Compiles the shaders of the chosen close and open effect(s) in the background.
     func closeEffectChanged() {
-        closePlayer?.warmUp(settings.closeEffect)
+        closePlayer?.warmUp(settings.closeEffect, settings.openEffect)
     }
 
     /// Keeps the capture's window list current so a drag never has to wait for it. Skipped mid-gesture:

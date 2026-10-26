@@ -27,6 +27,8 @@ public struct EffectScene {
     public var progress: Float = 0
     /// Opacity of the window's shadow in the capture: 0 while the real window, and its own shadow, is still there.
     public var shadowOpacity: Float = 1
+    /// Plays the effect in the opening direction (the window appears) instead of the closing one.
+    public var forOpening = false
 
     /// - Parameters:
     ///   - pointer: Pointer position in global coordinates (some effects start from it).

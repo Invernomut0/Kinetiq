@@ -126,7 +126,7 @@ public final class CloseEffectRenderer: @unchecked Sendable {
             screenSize: SIMD2(Float(screenRect.width), Float(screenRect.height)),
             texSize: windowSize + 2 * scene.padding, windowSize: windowSize,
             uvScale: scene.uvScale, uvOffset: scene.uvOffset, padding: scene.padding,
-            progress: min(max(scene.progress, 0), 1), duration: scene.duration, forOpening: 0, isFullscreen: 0,
+            progress: min(max(scene.progress, 0), 1), duration: scene.duration, forOpening: scene.forOpening ? 1 : 0, isFullscreen: 0,
             shadow: scene.shadowOpacity)
 
         var slots = [SIMD4<Float>](repeating: .zero, count: Self.maxParameters)

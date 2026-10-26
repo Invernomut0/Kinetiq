@@ -194,6 +194,13 @@ extension NSScreen {
     /// Height reserved at the top by the menu bar (notch included).
     var menuBarHeight: CGFloat { frame.maxY - visibleFrame.maxY }
 
+    /// Bottom-right corner of all screens: a window moved here keeps 1 pt visible, which is how windows are
+    /// hidden without private APIs (the trick AeroSpace uses).
+    static var parkingPoint: CGPoint {
+        let union = screens.reduce(CGRect.null) { $0.union($1.cgFrame) }
+        return CGPoint(x: union.maxX - 1, y: union.maxY - 1)
+    }
+
     static func containing(cgPoint point: CGPoint) -> NSScreen? {
         screens.first { $0.cgFrame.contains(point) }
     }

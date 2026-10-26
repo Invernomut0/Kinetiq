@@ -188,6 +188,13 @@ enum AXBridge {
         return (value as? Bool) ?? false
     }
 
+    /// Regular document-style windows only: no sheets, popovers, panels or tooltips.
+    static func isStandardWindow(_ window: AXUIElement) -> Bool {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXSubroleAttribute as CFString, &value) == .success else { return false }
+        return (value as? String) == kAXStandardWindowSubrole as String
+    }
+
     static func raise(_ window: AXUIElement, pid: pid_t) {
         // Make it the app's main window first, so activating the app doesn't jump to a Space with another of its windows.
         AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
