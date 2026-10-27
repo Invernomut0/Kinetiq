@@ -5,6 +5,12 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.27]
+
+### Changed
+
+- The screen saver logs why it does not start (missing Screen Recording permission, start already in progress, no screen).
+
 ## [0.1.26]
 
 ### Added

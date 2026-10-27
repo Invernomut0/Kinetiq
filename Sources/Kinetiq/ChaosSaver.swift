@@ -89,8 +89,12 @@ final class ChaosSaver: NSObject {
 
     /// `manual` starts (from the Setup window) explain a missing permission instead of staying silent.
     func start(manual: Bool = true) {
-        guard !isRunning, !starting, CACurrentMediaTime() - stoppedAt > 0.5 else { return }
+        guard !isRunning, !starting, CACurrentMediaTime() - stoppedAt > 0.5 else {
+            Self.log.info("start ignored: running \(self.isRunning) starting \(self.starting)")
+            return
+        }
         guard Permissions.screenCaptureGranted else {
+            Self.log.error("start: Screen Recording permission missing")
             if manual {
                 CGRequestScreenCaptureAccess()
                 explainPermission()
@@ -208,7 +212,10 @@ final class ChaosSaver: NSObject {
                 Self.log.error("renderer unavailable: \(String(describing: error))")
             }
         }
-        guard !created.isEmpty else { return }
+        guard !created.isEmpty else {
+            Self.log.error("nothing to show: no screen could be set up (wallpapers \(wallpapers.count), screens \(NSScreen.screens.count))")
+            return
+        }
 
         overlays = created
         isRunning = true
