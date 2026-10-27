@@ -293,6 +293,97 @@ final class ChaosTests: XCTestCase {
         XCTAssertFalse(again.run(.nuke))
     }
 
+    func testEveryInnerEdgeOfAPieceHasANeighbour() {
+        let world = world(automatic: false)
+        var edges = 0, shared = 0
+        for i in 0..<world.originalCount where world.bodies[i].kind == .shard {
+            let poly = world.polygons[Int(world.bodies[i].polygon)]
+            for k in poly.verts.indices {
+                edges += 1
+                guard let other = world.edgeNeighbor(body: i, edge: k) else { continue }
+                shared += 1
+                XCTAssertEqual(world.bodies[other.body].group, world.bodies[i].group)
+                let back = world.edgeNeighbor(body: other.body, edge: other.edge)
+                XCTAssertEqual(back?.body, i, "the relation is symmetric")
+                XCTAssertEqual(back?.edge, k)
+                // The two pieces really share the edge.
+                let a = world.bodies[i].home + poly.verts[k], b = world.bodies[i].home + poly.verts[(k + 1) % poly.verts.count]
+                let pj = world.polygons[Int(world.bodies[other.body].polygon)]
+                let ja = world.bodies[other.body].home + pj.verts[other.edge], jb = world.bodies[other.body].home + pj.verts[(other.edge + 1) % pj.verts.count]
+                XCTAssertTrue((simd_distance(a, ja) < 1.3 && simd_distance(b, jb) < 1.3) || (simd_distance(a, jb) < 1.3 && simd_distance(b, ja) < 1.3))
+            }
+        }
+        XCTAssertGreaterThan(shared, edges / 2, "most edges are inside a window; only the borders have no neighbour")
+        XCTAssertLessThan(shared, edges)
+    }
+
+    func testTheEdgesABrokenPieceLeavesBareBurnSlowly() {
+        let world = world(intensity: 2, automatic: false)
+        XCTAssertTrue((0..<world.originalCount).allSatisfy { i in world.polygons.isEmpty || world.bodies[i].kind != .shard || world.polygons[Int(world.bodies[i].polygon)].verts.indices.allSatisfy { world.edgeBurnAge(body: i, edge: $0) < 0 } },
+                      "nothing burns before something breaks")
+        world.run(.bomb)
+        run(world, seconds: 0.5)
+        func burning() -> [(Int, Int)] {
+            var list: [(Int, Int)] = []
+            for i in 0..<world.originalCount where world.bodies[i].state == .attached && world.bodies[i].kind == .shard {
+                for k in world.polygons[Int(world.bodies[i].polygon)].verts.indices where world.edgeBurnAge(body: i, edge: k) >= 0 { list.append((i, k)) }
+            }
+            return list
+        }
+        let first = burning()
+        XCTAssertGreaterThan(first.count, 3, "the pieces around the hole have burning edges")
+        for (i, k) in first {
+            let other = world.edgeNeighbor(body: i, edge: k)
+            XCTAssertNotNil(other, "an edge on the border of a window does not burn")
+            if let other { XCTAssertNotEqual(world.bodies[other.body].state, .attached, "only edges facing a missing piece burn") }
+        }
+        // An edge next to a piece that is still there does not burn.
+        for i in 0..<world.originalCount where world.bodies[i].state == .attached && world.bodies[i].kind == .shard {
+            for k in world.polygons[Int(world.bodies[i].polygon)].verts.indices {
+                if let other = world.edgeNeighbor(body: i, edge: k), world.bodies[other.body].state == .attached {
+                    XCTAssertLessThan(world.edgeBurnAge(body: i, edge: k), 0)
+                }
+            }
+        }
+        let before = first.map { world.edgeBurnAge(body: $0.0, edge: $0.1) }
+        var edgeFlames = 0
+        for _ in 0..<(3 * 60) {
+            world.step(dt: 1 / 60)
+            // Small flames on the edges themselves.
+            for p in world.puffs where p.kind == .flame && p.size < 7 && p.age < 0.05 {
+                for (i, k) in first where world.bodies[i].state == .attached {
+                    let poly = world.polygons[Int(world.bodies[i].polygon)]
+                    let a = world.bodies[i].home + poly.verts[k], b = world.bodies[i].home + poly.verts[(k + 1) % poly.verts.count]
+                    let t = max(0, min(1, simd_dot(p.pos - a, b - a) / max(simd_length_squared(b - a), 1e-3)))
+                    if simd_distance(p.pos, a + (b - a) * t) < 8 { edgeFlames += 1; break }
+                }
+            }
+        }
+        XCTAssertGreaterThan(edgeFlames, 3, "small flames lick along the burning edges")
+        let after = first.map { world.edgeBurnAge(body: $0.0, edge: $0.1) }
+        var checked = 0
+        for ((i, _), (a, b)) in zip(first, zip(before, after)) where world.bodies[i].state == .attached {
+            XCTAssertEqual(b - a, 3, accuracy: 0.2, "an edge keeps burning, one second per second")
+            checked += 1
+        }
+        XCTAssertGreaterThan(checked, 0)
+    }
+
+    func testAPieceThatFallsTakesTheCharOfItsBurningEdges() {
+        let world = world(intensity: 2, automatic: false)
+        world.run(.bomb)
+        run(world, seconds: 0.5)
+        guard let (i, _) = (0..<world.originalCount).compactMap({ i in
+            world.bodies[i].state == .attached && world.bodies[i].kind == .shard
+                && world.polygons[Int(world.bodies[i].polygon)].verts.indices.contains(where: { world.edgeBurnAge(body: i, edge: $0) >= 0 }) ? (i, 0) : nil
+        }).first else { return XCTFail("no piece with a burning edge") }
+        XCTAssertEqual(world.bodies[i].burn, 0)
+        world.run(.quake)   // makes sure something else is loosened; then break this one away through a second blast
+        for _ in 0..<12 { world.run(.bomb) }
+        run(world, seconds: 1)
+        if world.bodies[i].state == .loose { XCTAssertGreaterThan(world.bodies[i].burn, 0.3, "it brings its char along") }
+    }
+
     func testAButtonBlinksThenExplodesAndHurtsItsNeighbours() {
         let world = world(automatic: false)
         XCTAssertTrue(world.run(.buttonBlast))

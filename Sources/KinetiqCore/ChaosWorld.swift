@@ -219,6 +219,13 @@ public final class ChaosWorld {
     private var lastQuake: Float = -10
     private var wakePoints: [SIMD2<Float>] = []
 
+    /// For every edge of every original shard, the shard (and the edge of it) on the other side, or (-1, -1).
+    private var edgeNeighbor: [[SIMD2<Int32>]] = []
+    /// Seconds since the edge was left exposed by a piece that broke away (the edge burns and is slowly consumed), -1 if it is not.
+    private var edgeBurn: [[Float]] = []
+    private var burningEdges: [(body: Int32, edge: Int32)] = []
+    private static let maxBurningEdges = 3000
+
     /// Cracks drawn on pieces: segments (x0, y0, x1, y1) relative to the piece; `ChaosBody.crack` indexes this list.
     public private(set) var crackSets: [[SIMD4<Float>]] = []
     private var crackSegmentTotal = 0
@@ -279,6 +286,7 @@ public final class ChaosWorld {
         maxBodies = originalCount + 12_000
         nextEvent = 0.6
         buildCoverGrid()
+        buildAdjacency()
     }
 
     private static func makeBody(_ s: ChaosSeed, radius: Float, restitution: Float, friction: Float, massDivisor: Float = 80, mass: Float? = nil) -> ChaosBody {
@@ -317,6 +325,91 @@ public final class ChaosWorld {
     }
 
     private func inPlace(_ state: ChaosBody.State) -> Bool { state == .attached || state == .pending || state == .fuse }
+
+    /// Finds, for each edge of each piece of window, the piece that shares it.
+    private func buildAdjacency() {
+        edgeNeighbor = Array(repeating: [], count: originalCount)
+        edgeBurn = Array(repeating: [], count: originalCount)
+        for i in 0..<originalCount where bodies[i].kind == .shard {
+            let n = polygons[Int(bodies[i].polygon)].verts.count
+            edgeNeighbor[i] = Array(repeating: SIMD2<Int32>(-1, -1), count: n)
+            edgeBurn[i] = Array(repeating: -1, count: n)
+        }
+        let tolerance: Float = 1.2
+        for i in 0..<originalCount where bodies[i].kind == .shard {
+            let pi = polygons[Int(bodies[i].polygon)], n = pi.verts.count
+            for k in 0..<n {
+                let a = bodies[i].home + pi.verts[k], b = bodies[i].home + pi.verts[(k + 1) % n]
+                let m = (a + b) / 2
+                let cx = min(coverCols - 1, max(0, Int(m.x / coverCell))), cy = min(coverRows - 1, max(0, Int(m.y / coverCell)))
+                search: for y in max(0, cy - 1)...min(coverRows - 1, cy + 1) {
+                    for x in max(0, cx - 1)...min(coverCols - 1, cx + 1) {
+                        var node = coverHead[y * coverCols + x]
+                        while node >= 0 {
+                            let j = Int(coverNodes[Int(node)].shard)
+                            node = coverNodes[Int(node)].next
+                            guard j != i, bodies[j].group == bodies[i].group else { continue }
+                            let pj = polygons[Int(bodies[j].polygon)], nj = pj.verts.count
+                            for kj in 0..<nj {
+                                let ja = bodies[j].home + pj.verts[kj], jb = bodies[j].home + pj.verts[(kj + 1) % nj]
+                                let reversed = simd_distance(ja, b) < tolerance && simd_distance(jb, a) < tolerance
+                                let same = simd_distance(ja, a) < tolerance && simd_distance(jb, b) < tolerance
+                                if reversed || same {
+                                    edgeNeighbor[i][k] = SIMD2(Int32(j), Int32(kj))
+                                    break search
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// A piece broke away: the edges of its neighbours that it shared start to burn.
+    private func igniteNeighbors(of i: Int) {
+        guard i < edgeNeighbor.count, !edgeNeighbor[i].isEmpty else { return }
+        for pair in edgeNeighbor[i] where pair.x >= 0 {
+            let j = Int(pair.x), kj = Int(pair.y)
+            guard bodies[j].state == .attached, edgeBurn[j][kj] < 0, burningEdges.count < Self.maxBurningEdges else { continue }
+            edgeBurn[j][kj] = 0
+            burningEdges.append((Int32(j), Int32(kj)))
+        }
+    }
+
+    /// The piece on the other side of an edge of a shard and its edge, or nil on the border of a window.
+    public func edgeNeighbor(body: Int, edge: Int) -> (body: Int, edge: Int)? {
+        guard body < edgeNeighbor.count, edge < edgeNeighbor[body].count, edgeNeighbor[body][edge].x >= 0 else { return nil }
+        return (Int(edgeNeighbor[body][edge].x), Int(edgeNeighbor[body][edge].y))
+    }
+
+    /// Seconds an edge of a piece that holds has been burning (-1 when it is not).
+    public func edgeBurnAge(body: Int, edge: Int) -> Float {
+        guard body < edgeBurn.count, edge < edgeBurn[body].count else { return -1 }
+        return edgeBurn[body][edge]
+    }
+
+    /// The burning edges age and give off small flames, smoke and now and then an ember.
+    private func updateEdgeFire(_ dt: Float) {
+        guard !burningEdges.isEmpty else { return }
+        for e in burningEdges { edgeBurn[Int(e.body)][Int(e.edge)] += dt }
+        let rate = min(45, Float(burningEdges.count) * 1.2)
+        for _ in 0..<emitCount(rate, dt) {
+            let e = burningEdges[Int.random(in: 0..<burningEdges.count, using: &rng)]
+            let b = bodies[Int(e.body)]
+            guard b.state == .attached else { continue }
+            let poly = polygons[Int(b.polygon)], n = poly.verts.count
+            let a = b.home + poly.verts[Int(e.edge)], c = b.home + poly.verts[(Int(e.edge) + 1) % n]
+            let at = a + (c - a) * random(0...1)
+            emit(.flame, at: at, velocity: SIMD2(random(-6...6), -random(18...44)), size: random(2.5...5.5), growth: random(-2...4), life: random(0.3...0.7))
+            if chance(0.25) {
+                emit(.smoke, at: at, velocity: SIMD2(random(-5...5), -random(14...30)), size: random(5...9), growth: random(6...12), life: random(1.5...2.6))
+            }
+            if chance(0.12) {
+                emit(.spark, at: at, velocity: SIMD2(random(-25...25), -random(30...90)), size: random(1.2...2.4), growth: 0, life: random(0.8...1.6))
+            }
+        }
+    }
 
     /// Whether a piece still part of the desktop is hidden behind a window that is in front of it.
     public func isOccluded(_ i: Int) -> Bool {
@@ -509,6 +602,11 @@ public final class ChaosWorld {
         bodies[i].age = 0
         bodies[i].asleep = false
         bodies[i].sleepTimer = 0
+        if bodies[i].kind == .shard {
+            // The piece takes the char of its burnt edges along, and leaves its neighbours' edges exposed.
+            if i < edgeBurn.count, edgeBurn[i].contains(where: { $0 >= 0 }) { scorch(i, 0.5) }
+            igniteNeighbors(of: i)
+        }
     }
 
     private func launch(_ i: Int, velocity: SIMD2<Float>, spin: Float) {
@@ -627,6 +725,7 @@ public final class ChaosWorld {
         let base = simd_length(dirToParent) > 0.5 ? dirToParent / simd_length(dirToParent) : SIMD2<Float>(0, -1)
         carry(from: i, delay: 0, velocity: base * 400 * S, spin: random(-4...4), scorched: 0.6)
         bodies[i].state = .gone
+        igniteNeighbors(of: i)
         wakePoints.append(parent.pos)
 
         for index in sites.indices {
@@ -982,6 +1081,7 @@ public final class ChaosWorld {
         }
         updateScripted(dt)
         updateNuke(dt)
+        updateEdgeFire(dt)
         eventFlash = max(0, eventFlash - dt * 1.6)
         eventShake = max(0, eventShake - dt * 16)
         let ageRate = 1 + Float(max(0, looseCount - Self.comfortableLoose)) / 400
@@ -1050,6 +1150,7 @@ public final class ChaosWorld {
         var intact = 0
         for i in 0..<originalCount where inPlace(bodies[i].state) { intact += 1 }
         intactFraction = originalCount > 0 ? Float(intact) / Float(originalCount) : 0
+        burningEdges.removeAll { bodies[Int($0.body)].state != .attached }
     }
 
     /// Drops the fragments that are gone (and their outlines); the original pieces keep their place (the cover grid refers to them).

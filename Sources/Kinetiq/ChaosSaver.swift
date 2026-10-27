@@ -178,6 +178,10 @@ final class ChaosSaver: NSObject {
             do {
                 let renderer = try ChaosRenderer(device: device, scene: ChaosSceneBuilder.build(windows: inputs), screenSize: frame.size,
                                                  pixelScale: scale, wallpaper: wallpaper, settings: chaos)
+                if environment["KINETIQ_CHAOS_OFFSCREEN"] != nil {
+                    runOffscreen(renderer)
+                    return
+                }
                 let view = MTKView(frame: NSRect(origin: .zero, size: frame.size), device: device)
                 view.colorPixelFormat = .bgra8Unorm
                 view.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
@@ -264,17 +268,44 @@ final class ChaosSaver: NSObject {
         if let directory = environment["KINETIQ_CHAOS_DUMP"] {
             for (index, second) in times.enumerated() where Float(second) <= elapsed && !dumped.contains(index) {
                 dumped.insert(index)
-                guard let image = renderer.snapshot() else { continue }
-                let url = URL(fileURLWithPath: directory).appendingPathComponent(String(format: "chaos-%02d.png", Int(second)))
-                try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                if let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) {
-                    CGImageDestinationAddImage(destination, image, nil)
-                    CGImageDestinationFinalize(destination)
-                }
-                Self.log.info("dumped \(url.path) events \(renderer.world.eventCount) loose \(renderer.world.looseCount) intact \(renderer.world.intactFraction)")
+                writeSnapshot(of: renderer, to: directory, second: second)
             }
         }
         if let seconds = environment["KINETIQ_CHAOS_SECONDS"].flatMap(Float.init), elapsed >= seconds { stop() }
+    }
+
+    private func writeSnapshot(of renderer: ChaosRenderer, to directory: String, second: Double) {
+        guard let image = renderer.snapshot() else { return }
+        let url = URL(fileURLWithPath: directory).appendingPathComponent(String(format: "chaos-%02d.png", Int(second)))
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) {
+            CGImageDestinationAddImage(destination, image, nil)
+            CGImageDestinationFinalize(destination)
+        }
+        Self.log.info("dumped \(url.path) events \(renderer.world.eventCount) loose \(renderer.world.looseCount) intact \(renderer.world.intactFraction)")
+    }
+
+    /// Debugging aid: runs the simulation at 60 steps per second without showing anything on the screen and writes the
+    /// pictures of `KINETIQ_CHAOS_DUMP_TIMES` (so the real desktop is never covered while the code is being tested).
+    private func runOffscreen(_ renderer: ChaosRenderer) {
+        guard let directory = environment["KINETIQ_CHAOS_DUMP"] else { return }
+        let times = ((environment["KINETIQ_CHAOS_DUMP_TIMES"]?.split(separator: ",").compactMap { Double($0) }) ?? [4, 10, 20]).sorted()
+        var next = 0, docked = false
+        let nukeAt = environment["KINETIQ_CHAOS_NUKE"].flatMap(Float.init), dockAt = environment["KINETIQ_CHAOS_DOCK"].flatMap(Float.init)
+        while next < times.count {
+            renderer.simulate(1 / 60)
+            let t = renderer.elapsed
+            if let nukeAt, t >= nukeAt, !renderer.world.nukeSpent { renderer.world.run(.nuke) }
+            if let dockAt, t >= dockAt, !docked {
+                docked = true
+                if let i = renderer.world.bodies.firstIndex(where: { $0.isDock && $0.state == .attached }) { renderer.world.detonate(i) }
+            }
+            while next < times.count, Float(times[next]) <= t {
+                writeSnapshot(of: renderer, to: directory, second: times[next])
+                next += 1
+            }
+        }
+        Self.log.info("offscreen run done")
     }
 
     private func explainPermission() {

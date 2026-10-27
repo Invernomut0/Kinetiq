@@ -5,6 +5,17 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.26]
+
+### Added
+
+- **Screen saver: the edges that stay burn.** The edges of the window pieces around a hole are charred, glow with a
+  flickering ember light, give off small flames, smoke and embers, and are eaten away very slowly, so their sharp
+  cut becomes ragged and rounded. Window borders do not burn. `ChaosWorld` finds the neighbour of every edge
+  (`edgeNeighbor`, `edgeBurnAge`).
+- Debug aid: `KINETIQ_CHAOS_OFFSCREEN=1` runs the simulation and writes the pictures of `KINETIQ_CHAOS_DUMP_TIMES`
+  without covering the screen.
+
 ## [0.1.25]
 
 ### Added

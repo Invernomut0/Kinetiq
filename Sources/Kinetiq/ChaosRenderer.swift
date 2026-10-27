@@ -72,8 +72,9 @@ private enum ChaosShaders {
         float angle;
         float alpha;
         float flash;
-        float feather;  // 1 = soften the edges (loose pieces)
-        float2 pad;     // burn (charred edge, 0...1), heat (glowing edge, 0...1)
+        float feather;  // 0 in place, 1 loose (soft edge), 2 in place with a burning edge
+        float erode;    // how far the burning edge has been consumed, pixels
+        float2 burn;    // burn (charred edge, 0...1), heat (glowing edge, 0...1)
         float4 tint;
     };
 
@@ -84,6 +85,7 @@ private enum ChaosShaders {
         float alpha;
         float flash;
         float feather;
+        float erode;
         float2 burn;
         float4 tint;
     };
@@ -114,30 +116,36 @@ private enum ChaosShaders {
         o.alpha = s.alpha;
         o.flash = s.flash;
         o.feather = s.feather;
-        o.burn = s.pad;
+        o.erode = s.erode;
+        o.burn = s.burn;
         o.tint = s.tint;
         return o;
     }
 
     // Premultiplied output; the edge of a loose piece fades over one pixel instead of being jagged.
-    fragment float4 chaos_tri_fragment(TriOut in [[stage_in]], texture2d<float> tex [[texture(0)]]) {
+    fragment float4 chaos_tri_fragment(TriOut in [[stage_in]], texture2d<float> tex [[texture(0)]], constant float &clock [[buffer(1)]]) {
         constexpr sampler smp(coord::normalized, address::clamp_to_edge, filter::linear);
         float4 t = tex.sample(smp, in.uv);
         float3 rgb = mix(t.rgb, in.tint.rgb * t.a, in.tint.a);
         rgb += in.flash * t.a * float3(1., .9, .7);
         float m = in.bary.x;   // 1 at the centre of the piece, 0 along its outer edge
         float d = m / max(fwidth(m), 1e-5);   // distance to the edge in pixels
-        float soft = in.feather > .5;
-        float edge = soft > .5 ? clamp(d, 0., 1.) : 1.;
-        // Broken edges are charred (dark, ragged) and glow while they are hot.
+        bool loose = in.feather > .5 && in.feather < 1.5;
+        bool burning = in.feather > 1.5;
         float n = vnoise(in.uv * 1100.);
+        // A burning edge is eaten away unevenly, so it is ragged instead of sharp.
+        float cut = burning ? in.erode * (.35 + .65 * vnoise(in.uv * 520. + 3.7)) : 0.;
+        float edge = loose ? clamp(d, 0., 1.) : (burning ? smoothstep(cut, cut + 1.6, d) : 1.);
+        float dd = max(d - cut, 0.);
+        // Broken edges are charred (dark, ragged) and glow while they are hot.
         float width = (5. + 11. * n) * in.burn.x;
-        float charred = soft > .5 ? in.burn.x * (1. - smoothstep(0., max(width, .001), d)) : 0.;
+        float charred = (loose || burning) ? in.burn.x * (1. - smoothstep(0., max(width, .001), dd)) : 0.;
         rgb = mix(rgb, rgb * .1 + float3(.025, .014, .008) * t.a, charred * .92);
-        float ember = soft > .5 ? in.burn.y * (1. - smoothstep(0., 2.2 + 2.4 * n, d)) * (.55 + .45 * n) : 0.;
+        float flicker = burning ? .6 + .4 * vnoise(in.uv * 300. + clock * 1.7) : 1.;
+        float ember = (loose || burning) ? in.burn.y * flicker * (1. - smoothstep(0., 2.2 + 2.4 * n, dd)) * (.55 + .45 * n) : 0.;
         rgb += ember * t.a * float3(1., .42, .08) * 1.5;
         // A thin pale rim, like the edge of broken glass.
-        rgb += (soft > .5 ? (1. - clamp(d / 3., 0., 1.)) * .22 * (1. - in.burn.x) : 0.) * t.a * float3(.8, .9, 1.);
+        rgb += (loose ? (1. - clamp(d / 3., 0., 1.)) * .22 * (1. - in.burn.x) : 0.) * t.a * float3(.8, .9, 1.);
         return float4(rgb, t.a) * (in.alpha * edge);
     }
 
@@ -256,7 +264,10 @@ private struct TriInstance {
     var alpha: Float = 1
     var flash: Float = 0
     var feather: Float = 0
-    var pad = SIMD2<Float>(0, 0)
+    var erode: Float = 0
+    var pad0: Float = 0
+    var burn = SIMD2<Float>(0, 0)
+    var pad1 = SIMD2<Float>(0, 0)
     var tint = SIMD4<Float>(0, 0, 0, 0)
 }
 
@@ -472,7 +483,7 @@ final class ChaosRenderer {
 
     // MARK: - Frame
 
-    private func advance(_ dt: Float) {
+    func simulate(_ dt: Float) {
         elapsed += dt
         switch phase {
         case .playing:
@@ -497,7 +508,7 @@ final class ChaosRenderer {
         frames += 1
         inFlight.wait()
         commands.addCompletedHandler { [inFlight] _ in inFlight.signal() }
-        advance(dt)
+        simulate(dt)
         let s = slot
         slot = (slot + 1) % Self.slots
 
@@ -554,6 +565,8 @@ final class ChaosRenderer {
         encoder.setRenderPipelineState(spritePipeline)
         encoder.setVertexBytes(&resolution, length: MemoryLayout<SIMD2<Float>>.size, index: 1)
         encoder.setVertexBytes(&shift, length: MemoryLayout<SIMD2<Float>>.size, index: 3)
+        var clock = elapsed
+        encoder.setFragmentBytes(&clock, length: MemoryLayout<Float>.size, index: 1)
         var current = 0
         for segment in segments {
             if segment.kind != current {
@@ -636,7 +649,7 @@ final class ChaosRenderer {
         // Pieces in place overlap by half a pixel so no seam shows between them.
         let pad = 0.5 / pixelScale
 
-        for b in world.bodies where b.state != .gone {
+        for (index, b) in world.bodies.enumerated() where b.state != .gone {
             let inPlace = b.state != .loose
             if b.kind == .shard {
                 let poly = world.polygons[Int(b.polygon)]
@@ -645,9 +658,18 @@ final class ChaosRenderer {
                 let n = poly.verts.count
                 for v in 0..<n {
                     let p1 = poly.verts[v] * k, p2 = poly.verts[(v + 1) % n] * k
-                    let instance = TriInstance(pos: b.pos, a: .zero, b: p1, c: p2, ua: poly.uv(.zero), ub: poly.uv(p1), uc: poly.uv(p2),
+                    var instance = TriInstance(pos: b.pos, a: .zero, b: p1, c: p2, ua: poly.uv(.zero), ub: poly.uv(p1), uc: poly.uv(p2),
                                                angle: b.angle, alpha: b.alpha, flash: b.flash, feather: inPlace ? 0 : 1,
-                                               pad: SIMD2(b.burn, b.heat), tint: b.tint)
+                                               burn: SIMD2(b.burn, b.heat), tint: b.tint)
+                    // The edge a broken-away neighbour left bare burns and is eaten away very slowly.
+                    if b.state == .attached, index < world.originalCount {
+                        let age = world.edgeBurnAge(body: index, edge: v)
+                        if age >= 0 {
+                            instance.feather = 2
+                            instance.erode = min(9, age * 0.2)
+                            instance.burn = SIMD2(min(1, 0.55 + age / 40), max(0.25, exp(-age / 45)))
+                        }
+                    }
                     if inPlace { attachedShards[b.group].append(instance) } else { looseShards[b.group].append(instance) }
                 }
                 if b.crack >= 0 {
