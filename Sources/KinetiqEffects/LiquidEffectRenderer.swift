@@ -7,7 +7,8 @@ import KinetiqCore
 import Metal
 import simd
 
-/// Renders a captured window as a connected, texture-colored liquid surface.
+/// Transports material UVs through a connected liquid surface, sampling the
+/// original capture only at destination resolution so small text stays sharp.
 /// Call serially, on the same command queue as the destination's other writers.
 /// The caller clears the BGRA8 destination once; every destination pass loads it.
 public final class LiquidEffectRenderer {
@@ -25,20 +26,33 @@ public final class LiquidEffectRenderer {
         var parameters: SIMD4<Float>
         // Inverse density dimensions and size of a density texel in screen points.
         var field: SIMD4<Float>
+        // Cropped fluid domain in global CG points, independent of the screen.
+        var region: SIMD4<Float>
+        // Refraction and reflection strengths; remaining lanes reserved.
+        var optics: SIMD4<Float>
     }
 
     private let device: MTLDevice
     private let sourcePipeline: MTLRenderPipelineState
     private let densityPipeline: MTLRenderPipelineState
     private let surfacePipeline: MTLRenderPipelineState
-    // Only the most recent size is retained. Encoded command buffers retain older
-    // textures until completion, including when a display changes resolution.
-    private var densityTexture: MTLTexture?
+    // Small LRU, capped at 32 MiB (or one maximum-size field). Submitted command
+    // buffers retain evicted textures until completion on this same serial queue.
+    private var densityTextures: [MTLTexture] = []
+    /// Internal optical isolation for real-capture regression tests, not UI state.
+    var opticalStrength = SIMD2<Float>(1, 1)
 
     /// Compiles all three inline Metal pipelines, surfacing compilation failures.
-    public init(device: MTLDevice) throws {
+    public convenience init(device: MTLDevice) throws {
+        try self.init(device: device, manualFieldFiltering: !device.supports32BitFloatFiltering)
+    }
+
+    /// Older GPUs can reconstruct the same precise UV field with explicit bilinear
+    /// reads rather than relying on optional float32 hardware filtering.
+    init(device: MTLDevice, manualFieldFiltering: Bool) throws {
         self.device = device
-        let library = try device.makeLibrary(source: Self.shaderSource, options: nil)
+        let source = "#define LIQUID_MANUAL_FIELD_FILTER \(manualFieldFiltering ? 1 : 0)\n" + Self.shaderSource
+        let library = try device.makeLibrary(source: source, options: nil)
 
         func pipeline(vertex: String, fragment: String, density: Bool = false) throws -> MTLRenderPipelineState {
             let descriptor = MTLRenderPipelineDescriptor()
@@ -46,7 +60,7 @@ public final class LiquidEffectRenderer {
             descriptor.vertexFunction = library.makeFunction(name: vertex)
             descriptor.fragmentFunction = library.makeFunction(name: fragment)
             let color = descriptor.colorAttachments[0]!
-            color.pixelFormat = density ? .rgba16Float : .bgra8Unorm
+            color.pixelFormat = density ? .rgba32Float : .bgra8Unorm
             color.isBlendingEnabled = true
             color.rgbBlendOperation = .add
             color.alphaBlendOperation = .add
@@ -75,19 +89,8 @@ public final class LiquidEffectRenderer {
               world.spacing.isFinite, world.spacing > 0,
               world.elapsed.isFinite, world.meltDuration.isFinite, world.meltDuration > 0 else { return }
 
-        let scale = min(1, 1280 / Double(max(target.width, target.height)))
-        let width = max(1, Int((Double(target.width) * scale).rounded(.down)))
-        let height = max(1, Int((Double(target.height) * scale).rounded(.down)))
         let support = world.spacing * 1.5
-        var uniforms = Uniforms(
-            screen: SIMD4(Float(screenRect.minX), Float(screenRect.minY), Float(screenRect.width), Float(screenRect.height)),
-            window: SIMD4(Float(world.windowFrame.minX), Float(world.windowFrame.minY),
-                          Float(world.windowFrame.width), Float(world.windowFrame.height)),
-            uvRect: uvRect,
-            parameters: SIMD4(min(1, max(0, world.elapsed / world.meltDuration)), world.alpha, support, 0.32),
-            field: SIMD4(1 / Float(width), 1 / Float(height),
-                         Float(screenRect.width) / Float(width), Float(screenRect.height) / Float(height)))
-
+        var fluidBounds = CGRect.null
         let particles = world.particles.compactMap { particle -> Particle? in
             guard particle.isReleased, particle.position.x.isFinite, particle.position.y.isFinite,
                   particle.uv.x.isFinite, particle.uv.y.isFinite else { return nil }
@@ -98,9 +101,30 @@ public final class LiquidEffectRenderer {
                   x - Double(support) <= Double(screenRect.maxX),
                   y + Double(support) >= Double(screenRect.minY),
                   y - Double(support) <= Double(screenRect.maxY) else { return nil }
+            fluidBounds = fluidBounds.union(CGRect(x: x - Double(support), y: y - Double(support),
+                                      width: Double(support * 2), height: Double(support * 2)))
             return Particle(centerRadius: SIMD4(particle.position.x, particle.position.y, support, 0),
                             uvExtras: SIMD4(particle.uv.x, particle.uv.y, 0, 0))
         }
+
+                // Geometry needs roughly one sample per logical point, not Retina pixel.
+                // Crop BOTH the field and the final quad; a floor pool no longer shades a
+                // whole display. Float32 moments avoid half-float UV jitter on fine glyphs.
+                let region = particles.isEmpty ? screenRect : fluidBounds.insetBy(dx: -1, dy: -1).intersection(screenRect)
+                let scale = min(1, 1280 / max(region.width, region.height))
+        // Bucket dimensions to avoid allocating a new texture for every falling
+        // pixel. Two source windows can reuse their own fields rather than thrash.
+        let width = max(32, (Int((region.width * scale).rounded(.up)) + 31) / 32 * 32)
+        let height = max(32, (Int((region.height * scale).rounded(.up)) + 31) / 32 * 32)
+                var uniforms = Uniforms(
+            screen: SIMD4(Float(screenRect.minX), Float(screenRect.minY), Float(screenRect.width), Float(screenRect.height)),
+            window: SIMD4(Float(world.windowFrame.minX), Float(world.windowFrame.minY),
+                      Float(world.windowFrame.width), Float(world.windowFrame.height)),
+            uvRect: uvRect,
+            parameters: SIMD4(min(1, max(0, world.elapsed / world.meltDuration)), world.alpha, support, 0.32),
+            field: SIMD4(1 / Float(width), 1 / Float(height), Float(region.width) / Float(width), Float(region.height) / Float(height)),
+            region: SIMD4(Float(region.minX), Float(region.minY), Float(region.width), Float(region.height)),
+            optics: SIMD4(opticalStrength.x, opticalStrength.y, 0, 0))
 
         // Copy each frame into a new buffer: no CPU writes to in-flight storage.
         var particleBuffer: MTLBuffer?
@@ -112,18 +136,8 @@ public final class LiquidEffectRenderer {
                                          options: .storageModeShared)
             }
             guard particleBuffer != nil else { return }
-            if densityTexture?.width != width || densityTexture?.height != height {
-                // Release the cached size even if the replacement allocation fails.
-                densityTexture = nil
-                let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                    pixelFormat: .rgba16Float, width: width, height: height, mipmapped: false)
-                descriptor.storageMode = .private
-                descriptor.usage = [.renderTarget, .shaderRead]
-                densityTexture = device.makeTexture(descriptor: descriptor)
-                densityTexture?.label = "Liquid additive color and density"
-            }
-            guard let densityTexture else { return }
-            fieldTexture = densityTexture
+            guard let field = materialField(width: width, height: height) else { return }
+            fieldTexture = field
         }
 
         func destinationPass() -> MTLRenderPassDescriptor {
@@ -134,40 +148,61 @@ public final class LiquidEffectRenderer {
             return pass
         }
 
-        if uniforms.parameters.x < 1 {
-            guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: destinationPass()) else { return }
-            encoder.label = "Liquid intact window"
-            encoder.setRenderPipelineState(sourcePipeline)
+        if let fieldTexture, let particleBuffer {
+            let densityPass = MTLRenderPassDescriptor()
+            densityPass.colorAttachments[0].texture = fieldTexture
+            densityPass.colorAttachments[0].loadAction = .clear
+            densityPass.colorAttachments[0].storeAction = .store
+            densityPass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
+            guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: densityPass) else { return }
+            encoder.label = "Liquid polynomial density and material transport"
+            encoder.setRenderPipelineState(densityPipeline)
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
-            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+            encoder.setVertexBuffer(particleBuffer, offset: 0, index: 1)
             encoder.setFragmentTexture(texture, index: 0)
-            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: particles.count)
             encoder.endEncoding()
         }
 
-        guard let fieldTexture, let particleBuffer else { return }
-        let densityPass = MTLRenderPassDescriptor()
-        densityPass.colorAttachments[0].texture = fieldTexture
-        densityPass.colorAttachments[0].loadAction = .clear
-        densityPass.colorAttachments[0].storeAction = .store
-        densityPass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
-        guard let densityEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: densityPass) else { return }
-        densityEncoder.label = "Liquid Gaussian density"
-        densityEncoder.setRenderPipelineState(densityPipeline)
-        densityEncoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
-        densityEncoder.setVertexBuffer(particleBuffer, offset: 0, index: 1)
-        densityEncoder.setFragmentTexture(texture, index: 0)
-        densityEncoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
-        densityEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: particles.count)
-        densityEncoder.endEncoding()
+        // One destination load/store for the intact image and fluid together.
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: destinationPass()) else { return }
+        encoder.label = "Liquid sharp material and water optics"
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+        if uniforms.parameters.x < 1 {
+            encoder.setRenderPipelineState(sourcePipeline)
+            encoder.setFragmentTexture(texture, index: 0)
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        }
+        if let fieldTexture {
+            encoder.setRenderPipelineState(surfacePipeline)
+            encoder.setFragmentTexture(fieldTexture, index: 0)
+            encoder.setFragmentTexture(texture, index: 1)
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        }
+        encoder.endEncoding()
+    }
 
-        guard let surfaceEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: destinationPass()) else { return }
-        surfaceEncoder.label = "Liquid connected glossy surface"
-        surfaceEncoder.setRenderPipelineState(surfacePipeline)
-        surfaceEncoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
-        surfaceEncoder.setFragmentTexture(fieldTexture, index: 0)
-        surfaceEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        surfaceEncoder.endEncoding()
+    private func materialField(width: Int, height: Int) -> MTLTexture? {
+        let field: MTLTexture
+        if let index = densityTextures.firstIndex(where: { $0.width == width && $0.height == height }) {
+            field = densityTextures.remove(at: index)
+        } else {
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .rgba32Float, width: width, height: height, mipmapped: false)
+            descriptor.storageMode = .private
+            descriptor.usage = [.renderTarget, .shaderRead]
+            guard let allocated = device.makeTexture(descriptor: descriptor) else { return nil }
+            field = allocated
+            field.label = "Liquid cropped material UV moments and density"
+        }
+        densityTextures.insert(field, at: 0)
+        while densityTextures.count > 1 && (densityTextures.count > 4
+            || densityTextures.reduce(0, { $0 + $1.width * $1.height * 16 }) > 32 * 1024 * 1024) {
+            densityTextures.removeLast()
+        }
+        return field
     }
 
     private static func valid(_ rect: CGRect) -> Bool {
@@ -186,6 +221,8 @@ public final class LiquidEffectRenderer {
         float4 uvRect;
         float4 parameters;
         float4 field;
+        float4 region;
+        float4 optics;
     };
     struct LiquidParticle {
         float4 centerRadius;
@@ -201,6 +238,23 @@ public final class LiquidEffectRenderer {
 
     constant float2 liquidCorners[4] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 1) };
     constexpr sampler liquidSampler(coord::normalized, address::clamp_to_edge, filter::linear);
+
+    float4 liquidFieldSample(texture2d<float> field, float2 uv) {
+    #if LIQUID_MANUAL_FIELD_FILTER
+        float2 size = float2(field.get_width(), field.get_height());
+        float2 pixel = uv * size - 0.5;
+        int2 origin = int2(floor(pixel));
+        int2 limit = int2(size) - 1;
+        float2 blend = fract(pixel);
+        float4 a = field.read(uint2(clamp(origin, int2(0), limit)));
+        float4 b = field.read(uint2(clamp(origin + int2(1, 0), int2(0), limit)));
+        float4 c = field.read(uint2(clamp(origin + int2(0, 1), int2(0), limit)));
+        float4 d = field.read(uint2(clamp(origin + int2(1, 1), int2(0), limit)));
+        return mix(mix(a, b, blend.x), mix(c, d, blend.x), blend.y);
+    #else
+        return field.sample(liquidSampler, uv);
+    #endif
+    }
 
     float4 liquidClip(float2 point, constant LiquidUniforms &u) {
         float2 p = (point - u.screen.xy) / u.screen.zw;
@@ -237,7 +291,8 @@ public final class LiquidEffectRenderer {
         out.local = liquidCorners[id] * 2 - 1;
         out.radius = particle.centerRadius.z;
         out.sourceUV = particle.uvExtras.xy;
-        out.position = liquidClip(particle.centerRadius.xy + out.local * out.radius, u);
+        float2 p = (particle.centerRadius.xy + out.local * out.radius - u.region.xy) / u.region.zw;
+        out.position = float4(p.x * 2 - 1, 1 - p.y * 2, 0, 1);
         return out;
     }
 
@@ -246,66 +301,71 @@ public final class LiquidEffectRenderer {
                                          texture2d<float> capture [[texture(0)]]) {
         float r2 = dot(in.local, in.local);
         if (r2 >= 1) discard_fragment();
-        // A truncated Gaussian with zero value AND slope at its support edge.
-        // At 1.5 spacings, neighboring kernels overlap into sheets and pools.
-        float edge = exp(-3.0);
-        float gaussian = (exp(-3 * r2) - edge) / (1 - edge);
-        float kernelWeight = gaussian * (1 - smoothstep(0.72, 1.0, r2));
-        // Transport a small textured patch, not a flat confetti-colored disc.
+        // Compact C2 polynomial: no per-fragment exponential or extra smoothstep.
+        float q = 1 - r2;
+        float kernelWeight = q * q * q;
         float2 windowUV = in.sourceUV + in.local * in.radius / u.window.zw;
         float inside = all(windowUV >= 0.0) && all(windowUV <= 1.0) ? 1.0 : 0.0;
-        float4 sample = capture.sample(liquidSampler, u.uvRect.xy + saturate(windowUV) * u.uvRect.zw);
-        float sourceAlpha = sample.a * inside;
+        float sourceAlpha = capture.sample(liquidSampler, u.uvRect.xy + saturate(windowUV) * u.uvRect.zw).a * inside;
         float weight = kernelWeight * sourceAlpha;
-        // Unpremultiply before density weighting; alpha must not darken corners twice.
-        float3 color = sample.rgb / max(sample.a, 0.0001);
-        return float4(color * weight, weight);
+        // Blend coordinates, NEVER RGB. Text is read once from the original capture
+        // by the final fragment, not preblurred in the low-resolution geometry field.
+        return float4(windowUV * weight, weight, 0);
     }
 
-    vertex LiquidVertex liquidSurfaceVertex(uint id [[vertex_id]]) {
+    vertex LiquidVertex liquidSurfaceVertex(uint id [[vertex_id]], constant LiquidUniforms &u [[buffer(0)]]) {
         LiquidVertex out = {};
         out.uv = liquidCorners[id];
-        out.position = float4(out.uv.x * 2 - 1, 1 - out.uv.y * 2, 0, 1);
+        out.position = liquidClip(u.region.xy + out.uv * u.region.zw, u);
         return out;
     }
 
     fragment float4 liquidSurfaceFragment(LiquidVertex in [[stage_in]],
                                          constant LiquidUniforms &u [[buffer(0)]],
-                                         texture2d<float> density [[texture(0)]]) {
+                                         texture2d<float> density [[texture(0)]],
+                                         texture2d<float> capture [[texture(1)]]) {
         float2 texel = u.field.xy;
-        float4 center = density.sample(liquidSampler, in.uv);
-        float left = density.sample(liquidSampler, in.uv - float2(texel.x, 0)).a;
-        float right = density.sample(liquidSampler, in.uv + float2(texel.x, 0)).a;
-        float top = density.sample(liquidSampler, in.uv - float2(0, texel.y)).a;
-        float bottom = density.sample(liquidSampler, in.uv + float2(0, texel.y)).a;
+        float4 center = liquidFieldSample(density, in.uv);
+        float left = liquidFieldSample(density, in.uv - float2(texel.x, 0)).b;
+        float right = liquidFieldSample(density, in.uv + float2(texel.x, 0)).b;
+        float top = liquidFieldSample(density, in.uv - float2(0, texel.y)).b;
+        float bottom = liquidFieldSample(density, in.uv + float2(0, texel.y)).b;
         float2 gradient = float2(right - left, bottom - top) / (2 * u.field.zw);
         float threshold = u.parameters.w;
         // Account for BOTH final-pixel derivatives and the downsampled field's
         // footprint, so boundaries stay soft on Retina and low-resolution targets.
-        float aa = max(0.025, max(fwidth(center.a), length(gradient * u.field.zw) * 0.65));
+        float aa = max(0.025, max(fwidth(center.b), length(gradient * u.field.zw) * 0.65));
         aa = min(aa, threshold * 0.75);
-        float coverage = smoothstep(threshold - aa, threshold + aa, center.a);
+        float coverage = smoothstep(threshold - aa, threshold + aa, center.b);
         if (coverage <= 0.0001) discard_fragment();
 
         float2 slope = gradient * u.parameters.z;
         float3 normal = normalize(float3(-slope, 1.25));
-        float3 light = normalize(float3(-0.45, -0.65, 1.0));
-        float3 halfway = normalize(light + float3(0, 0, 1));
-        float specular = pow(saturate(dot(normal, halfway)), 52.0);
-        float rim = pow(1 - normal.z, 3.0);
-        float edgeLight = 1 - smoothstep(threshold, threshold + 1.2, center.a);
+        float2 materialUV = center.rg / max(center.b, 0.0001);
+        // Snell refraction for water (n=1.333). Displace the ORIGINAL material,
+        // not an already blurred color field. Limit the lens to protect glyphs.
+        float3 transmitted = refract(float3(0, 0, -1), normal, 0.75019);
+        float thickness = min(2.0, u.parameters.z * 0.075) * u.optics.x;
+        float2 bend = transmitted.xy * (thickness / max(0.35, -transmitted.z));
+        float2 sourceUV = saturate(materialUV + bend / u.window.zw);
+        float4 material = capture.sample(liquidSampler, u.uvRect.xy + sourceUV * u.uvRect.zw);
+        float3 base = material.rgb / max(material.a, 0.0001);
 
-        float3 base = center.rgb / max(center.a, 0.0001);
-        // A small normal-driven displacement of the transported COLOR field
-        // resembles refraction without warping density or breaking connectivity.
-        float2 bend = normal.xy * min(u.parameters.z * 0.10, 4.0) / u.screen.zw;
-        float4 refracted = density.sample(liquidSampler, clamp(in.uv + bend, texel * 0.5, 1 - texel * 0.5));
-        if (refracted.a > threshold * 0.6) {
-            base = mix(base, refracted.rgb / refracted.a, 0.23);
-        }
-        float diffuse = dot(normal, light);
-        float3 color = base * (0.94 + 0.06 * diffuse)
-            + float3(0.90, 0.96, 1.0) * (0.22 * specular + 0.10 * rim) * edgeLight;
+        // Schlick Fresnel, F0 for an air/water boundary. Multiplications replace
+        // generic powers; procedural studio lights need no environment capture.
+        float grazing = 1 - saturate(normal.z);
+        float grazing2 = grazing * grazing;
+        float fresnel = (0.02037 + 0.97963 * grazing2 * grazing2 * grazing) * u.optics.y;
+        float3 reflected = reflect(float3(0, 0, -1), normal);
+        float sky = saturate(0.5 - reflected.y * 0.5);
+        float3 environment = mix(float3(0.025, 0.035, 0.055), float3(0.65, 0.78, 0.90), sky);
+        float softbox = (1 - smoothstep(0.08, 0.18, abs(reflected.x + 0.38)))
+            * (1 - smoothstep(0.42, 0.65, abs(reflected.y + 0.12)));
+        float strip = (1 - smoothstep(0.025, 0.07, abs(reflected.x - 0.48)))
+            * (1 - smoothstep(0.30, 0.60, abs(reflected.y - 0.20)));
+        float3 reflection = environment * 0.45 + float3(1.0, 0.97, 0.90) * softbox * 2.2
+            + float3(0.70, 0.85, 1.0) * strip;
+        float3 color = mix(base, reflection, fresnel);
         float alpha = coverage * u.parameters.y;
         return float4(saturate(color) * alpha, alpha);
     }

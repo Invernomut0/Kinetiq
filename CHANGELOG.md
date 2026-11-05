@@ -5,6 +5,15 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.31]
+
+### Changed
+
+- Liquid transports precise material UV coordinates instead of averaging RGB in the low-resolution field. Text and images are sampled directly from the original capture at output resolution, preserving Retina detail during flow.
+- Water-like Snell refraction, Schlick Fresnel reflectance and procedural softbox reflections replace the blurred color-field bend. Refraction is bounded to keep fine glyphs legible; no extra desktop capture is needed.
+- Cropped geometry fields and surface quads, a polynomial kernel without per-fragment exponentials, and one shared destination pass reduce shader work. Bucketed texture sizes and a bounded LRU prevent allocation churn between sources.
+- Added real-capture native-resolution contrast regression, optional GPU timings, hardware/manual float32 filtering comparison and independent reflection/refraction checks.
+
 ## [0.1.30]
 
 ### Added

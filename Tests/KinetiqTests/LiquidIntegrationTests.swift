@@ -6,7 +6,7 @@ import AppKit
 @preconcurrency import ApplicationServices
 import CoreVideo
 import KinetiqCore
-import KinetiqEffects
+@testable import KinetiqEffects
 import Metal
 import QuartzCore
 import class SwiftUI.NSHostingView
@@ -186,6 +186,122 @@ final class LiquidIntegrationTests: XCTestCase {
         XCTAssertEqual(world.alpha, 0)
         XCTAssertEqual(try gpu.render(world, screen: screen.cgFrame).alphaMass, 0)
         try dumpIfRequested(frames)
+    }
+
+    /// Sharpness regression on a real README capture, at native display resolution. No desktop
+    /// image or user-window geometry participates in the isolated simulation.
+    @MainActor
+    func testCapturedREADMEOpticsPreserveNativeTextContrast() async throws {
+        let screen = try captureScreen()
+        let device = try metalDevice()
+        let window = try readmeWindow(on: screen)
+        defer { window.close() }
+        let (info, frame) = try await captured(window, using: WindowCapture())
+        let bounds = screen.cgFrame
+        let scale = screen.backingScaleFactor
+        let gpu = try GPU(device: device, frame: frame, screen: bounds, targetPixelScale: scale)
+        let world = LiquidWorld(windowFrame: info.frame, screenBounds: bounds, obstacles: [])
+        let original = try capturedPixels(frame)
+        XCTAssertEqual(gpu.target.width, Int(bounds.width * scale))
+        XCTAssertEqual(gpu.target.height, Int(bounds.height * scale))
+        let benchmark = ProcessInfo.processInfo.environment["KINETIQ_LIQUID_BENCHMARK"] == "1"
+        print("LIQUID_OPTICS_PROFILE device=\(device.name) backingScale=\(scale) screenPoints=\(bounds) windowPoints=\(info.frame) sourcePixels=\(original.width)x\(original.height) sourceWindowPixels=\(frame.windowRect) targetPixels=\(gpu.target.width)x\(gpu.target.height) obstacles=0 benchmark=\(benchmark) framesPerState=40 warmup=3")
+        var frames: [(Double, Pixels)] = []
+        for time in [0.0, 0.12, 0.25, 0.5, 1.5, 5.0] {
+            advance(world, to: Float(time))
+            assertFinite(world)
+            if benchmark && [0.5, 1.5, 5.0].contains(time) {
+                let timing = try gpu.benchmark(world, screen: bounds, frames: 40)
+                XCTAssertEqual(timing.gpuMilliseconds.count, 40)
+                XCTAssertTrue(timing.gpuMilliseconds.allSatisfy { $0.isFinite && $0 > 0 },
+                              "Metal must supply actual completed-command GPU timestamps")
+                print(String(format: "LIQUID_OPTICS_GPU time=%.3f particles=%d released=%d targetPixels=%dx%d frames=%d gpuSumMS=%.3f gpuMeanMS=%.3f gpuMedianMS=%.3f gpuP95MS=%.3f cpuEncodeSubmitWaitMeanMS=%.3f",
+                             time, world.particles.count, world.particles.filter(\.isReleased).count,
+                             gpu.target.width, gpu.target.height, timing.gpuMilliseconds.count,
+                             timing.gpuMilliseconds.reduce(0, +), timing.meanGPU, timing.percentile(0.5),
+                             timing.percentile(0.95), timing.cpuMilliseconds.reduce(0, +) / Double(timing.cpuMilliseconds.count)))
+            }
+            let output = try gpu.render(world, screen: bounds)
+            XCTAssertGreaterThan(output.alphaMass, 0, "The benchmark must render the captured document, not an empty target")
+            if time == 0 {
+                XCTAssertLessThan(try sourceDifference(output, frame: frame, info: info, screen: bounds), 0.08)
+            } else {
+                let metrics = transportContrast(output, original: original, frame: frame,
+                                                info: info, world: world, screen: bounds)
+                print(String(format: "LIQUID_OPTICS_TRANSPORT time=%.3f coherentEdgeSamples=%d expectedRGBContrast=%.6f renderedRGBContrast=%.6f contrastRatio=%.6f materialUVRGBError=%.6f",
+                             time, metrics.count, metrics.expected, metrics.rendered, metrics.ratio, metrics.error))
+                if time == 1.5 {
+                    // Keep production optics enabled: tolerate their small displacement
+                    // and lighting, but reject the old preblurred RGB field (~0.128).
+                    XCTAssertGreaterThan(metrics.count, 32, "The real capture must supply enough coherent text edges")
+                    XCTAssertGreaterThan(metrics.ratio, 0.65, "Released text must retain native-resolution edge contrast")
+                    XCTAssertLessThan(metrics.error, 0.18, "Transported material must retain the captured document colors")
+                }
+            }
+            frames.append((time, output))
+        }
+        try dumpIfRequested(frames)
+    }
+
+    /// Compare the public automatic path with explicit float32 bilinear reconstruction.
+    @MainActor
+    func testCapturedREADMEManualFieldFilteringMatchesAutomatic() async throws {
+        let screen = try captureScreen()
+        let device = try metalDevice()
+        let window = try readmeWindow(on: screen)
+        defer { window.close() }
+        let (info, frame) = try await captured(window, using: WindowCapture())
+        let bounds = screen.cgFrame
+        let automatic = try GPU(device: device, frame: frame, screen: bounds,
+                                targetPixelScale: screen.backingScaleFactor)
+        let manual = try GPU(device: device, frame: frame, screen: bounds,
+                             targetPixelScale: screen.backingScaleFactor, manualFieldFiltering: true)
+        let world = LiquidWorld(windowFrame: info.frame, screenBounds: bounds, obstacles: [])
+        advance(world, to: 1.5)
+        assertFinite(world)
+        let expected = try automatic.render(world, screen: bounds)
+        let actual = try manual.render(world, screen: bounds)
+        let difference = actual.visibleDifference(from: expected)
+        print("LIQUID_OPTICS_FILTER hardwareFloat32Filtering=\(device.supports32BitFloatFiltering) visiblePixels=\(difference.count) rgbaError=\(difference.rgba) alphaError=\(difference.alpha) maxAlphaError=\(difference.maxAlpha)")
+        XCTAssertGreaterThan(difference.count, 32, "Equivalence must compare actual visible fluid, not empty targets")
+        XCTAssertLessThan(actual.meanDifference(from: expected), 0.002)
+        XCTAssertLessThan(difference.rgba, 0.002, "Transparent screen area must not hide a filtering discrepancy")
+        XCTAssertLessThan(difference.alpha, 0.002)
+        XCTAssertLessThanOrEqual(difference.maxAlpha, 2.0 / 255, "Coverage may differ by at most two BGRA8 steps")
+    }
+
+    /// Freeze real simulated fluid, including its pool, while changing only optical strengths.
+    @MainActor
+    func testCapturedREADMERefractionAndReflectionLeaveAlphaUnchanged() async throws {
+        let screen = try captureScreen()
+        let device = try metalDevice()
+        let window = try readmeWindow(on: screen)
+        defer { window.close() }
+        let (info, frame) = try await captured(window, using: WindowCapture())
+        let bounds = screen.cgFrame
+        let gpu = try GPU(device: device, frame: frame, screen: bounds,
+                          targetPixelScale: screen.backingScaleFactor)
+        XCTAssertEqual(gpu.renderer.opticalStrength, SIMD2<Float>(1, 1))
+        let world = LiquidWorld(windowFrame: info.frame, screenBounds: bounds, obstacles: [])
+        for time: Float in [1.5, 5] {
+            advance(world, to: time)
+            assertFinite(world)
+            var outputs: [Pixels] = []
+            for strength in [SIMD2<Float>(0, 0), SIMD2<Float>(1, 0), SIMD2<Float>(0, 1), SIMD2<Float>(1, 1)] {
+                gpu.renderer.opticalStrength = strength
+                outputs.append(try gpu.render(world, screen: bounds))
+            }
+            // Both effects must work independently AND when the other effect is enabled.
+            for (a, b) in [(0, 1), (0, 2), (1, 3), (2, 3)] {
+                XCTAssertTrue(stride(from: 3, to: outputs[a].bytes.count, by: 4).allSatisfy {
+                    outputs[a].bytes[$0] == outputs[b].bytes[$0]
+                }, "Optics must preserve every alpha byte at \(time)s (\(a) vs \(b))")
+                let difference = outputs[a].visibleDifference(from: outputs[b])
+                print("LIQUID_OPTICS_ISOLATION time=\(time) pair=\(a),\(b) visiblePixels=\(difference.count) changedRGBPixels=\(difference.changedRGB) rgbError=\(difference.rgb)")
+                XCTAssertGreaterThan(difference.changedRGB, 32, "Each optical control must visibly affect the actual captured material")
+                XCTAssertGreaterThan(difference.rgb, 0.0001, "Optical controls must not be inert at \(time)s (\(a) vs \(b))")
+            }
+        }
     }
 
     @MainActor
@@ -747,10 +863,15 @@ final class LiquidIntegrationTests: XCTestCase {
         let uv: SIMD4<Float>
         let target: MTLTexture
 
-        init(device: MTLDevice, frame: CapturedFrame, screen: CGRect) throws {
+        init(device: MTLDevice, frame: CapturedFrame, screen: CGRect, targetPixelScale: CGFloat? = nil,
+             manualFieldFiltering: Bool? = nil) throws {
             self.device = device
             queue = try XCTUnwrap(device.makeCommandQueue())
-            renderer = try LiquidEffectRenderer(device: device)
+            if let manualFieldFiltering {
+                renderer = try LiquidEffectRenderer(device: device, manualFieldFiltering: manualFieldFiltering)
+            } else {
+                renderer = try LiquidEffectRenderer(device: device)
+            }
             var cache: CVMetalTextureCache?
             XCTAssertEqual(CVMetalTextureCacheCreate(nil, nil, device, nil, &cache), kCVReturnSuccess)
             self.cache = try XCTUnwrap(cache)
@@ -762,7 +883,11 @@ final class LiquidIntegrationTests: XCTestCase {
             source = try XCTUnwrap(CVMetalTextureGetTexture(self.backing))
             uv = SIMD4(Float(frame.windowRect.minX) / Float(w), Float(frame.windowRect.minY) / Float(h),
                        Float(frame.windowRect.width) / Float(w), Float(frame.windowRect.height) / Float(h))
-            let scale = min(1, 1000 / max(screen.width, screen.height))
+            let scale = targetPixelScale ?? min(1, 1000 / max(screen.width, screen.height))
+            guard scale.isFinite, scale > 0 else {
+                throw NSError(domain: "LiquidIntegrationTests", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "Target pixel scale must be finite and positive"])
+            }
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm,
                 width: max(1, Int(screen.width * scale)), height: max(1, Int(screen.height * scale)), mipmapped: false)
             descriptor.storageMode = .shared
@@ -770,7 +895,8 @@ final class LiquidIntegrationTests: XCTestCase {
             target = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
         }
 
-        func render(_ world: LiquidWorld, screen: CGRect) throws -> Pixels {
+        /// Encode the same real rendering path for readback and GPU-only timing.
+        private func submit(_ world: LiquidWorld, screen: CGRect) throws -> MTLCommandBuffer {
             let command = try XCTUnwrap(queue.makeCommandBuffer())
             let clear = MTLRenderPassDescriptor()
             clear.colorAttachments[0].texture = target
@@ -784,6 +910,39 @@ final class LiquidIntegrationTests: XCTestCase {
             command.waitUntilCompleted()
             XCTAssertEqual(command.status, .completed, command.error?.localizedDescription ?? "Metal command failed")
             XCTAssertNil(command.error)
+            return command
+        }
+
+        struct Timing {
+            let gpuMilliseconds: [Double]
+            let cpuMilliseconds: [Double]
+
+            var meanGPU: Double { gpuMilliseconds.reduce(0, +) / Double(gpuMilliseconds.count) }
+
+            func percentile(_ fraction: Double) -> Double {
+                let sorted = gpuMilliseconds.sorted()
+                return sorted[min(sorted.count - 1, max(0, Int(ceil(fraction * Double(sorted.count))) - 1))]
+            }
+        }
+
+        /// Frozen simulation, three untimed warmups, no texture readback in the
+        /// measured loop. GPU timestamps include target clear and all liquid passes;
+        /// CPU timing includes encoding, submission and the completion wait.
+        func benchmark(_ world: LiquidWorld, screen: CGRect, frames: Int) throws -> Timing {
+            precondition(frames > 0)
+            for _ in 0..<3 { _ = try submit(world, screen: screen) }
+            var gpu: [Double] = [], cpu: [Double] = []
+            for _ in 0..<frames {
+                let begin = CACurrentMediaTime()
+                let command = try submit(world, screen: screen)
+                cpu.append((CACurrentMediaTime() - begin) * 1000)
+                gpu.append((command.gpuEndTime - command.gpuStartTime) * 1000)
+            }
+            return Timing(gpuMilliseconds: gpu, cpuMilliseconds: cpu)
+        }
+
+        func render(_ world: LiquidWorld, screen: CGRect) throws -> Pixels {
+            _ = try submit(world, screen: screen)
             var bytes = [UInt8](repeating: 0, count: target.width * target.height * 4)
             target.getBytes(&bytes, bytesPerRow: target.width * 4,
                             from: MTLRegionMake2D(0, 0, target.width, target.height), mipmapLevel: 0)
@@ -806,6 +965,19 @@ final class LiquidIntegrationTests: XCTestCase {
 
         func alpha(at point: CGPoint, screen: CGRect) -> Double { Double(bytes[offset(at: point, screen: screen) + 3]) / 255 }
 
+        /// Bilinear normalized RGB at Metal pixel-center coordinates. Source data
+        /// is always the real captured BGRA buffer, never a manufactured texture.
+        func rgb(x: Double, y: Double) -> SIMD3<Double> {
+            let x = min(Double(width - 1), max(0, x)), y = min(Double(height - 1), max(0, y))
+            let ix = Int(x), iy = Int(y), fx = x - Double(ix), fy = y - Double(iy)
+            func color(_ px: Int, _ py: Int) -> SIMD3<Double> {
+                let offset = (min(height - 1, py) * width + min(width - 1, px)) * 4
+                return SIMD3(Double(bytes[offset + 2]), Double(bytes[offset + 1]), Double(bytes[offset])) / 255
+            }
+            return (color(ix, iy) * (1 - fx) + color(ix + 1, iy) * fx) * (1 - fy)
+                + (color(ix, iy + 1) * (1 - fx) + color(ix + 1, iy + 1) * fx) * fy
+        }
+
         func meanAlpha(in rect: CGRect, screen: CGRect) -> Double {
             let clipped = rect.intersection(screen)
             guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return 0 }
@@ -824,6 +996,30 @@ final class LiquidIntegrationTests: XCTestCase {
             return zip(bytes, other.bytes).reduce(0.0) { $0 + abs(Double($1.0) - Double($1.1)) } / Double(bytes.count * 255)
         }
 
+        /// Normalize over visible pixels only, so empty desktop cannot dilute errors.
+        /// Maximum alpha error still covers every pixel, including transparent edges.
+        func visibleDifference(from other: Pixels) -> (count: Int, changedRGB: Int, rgb: Double, rgba: Double, alpha: Double, maxAlpha: Double) {
+            precondition(width == other.width && height == other.height)
+            var count = 0, changedRGB = 0
+            var rgb = 0.0, alpha = 0.0, maxAlpha = 0.0
+            for offset in stride(from: 0, to: bytes.count, by: 4) {
+                let alphaError = abs(Double(bytes[offset + 3]) - Double(other.bytes[offset + 3])) / 255
+                maxAlpha = max(maxAlpha, alphaError)
+                guard max(bytes[offset + 3], other.bytes[offset + 3]) > 25 else { continue }
+                count += 1
+                var colorError = 0.0
+                for channel in 0..<3 {
+                    colorError += abs(Double(bytes[offset + channel]) - Double(other.bytes[offset + channel])) / 255
+                }
+                if colorError > 0 { changedRGB += 1 }
+                rgb += colorError
+                alpha += alphaError
+            }
+            guard count > 0 else { return (0, 0, .infinity, .infinity, .infinity, maxAlpha) }
+            return (count, changedRGB, rgb / Double(count * 3), (rgb + alpha) / Double(count * 4),
+                    alpha / Double(count), maxAlpha)
+        }
+
         func image() throws -> CGImage {
             let data = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
             return try XCTUnwrap(CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
@@ -831,6 +1027,99 @@ final class LiquidIntegrationTests: XCTestCase {
                 bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue).union(.byteOrder32Little),
                 provider: data, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
         }
+    }
+
+    /// Copy only the README window's captured IOSurface, respecting its row stride.
+    private func capturedPixels(_ frame: CapturedFrame) throws -> Pixels {
+        let buffer = frame.pixelBuffer
+        XCTAssertEqual(CVPixelBufferLockBaseAddress(buffer, .readOnly), kCVReturnSuccess)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let base = try XCTUnwrap(CVPixelBufferGetBaseAddress(buffer)).assumingMemoryBound(to: UInt8.self)
+        let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
+        let stride = CVPixelBufferGetBytesPerRow(buffer)
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(width * height * 4)
+        for y in 0..<height { bytes.append(contentsOf: UnsafeBufferPointer(start: base + y * stride, count: width * 4)) }
+        return Pixels(width: width, height: height, bytes: bytes)
+    }
+
+    private struct TransportContrast {
+        var count = 0
+        var expected = 0.0
+        var rendered = 0.0
+        var error = 0.0
+        var ratio: Double { expected > 0 ? rendered / expected : 0 }
+    }
+
+    /// Material-UV reference from the actual released particles and the polynomial
+    /// support kernel (1-r²)^3, radius 1.5 * spacing. Restrict to opaque text-content
+    /// UVs, outside the intact source, with locally coherent transport. Reconstruct
+    /// local UV offsets exactly as the shader does; optical lighting/displacement
+    /// is deliberately not included in this unlit captured-material reference.
+    private func transportContrast(_ output: Pixels, original: Pixels, frame: CapturedFrame,
+                                   info: WindowInfo, world: LiquidWorld, screen: CGRect) -> TransportContrast {
+        let particles = world.particles.filter(\.isReleased)
+        let radius = Double(world.spacing) * 1.5
+        let dx = Double(screen.width) / Double(output.width)
+        let dy = Double(screen.height) / Double(output.height)
+        func materialUV(_ point: CGPoint) -> SIMD2<Double>? {
+            var weight = 0.0, moments = SIMD2<Double>.zero
+            for particle in particles {
+                let x = (Double(point.x) - Double(particle.position.x)) / radius
+                let y = (Double(point.y) - Double(particle.position.y)) / radius
+                let r2 = x * x + y * y
+                guard r2 < 1 else { continue }
+                // All contributors must be opaque document interior. No invented
+                // alpha or source pixels are substituted for capture boundaries.
+                guard (0.05...0.95).contains(particle.uv.x), (0.18...0.92).contains(particle.uv.y) else { return nil }
+                let k = (1 - r2) * (1 - r2) * (1 - r2)
+                weight += k
+                let localUV = SIMD2((Double(point.x) - Double(particle.position.x)) / Double(info.frame.width),
+                                    (Double(point.y) - Double(particle.position.y)) / Double(info.frame.height))
+                moments += (SIMD2(Double(particle.uv.x), Double(particle.uv.y)) + localUV) * k
+            }
+            return weight > 0.8 ? moments / weight : nil
+        }
+        func source(_ uv: SIMD2<Double>) -> SIMD3<Double> {
+            original.rgb(x: Double(frame.windowRect.minX) + uv.x * Double(frame.windowRect.width) - 0.5,
+                         y: Double(frame.windowRect.minY) + uv.y * Double(frame.windowRect.height) - 0.5)
+        }
+        func magnitude(_ rgb: SIMD3<Double>) -> Double { (abs(rgb.x) + abs(rgb.y) + abs(rgb.z)) / 3 }
+        var result = TransportContrast()
+        var visited = Set<Int>()
+        for particle in particles {
+            let index = output.offset(at: CGPoint(x: CGFloat(particle.position.x), y: CGFloat(particle.position.y)), screen: screen)
+            guard visited.insert(index).inserted else { continue }
+            let px = index / 4 % output.width, py = index / 4 / output.width
+            guard px > 0, px + 1 < output.width, py > 0, py + 1 < output.height else { continue }
+            let center = CGPoint(x: Double(screen.minX) + (Double(px) + 0.5) * dx,
+                                 y: Double(screen.minY) + (Double(py) + 0.5) * dy)
+            guard !info.frame.insetBy(dx: -radius, dy: -radius).contains(center),
+                  let uv = materialUV(center) else { continue }
+            for axis in [CGPoint(x: dx, y: 0), CGPoint(x: 0, y: dy)] {
+                let before = CGPoint(x: center.x - axis.x, y: center.y - axis.y)
+                let after = CGPoint(x: center.x + axis.x, y: center.y + axis.y)
+                guard output.alpha(at: before, screen: screen) > 0.98,
+                      output.alpha(at: after, screen: screen) > 0.98,
+                      let a = materialUV(before), let b = materialUV(after) else { continue }
+                let curvature = (a + b - uv * 2) * SIMD2(Double(frame.windowRect.width), Double(frame.windowRect.height))
+                guard abs(curvature.x) + abs(curvature.y) < 0.25 else { continue }
+                let expected = magnitude(source(b) - source(a))
+                guard expected > 0.08 else { continue } // Real readable edges, not blank background.
+                let renderedA = output.rgb(x: Double(px) - Double(axis.x) / dx, y: Double(py) - Double(axis.y) / dy)
+                let renderedB = output.rgb(x: Double(px) + Double(axis.x) / dx, y: Double(py) + Double(axis.y) / dy)
+                result.count += 1
+                result.expected += expected
+                result.rendered += magnitude(renderedB - renderedA)
+                result.error += (magnitude(renderedA - source(a)) + magnitude(renderedB - source(b))) / 2
+            }
+        }
+        if result.count > 0 {
+            result.expected /= Double(result.count)
+            result.rendered /= Double(result.count)
+            result.error /= Double(result.count)
+        }
+        return result
     }
 
     /// Compare interior RGB to real capture pixels, allowing linear resampling and P3 metadata differences.
@@ -859,6 +1148,7 @@ final class LiquidIntegrationTests: XCTestCase {
     }
 
     /// Explicit opt-in only. Resolve symlinks before enforcing the temporary-directory boundary.
+    /// KINETIQ_LIQUID_TEST_DUMP_FRAMES=1 additionally saves unscaled standalone PNGs.
     @MainActor
     private func dumpIfRequested(_ frames: [(Double, Pixels)]) throws {
         guard let path = ProcessInfo.processInfo.environment["KINETIQ_LIQUID_TEST_DUMP"], !path.isEmpty else { return }
@@ -870,6 +1160,22 @@ final class LiquidIntegrationTests: XCTestCase {
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                attributes: [.posixPermissions: 0o700])
+        if ProcessInfo.processInfo.environment["KINETIQ_LIQUID_TEST_DUMP_FRAMES"] == "1" {
+            for (index, entry) in frames.enumerated() {
+                let bitmap = NSBitmapImageRep(cgImage: try entry.1.image())
+                let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                let filename = String(format: "liquid-real-window-native-%02d-%.3fs.png", index, entry.0)
+                let destination = directory.appendingPathComponent(filename)
+                // Set restrictive permissions before writing any captured content.
+                guard FileManager.default.createFile(atPath: destination.path, contents: nil,
+                                                     attributes: [.posixPermissions: 0o600]) else {
+                    throw NSError(domain: "LiquidIntegrationTests", code: 2,
+                                  userInfo: [NSLocalizedDescriptionKey: "Cannot create private native frame dump"])
+                }
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
+                try png.write(to: destination)
+            }
+        }
         let tileWidth = 480, labelHeight = 28
         let first = try XCTUnwrap(frames.first?.1)
         let tileHeight = max(1, tileWidth * first.height / first.width)
