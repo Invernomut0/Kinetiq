@@ -1,6 +1,6 @@
 # Kinetiq
 
-Compiz-style wobbly windows for macOS. Drag a window and it wobbles like jelly, then settles where you drop it. Optional effects also play when a window is maximized or resized, and closing a window can burn, shatter, melt or dissolve it with one of 30 GPU shader effects.
+Compiz-style wobbly windows for macOS. Drag a window and it wobbles like jelly, then settles where you drop it. Optional effects also play when a window is maximized or resized. Closing offers 30 GPU shaders plus a desktop-space **Liquid** simulation, also available for minimizing.
 
 Kinetiq is a native menu bar app, forked from [Wobbly](https://github.com/jsgrrchg/Wobbly) by José Gurruchaga. Window effects use public macOS APIs. Optional system screen saver selection uses PaperSaverKit 0.4.3 and macOS's undocumented wallpaper preference store; Apple provides no public API for selecting the default screen saver.
 
@@ -25,7 +25,7 @@ The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from
 |---|---|
 | **Overview** | Actual engine and permission status, enable/pause switch, shortcuts to Effects and Physics, permission requests and refresh. Pausing restores windows involved in active effects. |
 | **Windows** | Read-only snapshot of normal-level on-screen windows: owning app, title when available, and dimensions. Refresh manually for an updated snapshot. This page never moves or captures a window. |
-| **Effects** | Close shader, Open jelly entrance, Minimize Dock morph and close-animation duration multiplier. |
+| **Effects** | Close shader or Liquid, Open jelly entrance, Minimize Dock morph or Liquid, and animation duration multiplier. |
 | **Physics** | Preset, friction, spring, speedup, mass, mesh density, maximize/resize effects, shadow, glide, tilt, focus glow and drop ripple. |
 | **Screen Saver** | Install/select Kinetiq as the macOS default, system inactivity delay, actual selection status, event interval, fragment lifetime, speed, intensity and Preview Now (requires Screen Recording). |
 | **App Rules** | Per-app close-effect overrides and exclusions. Add running apps or choose installed apps from disk. |
@@ -52,13 +52,13 @@ Optional (**Ripple on Drop** in Setup, off by default): a circular wave spreads 
 
 ### Close effects
 
-When a window closes, it is replaced by an animation drawn on the GPU. Pick the effect in the Setup window under **Window Effects › Close**: one of the 30 effects below, **Random** (a different one every time) or **Off**. The **Duration** slider scales the animation time of every effect (0.25× to 3×). Fire is the default.
+When a window closes, it is replaced by an animation drawn on the GPU. Pick the effect in **Setup › Effects › Close**: **Liquid**, one of the 30 shaders below, **Random** (a different shader every time) or **Off**. The **Duration** slider scales the animation time (0.25× to 3×). Fire is the default; existing choices are preserved.
 
 **Window Effects › Open** (off by default) plays a jelly entrance when a window opens: Wobble Pop, Ripple, Stone in Water, Shockwave, Jelly Squash or Quake (or Random). The window stays visible: once its own pop-in animation is over it is captured as it is and the jelly model shakes it, so there is no flash and no gap. *Stone in Water* drops a stone at a random point and sends rings across the window, *Ripple* spreads a wave from the center, *Shockwave* combines a pop with a fast wave, *Jelly Squash* squeezes it vertically and lets it bounce back, *Quake* shakes it sideways. Dialogs, sheets and popovers are not affected.
 
-**Window Effects › Minimize** (off by default) morphs the window into its icon in the Dock when you minimize it with its yellow button. Nine styles: *Dock Morph* (straight paths), *Genie* (the edge nearest the icon leads and the window narrows into a funnel), *Jelly Suck* (it accelerates into the icon and ripples sideways), *Whirlpool* (it twists around the icon while shrinking into it), *Tornado* (it turns a full circle on its way), *Rubber Band* (it swells away from the icon, then snaps in), *Pancake* (it is flattened, then slides in), *Accordion* (a genie that folds into zigzag bands) and *Hop* (it jumps in an arc and lands in the icon). is held back for a moment while the window is captured. A frozen picture of the screen covers the system’s own animation (which shrinks the real window towards the Dock) while the morph plays. ⌘M and minimizing from the Dock cannot be intercepted, so they use the system animation; to keep it from competing with the effect, choosing a Minimize effect sets the Dock's minimize animation to *scale* (the Dock restarts), and choosing **Off** puts your original animation (genie by default) back.
+**Window Effects › Minimize** (off by default) offers **Liquid** or nine morphs into the Dock icon when you minimize with the yellow button: *Dock Morph* (straight paths), *Genie* (a narrowing funnel), *Jelly Suck*, *Whirlpool*, *Tornado*, *Rubber Band*, *Pancake*, *Accordion* and *Hop*. **Random** continues to choose among the nine morphs. The click is held briefly for capture; a frozen desktop without the source window hides the native animation, then disappears as soon as the real window is minimized and its original position restored. Failed capture or setup replays the original click. ⌘M and minimizing from the Dock use the system animation. Choosing a Minimize effect sets the Dock's animation to *scale* (restarting the Dock); choosing **Off** restores the original animation.
 
-The **Per-App Close Effects** list in Setup gives an app its own close effect (a shader, Random or Off) in place of the global one.
+The **Per-App Close Effects** list in Setup gives an app its own close effect (Liquid, a shader, Random or Off) in place of the global one.
 
 Aperture Panels, Apparition, Aura Glow, Broken Glass, Doom, Energize A, Energize B, Fire, Focus, Glide, Glitch, Hexagon, Incinerate, Materialize, Matrix, Morph, Mushroom, Paint Brush, Pixelate, Pixel Wheel, Pixel Wipe, Portal, RGB Warp, Snap of Disintegration, Team Rocket, T-Rex Attack, TV Effect, TV Glitch, Wisps and Wormhole.
 
@@ -68,6 +68,14 @@ The effect plays when you close a window with:
 - **⌘W** (and **⌘Q**, for the focused window).
 
 Minimizing, hiding, switching Spaces, closing a tab with ⌘W, or a close that the app refuses (an unsaved-changes sheet) don't play it. Effects that start at the pointer (Incinerate, Pixel Wipe) use the position of the mouse when the window closes. The effects that need the desktop behind the window (Aperture Panels, Morph, Wormhole) only animate the window: the real desktop shows through instead of being warped.
+
+### Liquid close and minimize (v0.1.30)
+
+Select **Liquid** in **Setup › Effects › Close** and/or **Minimize**. The captured window liquefies progressively from the **top-right** towards the bottom-left, retaining its actual colors and content. Gravity pulls the connected, glossy surface down. It lands on exposed upper edges of other real windows, spreads sideways and spills off their ends. Geometry refreshes approximately every 150 ms, so moving or removing a window releases supported liquid. Already-overlapping background windows do not teleport liquid onto their tops.
+
+The liquid collects at the **full display bottom**, not the usable desktop boundary, and stays **behind the Dock** (including a side Dock), before slowly fading. Each display has its own floor; source windows spanning displays are split into per-display fluid domains. Duration scales melting, falling, the roughly three-second linger and three-second fade. This is a bounded visual particle-fluid approximation with viscosity, cohesion and density constraints, not a full hydrodynamics solver: collisions use visible rectangular window tops, not arbitrary content shapes or physical side walls. No real obstacle window is moved or modified.
+
+At most two source captures are retained, with at most 1500 particles per source/display, fixed 120 Hz physics and bounded catch-up work. Metal blends their density into continuous surfaces, rather than drawing disconnected shards. Overlays never receive clicks. Disable, display changes, Space changes or sleep clear the liquid; a wall-clock deadline also prevents stranded effects. Liquid captures remain in memory only and are not written to the screen saver cache or disk.
 
 ### Screen saver
 
@@ -114,6 +122,8 @@ swift run kinetiq-effects-preview --effect fire --out /tmp/wobbly-effects
 `build-app.sh` signs with your "Apple Development" identity if you have one, or with `SIGN_IDENTITY` if set. Otherwise it uses ad-hoc signing with stable bundle-identifier requirements to preserve permission grants across rebuilds. Both the app and embedded screen saver are signed.
 
 The `KinetiqSaverSupport` target shares the Metal renderer and private scene archive between the app and `KinetiqScreenSaver`. Packaging embeds the universal `.saver` in `Kinetiq.app/Contents/Resources`; running a bare `swift run Kinetiq` cannot install the module. Native integration tests read the real wallpaper store and write only temporary copies. Desktop capture tests use real windows and skip when Screen Recording or a graphical session is unavailable; they never change the user's default screen saver. Run `swift test --enable-code-coverage` for coverage. Future macOS changes to the undocumented selection store may require a PaperSaver update; failures are surfaced in the Screen Saver page, with a shortcut to System Settings.
+
+Liquid physics lives in `Sources/KinetiqCore/LiquidWorld.swift`; `KinetiqEffects/LiquidEffectRenderer.swift` implements the density/surface Metal passes, and `Kinetiq/LiquidEffectPlayer.swift` owns desktop overlays and live geometry. `swift test -c release --filter Liquid` exercises real display geometry, capture-to-Metal output, native picker selection, close detection and actual AX minimization/restoration of disposable README document windows. Graphical/permission-dependent tests skip only when those capabilities are absent; no user document is closed or moved. To inspect an opt-in contact sheet of the captured test document, set `KINETIQ_LIQUID_TEST_DUMP` to a directory under `/tmp` when running these tests; without it no image is persisted. The tests do not alter Dock preferences.
 
 ## Credits
 

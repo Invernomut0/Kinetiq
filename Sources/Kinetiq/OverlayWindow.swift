@@ -24,7 +24,7 @@ final class OverlayWindow: NSObject, MTKViewDelegate {
     private unowned let renderer: OverlayContent
     private var showingContent = false
 
-    init(screen: NSScreen, renderer: OverlayContent) {
+    init(screen: NSScreen, renderer: OverlayContent, level: NSWindow.Level = .floating) {
         self.renderer = renderer
         screenRect = screen.cgFrame
 
@@ -49,7 +49,7 @@ final class OverlayWindow: NSObject, MTKViewDelegate {
         window.backgroundColor = .clear
         window.hasShadow = false
         window.ignoresMouseEvents = true
-        window.level = .floating
+        window.level = level
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         window.isReleasedWhenClosed = false
         window.animationBehavior = .none

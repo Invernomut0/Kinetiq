@@ -5,6 +5,19 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.30]
+
+### Added
+
+- **Liquid** close and yellow-button minimize effect: top-right liquefaction, captured window colors, connected glossy flow, real-window edge collisions and bottom pooling behind the Dock with delayed fade.
+- Deterministic bounded particle fluid, spatial neighbors, density relaxation, viscosity and cohesion; live exposed-window geometry and per-display floors.
+- Persistent Liquid choices in Effects and per-app close rules, without changing existing defaults or Random catalogs.
+- Real-display physics tests and capture-to-Metal, native picker, actual close and AX minimize/position-restoration integration tests using disposable README windows.
+
+### Fixed
+
+- Cancelled asynchronous close/minimize captures cannot restart effects or park a window after controller cancellation.
+
 ## [0.1.29]
 
 ### Added

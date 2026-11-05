@@ -39,16 +39,20 @@ final class MinimizeEffectTrigger {
     private let settings: Settings
     private let capture: WindowCapture
     private let morph: MorphPlayer
+    private let liquid: LiquidEffectPlayer?
     private let isBusy: () -> Bool
     private static let log = Logger(subsystem: "io.github.invernomut0.Kinetiq", category: "minimize")
     private let replay: (CGEvent, CGEvent) -> Void
     private var pending: Pending?
+    /// Invalidates an async capture/AX lookup if the controller cancels meanwhile.
+    private var generation = UUID()
 
-    init(settings: Settings, capture: WindowCapture, morph: MorphPlayer, isBusy: @escaping () -> Bool,
+    init(settings: Settings, capture: WindowCapture, morph: MorphPlayer, liquid: LiquidEffectPlayer?, isBusy: @escaping () -> Bool,
          replay: @escaping (CGEvent, CGEvent) -> Void) {
         self.settings = settings
         self.capture = capture
         self.morph = morph
+        self.liquid = liquid
         self.isBusy = isBusy
         self.replay = replay
     }
@@ -57,6 +61,7 @@ final class MinimizeEffectTrigger {
     var isPending: Bool { pending != nil }
 
     func cancel() {
+        generation = UUID()
         pending = nil
         morph.cancel()
     }
@@ -91,18 +96,19 @@ final class MinimizeEffectTrigger {
             replay(click.down, up)
             return true
         }
-        Task { await minimize(click, up: up) }
+        let token = generation
+        Task { await minimize(click, up: up, token: token) }
         return true
     }
 
-    private func minimize(_ click: Pending, up: CGEvent) async {
+    private func minimize(_ click: Pending, up: CGEvent, token: UUID) async {
         let info = click.info
         let frame = await click.capture.value
         let shield = await click.shield.value
         let icon = await click.icon.value
-        guard let frame, frame.isPainted, frame.pointSize == info.frame.size,
+          guard generation == token, settings.enabled, let frame, frame.isPainted, frame.pointSize == info.frame.size,
               CACurrentMediaTime() - click.startedAt < Self.captureTimeout, !isBusy(), !morph.isPlaying,
-              let style = resolvedStyle() else {
+              let choice = resolvedChoice() else {
             shield?.hide()
             replay(click.down, up)
             return
@@ -112,7 +118,7 @@ final class MinimizeEffectTrigger {
                 continuation.resume(returning: AXBridge.findWindow(info, hitPoint: click.buttonFrame.origin))
             }
         }
-        guard let element else {
+        guard generation == token, settings.enabled, !isBusy(), let element else {
             shield?.hide()
             replay(click.down, up)
             return
@@ -121,9 +127,18 @@ final class MinimizeEffectTrigger {
         // The shield goes up first, and the morph over it: the real window can then shrink towards the Dock unseen.
         shield?.show()
         let target = icon ?? fallbackIcon(near: info.frame)
-        Self.log.notice("\(style.title, privacy: .public) into \(target.minX), \(target.minY) \(target.width)x\(target.height) (dock icon found: \(icon != nil))")
-        let started = morph.play(frame, windowFrame: info.frame, icon: target, style: style,
+        let started: Bool
+        switch choice {
+        case .liquid:
+            Self.log.notice("Liquid minimize: window \(info.id)")
+            started = liquid?.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration) ?? false
+        case .morph(let style):
+            Self.log.notice("\(style.title, privacy: .public) into \(target.minX), \(target.minY) \(target.width)x\(target.height) (dock icon found: \(icon != nil))")
+            started = morph.play(frame, windowFrame: info.frame, icon: target, style: style,
                                  durationScale: settings.closeDuration) {}
+        case .off, .random:
+            started = false
+        }
         guard started else {
             shield?.hide()
             replay(click.down, up)
@@ -133,19 +148,25 @@ final class MinimizeEffectTrigger {
         // Parked and minimized in one go, so the system animation starts from a window that is not on screen.
         let park = NSScreen.parkingPoint
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.parkDelay) { [weak self] in
+            guard let self, self.generation == token, self.settings.enabled else {
+                shield?.hide()
+                self?.replay(click.down, up)
+                return
+            }
             AXBridge.urgentQueue.async {
                 AXBridge.setPosition(element, park)
                 AXBridge.setMinimized(element, true)
             }
-            self?.finishWhenGone(info.id, element: element, origin: info.frame.origin, shield: shield)
+            self.finishWhenGone(info.id, element: element, origin: info.frame.origin, shield: shield)
         }
     }
 
-    private func resolvedStyle() -> DockMorphStyle? {
+    private func resolvedChoice() -> MinimizeEffectChoice? {
         switch settings.minimizeEffect {
         case .off: return nil
-        case .morph(let style): return style
-        case .random: return DockMorphStyle.allCases.randomElement()
+        case .liquid: return .liquid
+        case .morph(let style): return .morph(style)
+        case .random: return DockMorphStyle.allCases.map(MinimizeEffectChoice.morph).randomElement()
         }
     }
 

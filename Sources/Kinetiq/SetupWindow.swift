@@ -234,6 +234,7 @@ struct SetupControlsView: View {
                 Picker("Close", selection: model.binding({ settings.closeEffect.rawValue }, { model.selectCloseEffect($0) })) {
                     Text("Off").tag(CloseEffectChoice.off.rawValue)
                     Text("Random").tag(CloseEffectChoice.random.rawValue)
+                    Text("Liquid").tag(CloseEffectChoice.liquid.rawValue)
                     Divider()
                     ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 }
@@ -248,12 +249,13 @@ struct SetupControlsView: View {
                 Picker("Minimize", selection: model.binding({ settings.minimizeEffect.rawValue }, { model.selectMinimizeEffect($0) })) {
                     Text("Off").tag(MinimizeEffectChoice.off.rawValue)
                     Text("Random").tag(MinimizeEffectChoice.random.rawValue)
+                    Text("Liquid").tag(MinimizeEffectChoice.liquid.rawValue)
                     Divider()
                     ForEach(DockMorphStyle.allCases, id: \.rawValue) {
                         Text($0.title).tag(MinimizeEffectChoice.morph($0).rawValue)
                     }
                 }
-                Text("Open and Minimize use the jelly model: the window stays visible while it arrives, so there is no flash. Minimize morphs the window into its Dock icon.")
+                Text("Liquid melts from the top-right, spills over window edges and pools behind the Dock before slowly fading. Other minimize effects morph into the Dock icon. Minimize effects apply to the yellow button only; ⌘M remains native.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 SliderRow(title: "Duration",
@@ -307,6 +309,7 @@ struct SetupControlsView: View {
                         Picker("Close effect", selection: model.binding({ settings.appCloseEffects[id] ?? "" }, { model.setAppEffect(id, $0) })) {
                             Text("Off").tag(CloseEffectChoice.off.rawValue)
                             Text("Random").tag(CloseEffectChoice.random.rawValue)
+                            Text("Liquid").tag(CloseEffectChoice.liquid.rawValue)
                             Divider()
                             ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                         }

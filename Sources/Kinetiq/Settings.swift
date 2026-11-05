@@ -65,16 +65,18 @@ enum OpenEffectChoice: Equatable {
     }
 }
 
-/// What plays when a window is minimized with its yellow button: a morph into its Dock icon.
+/// A Dock morph or desktop-space liquid, triggered by the yellow minimize button.
 enum MinimizeEffectChoice: Equatable {
     case off
     case random
+    case liquid
     case morph(DockMorphStyle)
 
     init(rawValue: String?) {
         switch rawValue {
         case nil, "off": self = .off
         case "random": self = .random
+        case "liquid": self = .liquid
         case let id? where id.hasPrefix("morph:"):
             self = DockMorphStyle(rawValue: String(id.dropFirst("morph:".count))).map(MinimizeEffectChoice.morph) ?? .morph(.genie)
         // Older versions stored a close shader here: the effect was on, so keep it on.
@@ -86,6 +88,7 @@ enum MinimizeEffectChoice: Equatable {
         switch self {
         case .off: return "off"
         case .random: return "random"
+        case .liquid: return "liquid"
         case .morph(let style): return "morph:" + style.rawValue
         }
     }
@@ -229,7 +232,7 @@ final class Settings {
         set { defaults.set(newValue, forKey: "tiltOnDrag") }
     }
 
-    /// Effect played when a window is closed (a Burn-My-Windows shader), a random one, or none.
+    /// Liquid, a Burn-My-Windows shader, a random shader, or none.
     var closeEffect: CloseEffectChoice {
         get { CloseEffectChoice(rawValue: defaults.string(forKey: "closeEffect")) }
         set { defaults.set(newValue.rawValue, forKey: "closeEffect") }
@@ -241,7 +244,7 @@ final class Settings {
         set { defaults.set(newValue.rawValue, forKey: "openEffect") }
     }
 
-    /// Effect played when a window is minimized with its yellow button: a morph into its Dock icon; off by default.
+    /// Liquid or a morph into the Dock icon, on the yellow button; off by default.
     var minimizeEffect: MinimizeEffectChoice {
         get { MinimizeEffectChoice(rawValue: defaults.string(forKey: "minimizeEffect")) }
         set { defaults.set(newValue.rawValue, forKey: "minimizeEffect") }

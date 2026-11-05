@@ -312,12 +312,15 @@ public enum CloseEffect: String, CaseIterable, Sendable, Identifiable {
 public enum CloseEffectChoice: Equatable, Sendable {
     case off
     case random
+    /// Desktop-space fluid simulation, separate from the bounded shader catalog.
+    case liquid
     case effect(CloseEffect)
 
     public init(rawValue: String?) {
         switch rawValue {
         case "off": self = .off
         case "random": self = .random
+        case "liquid": self = .liquid
         case let id?: self = CloseEffect(rawValue: id).map(CloseEffectChoice.effect) ?? .effect(.fire)
         case nil: self = .effect(.fire)
         }
@@ -327,14 +330,15 @@ public enum CloseEffectChoice: Equatable, Sendable {
         switch self {
         case .off: return "off"
         case .random: return "random"
+        case .liquid: return "liquid"
         case .effect(let effect): return effect.rawValue
         }
     }
 
-    /// The effect to play for one close, or nil when effects are off.
+    /// Resolves a bounded shader only; Liquid is played by the desktop fluid player.
     public func resolve<G: RandomNumberGenerator>(using generator: inout G) -> CloseEffect? {
         switch self {
-        case .off: return nil
+        case .off, .liquid: return nil
         case .random: return CloseEffect.allCases.randomElement(using: &generator)
         case .effect(let effect): return effect
         }

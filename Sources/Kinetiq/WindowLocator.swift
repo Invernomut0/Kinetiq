@@ -138,6 +138,37 @@ enum WindowLocator {
         return list.contains { ($0[kCGWindowNumber as String] as? Int) == Int(id) }
     }
 
+    /// Exposed tops of real, on-screen normal windows, in front-to-back order.
+    /// Covered sections are removed so liquid does not land on invisible shelves.
+    /// No Accessibility calls, titles, captures or app exclusions are needed here.
+    static func liquidObstacles(excluding ids: Set<CGWindowID>) -> [CGRect] {
+        var foreground: [CGRect] = []
+        var tops: [CGRect] = []
+        for entry in onScreenWindows() {
+            guard (entry[kCGWindowLayer as String] as? Int ?? 0) == 0,
+                  (entry[kCGWindowAlpha as String] as? Double ?? 1) > 0.9,
+                  let info = parse(entry), !ids.contains(info.id),
+                  info.frame.width >= 40, info.frame.height >= 20 else { continue }
+            let frame = info.frame
+            var spans = [frame.minX...frame.maxX]
+            for front in foreground where front.minY <= frame.minY && front.maxY > frame.minY {
+                spans = spans.flatMap { span -> [ClosedRange<CGFloat>] in
+                    guard front.maxX > span.lowerBound, front.minX < span.upperBound else { return [span] }
+                    var remaining: [ClosedRange<CGFloat>] = []
+                    if front.minX > span.lowerBound { remaining.append(span.lowerBound...min(front.minX, span.upperBound)) }
+                    if front.maxX < span.upperBound { remaining.append(max(front.maxX, span.lowerBound)...span.upperBound) }
+                    return remaining
+                }
+            }
+            tops += spans.filter { $0.upperBound - $0.lowerBound > 2 }.map {
+                CGRect(x: $0.lowerBound, y: frame.minY, width: $0.upperBound - $0.lowerBound, height: frame.height)
+            }
+            foreground.append(frame)
+            if foreground.count >= 128 { break }
+        }
+        return Array(tops.prefix(256))
+    }
+
     private static func parse(_ entry: [String: Any]) -> WindowInfo? {
         guard let number = entry[kCGWindowNumber as String] as? Int,
               let pid = entry[kCGWindowOwnerPID as String] as? Int,

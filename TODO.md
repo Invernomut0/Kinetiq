@@ -16,6 +16,7 @@ Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (imple
 
 ## Done
 
+- Liquid close and yellow-button minimize effect — Owner: Copilot. Done in v0.1.30: 137 tests passed (27 new, no skips), universal signed app built and launched. Top-right melting, live window-edge collisions, per-display bottom pooling behind the Dock and slow fade; real capture/Metal output, native controls and actual close/AX minimize restoration verified. New fluid line coverage: Core 96.50%, renderer 100%, player 95.52%.
 - Native macOS default screen saver — Owner: Copilot. Done in v0.1.29: 110 tests passed (12 new, no skips), universal signed native module loaded successfully by macOS legacyScreenSaver, real selection/restore verified, wallpaper preserved and snapshot deleted on disable. Includes explicit privacy consent and dependency notices.
 - Native management dashboard with eight sidebar destinations, real window inventory, permission and engine diagnostics, and isolated UI/settings tests — Owner: Copilot. Done in v0.1.28: all 98 tests passed (7 new management tests); universal app built, signed and launched; dashboard inspected on screen.
 - Rename to Kinetiq, Setup window, app exclusions (v0.1.4 - v0.1.8).

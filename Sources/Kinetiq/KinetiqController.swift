@@ -98,6 +98,7 @@ final class KinetiqController: NSObject {
     private let mover = CoalescingMover()
     private let windowObserver = WindowObserver()
     private let closePlayer: CloseEffectPlayer?
+    private let liquidPlayer: LiquidEffectPlayer?
     private var closeTrigger: CloseEffectTrigger?
     private var openTrigger: OpenEffectTrigger?
     private var minimizeTrigger: MinimizeEffectTrigger?
@@ -120,14 +121,17 @@ final class KinetiqController: NSObject {
         self.settings = settings
         self.renderer = renderer
         closePlayer = CloseEffectPlayer.make()
+        liquidPlayer = LiquidEffectPlayer.make()
         super.init()
         closeTrigger = closePlayer.map { player in
-            CloseEffectTrigger(settings: settings, capture: capture, player: player, isBusy: { [weak self] in self?.session != nil })
+            CloseEffectTrigger(settings: settings, capture: capture, player: player, liquid: liquidPlayer,
+                               isBusy: { [weak self] in self?.session != nil })
         }
         openTrigger = OpenEffectTrigger(settings: settings, isBusy: { [weak self] in self?.session != nil })
         minimizeTrigger = MorphPlayer().map { morph in
             MinimizeEffectTrigger(
-                settings: settings, capture: capture, morph: morph, isBusy: { [weak self] in self?.session != nil },
+                settings: settings, capture: capture, morph: morph, liquid: liquidPlayer,
+                isBusy: { [weak self] in self?.session != nil },
                 replay: { [weak self] down, up in self?.replayClick(down: down, up: up) })
         }
         NotificationCenter.default.addObserver(
@@ -145,6 +149,10 @@ final class KinetiqController: NSObject {
         for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification] {
             NSWorkspace.shared.notificationCenter.addObserver(
                 self, selector: #selector(refreshCaptureContent), name: name, object: nil)
+        }
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.willSleepNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(
+                self, selector: #selector(environmentChanged), name: name, object: nil)
         }
     }
 
@@ -204,6 +212,7 @@ final class KinetiqController: NSObject {
         resizeWatch = nil
         minimizeTrigger?.cancel()
         closeTrigger?.cancelAll()
+        liquidPlayer?.cancelAll()
         if let session { finishImmediately(session) }
     }
 
@@ -860,6 +869,12 @@ final class KinetiqController: NSObject {
         cancelAll()
         overlays.forEach { $0.close() }
         overlays = []
+    }
+
+    /// Invalidate pending trigger captures as well as running overlays; an async
+    /// capture completing after a Space change must not start on the new desktop.
+    @objc private func environmentChanged() {
+        cancelAll()
     }
 }
 

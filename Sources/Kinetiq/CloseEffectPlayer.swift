@@ -63,7 +63,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
         var effects: [CloseEffect] = []
         for choice in choices {
             switch choice {
-            case .off: break
+            case .off, .liquid: break
             case .random: effects.append(contentsOf: CloseEffect.allCases)
             case .effect(let effect): effects.append(effect)
             }
@@ -94,7 +94,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
     /// The effect to play for the user's choice. A random pick favors the shaders that are already compiled.
     func effect(for choice: CloseEffectChoice) -> CloseEffect? {
         switch choice {
-        case .off: return nil
+        case .off, .liquid: return nil
         case .effect(let effect): return effect
         case .random: return ready.randomElement() ?? CloseEffect.allCases.randomElement()
         }

@@ -53,17 +53,21 @@ final class CloseEffectTrigger {
     private let settings: Settings
     private let capture: WindowCapture
     private let player: CloseEffectPlayer
+    private let liquid: LiquidEffectPlayer?
     /// True while a wobble animation owns the overlays and the windows.
     private let isBusy: () -> Bool
     private var watches: [CGWindowID: Watch] = [:]
     private var clickCandidate: (window: WindowInfo, task: Task<CapturedFrame?, Never>)?
     private var commandHeld = false
     private var timer: DispatchSourceTimer?
+    private var generation = UUID()
 
-    init(settings: Settings, capture: WindowCapture, player: CloseEffectPlayer, isBusy: @escaping () -> Bool) {
+        init(settings: Settings, capture: WindowCapture, player: CloseEffectPlayer, liquid: LiquidEffectPlayer?,
+            isBusy: @escaping () -> Bool) {
         self.settings = settings
         self.capture = capture
         self.player = player
+        self.liquid = liquid
         self.isBusy = isBusy
     }
 
@@ -106,6 +110,7 @@ final class CloseEffectTrigger {
     }
 
     func cancelAll() {
+        generation = UUID()
         clickCandidate = nil
         commandHeld = false
         watches.removeAll()
@@ -238,16 +243,23 @@ final class CloseEffectTrigger {
     private func closed(_ watch: Watch, fading: Bool) {
         guard enabled, !isBusy(),
               // Hiding the app fades its windows out too, but they come back.
-              let app = NSRunningApplication(processIdentifier: watch.window.pid), !app.isHidden,
-              let effect = player.effect(for: settings.closeEffect(forBundleID: app.bundleIdentifier)) else { return }
+              let app = NSRunningApplication(processIdentifier: watch.window.pid), !app.isHidden else { return }
+          let choice = settings.closeEffect(forBundleID: app.bundleIdentifier)
+          let effect = player.effect(for: choice)
+          guard choice == .liquid || effect != nil else { return }
         let windowFrame = watch.lastFrame
         let pointer = CGEvent(source: nil)?.location ?? CGPoint(x: windowFrame.minX + 24, y: windowFrame.minY + 22)
         let speed = settings.closeDuration
+        let token = generation
 
         func play(_ frame: CapturedFrame) {
             // A capture of another size means the window was resized after it: it would be drawn distorted.
-            guard frame.pointSize == windowFrame.size else { return }
-            player.play(frame, windowFrame: windowFrame, effect: effect, pointer: pointer, durationScale: speed, nativeFade: fading)
+            guard generation == token, enabled, !isBusy(), frame.pointSize == windowFrame.size else { return }
+            if choice == .liquid {
+                liquid?.play(frame, windowFrame: windowFrame, durationScale: speed)
+            } else if let effect {
+                player.play(frame, windowFrame: windowFrame, effect: effect, pointer: pointer, durationScale: speed, nativeFade: fading)
+            }
         }
 
         if let frame = watch.capture {
