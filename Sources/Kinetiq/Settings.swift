@@ -132,7 +132,12 @@ final class Settings {
     private static let defaultTilesX = 16
     private static let defaultTilesY = 14
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+
+    /// A separate defaults suite supports isolated tests without touching the user's preferences.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     var enabled: Bool {
         get { defaults.object(forKey: "enabled") as? Bool ?? true }

@@ -16,6 +16,12 @@ final class EventTap {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
 
+    /// Read the actual tap state, not just whether a permission has been granted.
+    var isRunning: Bool {
+        guard let tap else { return false }
+        return CGEvent.tapIsEnabled(tap: tap)
+    }
+
     init(handler: @escaping Handler) {
         self.handler = handler
     }

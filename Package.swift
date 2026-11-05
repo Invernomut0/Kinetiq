@@ -16,5 +16,6 @@ let package = Package(
         .executableTarget(name: "Kinetiq", dependencies: ["KinetiqCore", "KinetiqEffects"]),
         .testTarget(name: "KinetiqCoreTests", dependencies: ["KinetiqCore"]),
         .testTarget(name: "KinetiqEffectsTests", dependencies: ["KinetiqEffects"]),
+        .testTarget(name: "KinetiqTests", dependencies: ["Kinetiq"]),
     ]
 )

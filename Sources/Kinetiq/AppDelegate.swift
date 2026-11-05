@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DockGenie.sync(enabled: settings.minimizeEffect != .off)
         setUpStatusItem()
         installSignalHandlers()
+        showSetup()
 
         guard controller != nil else {
             NSLog("Kinetiq: Metal unavailable")
@@ -63,6 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         controller?.cancelAll()
         tap?.stop()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showSetup()
+        return true
     }
 
     @discardableResult
@@ -159,6 +165,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.controller?.closeEffectChanged()
             }, startChaos: { [weak self] in
                 self?.chaosSaver?.start()
+            }, enabledChanged: { [weak self] in
+                guard let self, !self.settings.enabled else { return }
+                self.controller?.cancelAll()
+            }, runtimeStatus: { [weak self] in
+                ManagementRuntimeStatus(metalAvailable: self?.controller != nil,
+                                        eventTapRunning: self?.tap?.isRunning == true)
             })
         }
         setupWindow?.show()

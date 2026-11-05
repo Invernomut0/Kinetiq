@@ -14,14 +14,34 @@ final class SetupModel: ObservableObject {
     let settings: Settings
     private let closeEffectChanged: () -> Void
     private let startChaos: () -> Void
+    private let enabledChanged: () -> Void
+    let runtimeStatus: () -> ManagementRuntimeStatus
+    private(set) var visibleWindows: [ManagedWindow] = []
 
-    init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void) {
+    init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void,
+         enabledChanged: @escaping () -> Void, runtimeStatus: @escaping () -> ManagementRuntimeStatus) {
         self.settings = settings
         self.closeEffectChanged = closeEffectChanged
         self.startChaos = startChaos
+        self.enabledChanged = enabledChanged
+        self.runtimeStatus = runtimeStatus
     }
 
-    func refresh() { objectWillChange.send() }
+    func refresh() {
+        objectWillChange.send()
+    }
+
+    /// Window enumeration is explicit, never performed for every physics slider tick.
+    func refreshWindows() {
+        objectWillChange.send()
+        visibleWindows = ManagedWindow.onScreen()
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        settings.enabled = enabled
+        enabledChanged()
+        refresh()
+    }
 
     func startScreenSaver() { startChaos() }
 
@@ -130,13 +150,36 @@ final class SetupModel: ObservableObject {
     }
 }
 
-struct SetupView: View {
+/// Existing settings, grouped by the management sidebar rather than one long form.
+struct SetupControlsView: View {
     @ObservedObject var model: SetupModel
+    let page: ManagementPage
+    @State private var confirmingReset = false
 
     var body: some View {
-        let settings = model.settings
         Form {
-            Section("Wobble") {
+            switch page {
+            case .physics: physics
+            case .effects: effects
+            case .screenSaver: screenSaver
+            case .rules: rules
+            case .settings: general
+            default: EmptyView()
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .alert("Reset effect settings?", isPresented: $confirmingReset) {
+            Button("Cancel", role: .cancel) { }
+            Button("Reset", role: .destructive) { model.resetToDefaults() }
+        } message: {
+            Text("Custom physics values, per-app effects and exclusions will be replaced by the defaults. This cannot be undone.")
+        }
+    }
+
+    private var physics: some View {
+        let settings = model.settings
+        return Section("Wobble") {
                 Picker("Preset", selection: model.binding({ settings.preset }, { settings.preset = $0 })) {
                     ForEach(WobblePreset.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
@@ -167,9 +210,12 @@ struct SetupView: View {
                        isOn: model.binding({ settings.focusPulse }, { settings.focusPulse = $0 }))
                 Toggle("Ripple on Drop",
                        isOn: model.binding({ settings.rippleOnDrop }, { settings.rippleOnDrop = $0 }))
-            }
+        }
+    }
 
-            Section("Window Effects") {
+    private var effects: some View {
+        let settings = model.settings
+        return Section("Window Effects") {
                 Picker("Close", selection: model.binding({ settings.closeEffect.rawValue }, { model.selectCloseEffect($0) })) {
                     Text("Off").tag(CloseEffectChoice.off.rawValue)
                     Text("Random").tag(CloseEffectChoice.random.rawValue)
@@ -198,9 +244,12 @@ struct SetupView: View {
                 SliderRow(title: "Duration",
                           value: model.binding({ settings.closeDuration }, { settings.closeDuration = $0 }),
                           range: Settings.closeSpeedRange, decimals: 2)
-            }
+        }
+    }
 
-            Section {
+    private var screenSaver: some View {
+        let settings = model.settings
+        return Section {
                 Toggle("Start after Inactivity",
                        isOn: model.binding({ settings.chaosEnabled }, { settings.chaosEnabled = $0 }))
                 SliderRow(title: "Start after (min)",
@@ -219,12 +268,21 @@ struct SetupView: View {
                           value: model.binding({ settings.chaosIntensity }, { settings.chaosIntensity = $0 }),
                           range: ChaosSettings.intensityRange, decimals: 1)
                 Button("Start Now") { model.startScreenSaver() }
+                    .disabled(!Permissions.screenCaptureGranted)
+                if !Permissions.screenCaptureGranted {
+                    Text("Grant Screen Recording in Settings before starting the screen saver.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             } header: {
                 Text("Screen Saver")
             } footer: {
                 Text("Your desktop falls apart: letters drop, buttons explode, windows break into pieces, and everything piles up at the bottom of the screen and fades away. Nothing real is touched; any key press, click or mouse movement ends it. Needs Screen Recording.")
-            }
+        }
+    }
 
+    private var rules: some View {
+        let settings = model.settings
+        return Group {
             Section {
                 if settings.appCloseEffects.isEmpty {
                     Text("No per-app effects").foregroundStyle(.secondary)
@@ -252,7 +310,7 @@ struct SetupView: View {
             } header: {
                 Text("Per-App Close Effects")
             } footer: {
-                Text("These apps use their own close effect instead of the one above.")
+                Text("These apps override the global close effect selected in Effects.")
             }
 
             Section {
@@ -275,7 +333,19 @@ struct SetupView: View {
             } footer: {
                 Text("Windows of these apps get no wobble, resize, maximize or close effect. Kinetiq's own windows (this one) are excluded by default.")
             }
+        }
+    }
 
+    private var general: some View {
+        let settings = model.settings
+        return Group {
+            Section("General") {
+                Toggle("Enable Kinetiq", isOn: model.binding({ settings.enabled }, { model.setEnabled($0) }))
+                Toggle("Drag from Title Bar", isOn: model.binding({ settings.titleBarDrag }, { settings.titleBarDrag = $0 }))
+                Picker("Shortcut (Anywhere)", selection: model.binding({ settings.modifier }, { settings.modifier = $0 })) {
+                    ForEach(DragModifier.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+            }
             Section("Permissions") {
                 PermissionRow(title: "Accessibility", granted: Permissions.accessibilityGranted(prompt: false)) {
                     Permissions.openPrivacySettings("Privacy_Accessibility")
@@ -287,13 +357,10 @@ struct SetupView: View {
             }
 
             Section {
-                Button("Reset to Defaults", role: .destructive) { model.resetToDefaults() }
+                Button("Reset Effect Settings…", role: .destructive) { confirmingReset = true }
+                Text("Restores physics, effects, screen saver and app rules. Your enable state and drag shortcut are preserved.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-        }
-        .formStyle(.grouped)
-        .frame(minWidth: 440, idealWidth: 440, minHeight: 480, idealHeight: 760)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            model.refresh()
         }
     }
 }
@@ -344,7 +411,7 @@ private struct AppRow<Accessory: View>: View {
             accessory()
             Button(role: .destructive, action: remove) { Image(systemName: "minus.circle") }
                 .buttonStyle(.borderless)
-                .help("Remove from exclusions")
+                .help("Remove app rule")
         }
     }
 }
@@ -371,22 +438,28 @@ final class SetupWindowController {
     private let model: SetupModel
     private var window: NSWindow?
 
-    init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void) {
-        model = SetupModel(settings: settings, closeEffectChanged: closeEffectChanged, startChaos: startChaos)
+    init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void,
+         enabledChanged: @escaping () -> Void, runtimeStatus: @escaping () -> ManagementRuntimeStatus) {
+        model = SetupModel(settings: settings, closeEffectChanged: closeEffectChanged, startChaos: startChaos,
+                           enabledChanged: enabledChanged, runtimeStatus: runtimeStatus)
     }
 
     func show() {
         if window == nil {
             let hosting = NSHostingController(rootView: SetupView(model: model))
             let window = NSWindow(contentViewController: hosting)
-            window.title = "Kinetiq Setup"
+            window.title = "Kinetiq"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.titlebarAppearsTransparent = true
+            window.toolbarStyle = .unified
             window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 440, height: 760))
+            window.setContentSize(NSSize(width: 1040, height: 740))
+            window.minSize = NSSize(width: 860, height: 620)
+            window.setFrameAutosaveName("KinetiqManagement")
             window.center()
             self.window = window
         }
-        model.refresh()
+        model.refreshWindows()
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
     }

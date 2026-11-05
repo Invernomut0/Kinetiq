@@ -17,7 +17,22 @@ Download the DMG from Releases and drag Kinetiq to `/Applications`. The app is n
 - **Drag from the title bar** as usual, or
 - **Hold the shortcut** (⌃⌘ by default) and drag a window from anywhere.
 
-The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from Title Bar** and the **Shortcut** modifier. Everything else lives in a separate **Setup** window (menu item **Setup…**, ⌘,): pick a preset (Subtle, Realistic, Exaggerated, Extreme), fine-tune friction, spring, speedup, mass and mesh density, toggle the shadow and the maximize and resize effects, choose the close effect and its duration, check the permissions and reset to defaults. The **Exclusions** list there holds the apps whose windows get no effect at all: add a running app or pick one from disk, and remove it with the minus button (Kinetiq's own Setup window is excluded by default; remove it to make it wobble). Changes apply immediately and the window can stay open next to your work.
+The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from Title Bar** and the **Shortcut** modifier. The **Setup** management window opens on launch and can be reopened from **Setup…** (⌘,) or by opening the app again. It has a collapsible native sidebar, remembers its window size and follows the macOS light/dark appearance. Closing it leaves the menu bar engine running. Changes apply immediately and are saved locally.
+
+### Management dashboard (v0.1.28)
+
+| Page | Controls and information |
+|---|---|
+| **Overview** | Actual engine and permission status, enable/pause switch, shortcuts to Effects and Physics, permission requests and refresh. Pausing restores windows involved in active effects. |
+| **Windows** | Read-only snapshot of normal-level on-screen windows: owning app, title when available, and dimensions. Refresh manually for an updated snapshot. This page never moves or captures a window. |
+| **Effects** | Close shader, Open jelly entrance, Minimize Dock morph and close-animation duration multiplier. |
+| **Physics** | Preset, friction, spring, speedup, mass, mesh density, maximize/resize effects, shadow, glide, tilt, focus glow and drop ripple. |
+| **Screen Saver** | Idle activation, event interval, fragment lifetime, speed, intensity and Start Now (requires Screen Recording). |
+| **App Rules** | Per-app close-effect overrides and exclusions. Add running apps or choose installed apps from disk. |
+| **Diagnostics** | Actual Metal renderer and event-tap state, permission grants, physics preset, mesh, rule counts, OS and app version. No estimated FPS or simulated telemetry. |
+| **Settings** | Enable state, title-bar drag, shortcut modifier, permissions and confirmed reset of effect settings. Reset preserves the enable state and drag controls. |
+
+The **Exclusions** list under App Rules holds apps whose windows get no effects. Kinetiq's own management window is excluded by default; remove that exclusion to let it wobble. Window titles may be unavailable without Screen Recording. Permission checks refresh when the app becomes active or when you press Refresh; macOS may require restarting the app after a grant. The existing launch-time permission prompts are unchanged. Navigation does not start or stop the engine.
 
 ### Glide and bounce
 

@@ -5,6 +5,21 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.28]
+
+### Added
+
+- Native management dashboard with a collapsible sidebar, Overview status cards, quick actions and eight working destinations.
+- Read-only on-screen window inventory from Core Graphics and diagnostics for the actual Metal renderer, event tap and permissions.
+- General enable and drag controls in Settings, plus confirmation before resetting effect settings.
+- Isolated preference, app-rule, system-metadata and SwiftUI hosting tests, included in the existing `swift test` CI step.
+
+### Changed
+
+- Setup opens at launch and when the app is reopened, remembers its window size and adapts to macOS light/dark appearance.
+- Existing settings are organized into Effects, Physics, Screen Saver, App Rules and Settings; changes still apply immediately.
+- Screen Saver's Start Now is disabled until Screen Recording is granted. Physics sliders do not re-enumerate desktop windows.
+
 ## [0.1.27]
 
 ### Changed

@@ -16,4 +16,5 @@ Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (imple
 
 ## Done
 
+- Native management dashboard with eight sidebar destinations, real window inventory, permission and engine diagnostics, and isolated UI/settings tests — Owner: Copilot. Done in v0.1.28: all 98 tests passed (7 new management tests); universal app built, signed and launched; dashboard inspected on screen.
 - Rename to Kinetiq, Setup window, app exclusions (v0.1.4 - v0.1.8).
