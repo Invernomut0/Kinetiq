@@ -4,6 +4,7 @@
 
 import AppKit
 import KinetiqCore
+import KinetiqSaverSupport
 import MetalKit
 import UniformTypeIdentifiers
 import os
@@ -48,7 +49,6 @@ final class ChaosSaver: NSObject {
     private(set) var isRunning = false
     private var starting = false
     private var overlays: [Overlay] = []
-    private var idleTimer: Timer?
     private var debugTimer: Timer?
     private var localMonitor: Any?
     private var globalMonitor: Any?
@@ -68,23 +68,10 @@ final class ChaosSaver: NSObject {
         self.settings = settings
     }
 
-    func startIdleWatching() {
-        idleTimer?.invalidate()
-        let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.checkIdle() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        idleTimer = timer
+    func observeSleep() {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.stop() }
         }
-    }
-
-    private func checkIdle() {
-        guard settings.chaosEnabled, !isRunning, !starting, Permissions.screenCaptureGranted else { return }
-        let anyEvent = CGEventType(rawValue: ~0)!
-        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyEvent)
-        if idle >= Double(settings.chaosIdleMinutes * 60) { start(manual: false) }
     }
 
     /// `manual` starts (from the Setup window) explain a missing permission instead of staying silent.

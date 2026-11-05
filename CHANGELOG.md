@@ -5,6 +5,21 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.29]
+
+### Added
+
+- Signed native ScreenSaver.framework module, installed per user and selected as the macOS default on explicit enable.
+- PaperSaverKit 0.4.3 integration, real system selection/error feedback and macOS inactivity delay controls.
+- Selective previous-saver restoration without replacing wallpaper or later user choices, including reset handling.
+- Private local scene archive with explicit lock-screen privacy consent; app-side capture preparation and shared Metal rendering in the system host.
+- Native-module, live wallpaper-store, private archive and real desktop rendering tests.
+
+### Changed
+
+- Automatic screen saver activation is owned by macOS, not an app overlay timer. Start Now is renamed Preview Now.
+- Universal app packaging embeds and signs the native module and includes dependency notices. Old app-only inactivity preferences require explicit system opt-in.
+
 ## [0.1.28]
 
 ### Added

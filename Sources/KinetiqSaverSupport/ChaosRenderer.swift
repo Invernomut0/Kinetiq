@@ -8,7 +8,7 @@ import Metal
 import MetalKit
 import simd
 
-enum ChaosRendererError: Error {
+public enum ChaosRendererError: Error {
     case noDevice
     case shaderFailed(String)
 }
@@ -362,23 +362,23 @@ enum ChaosTexture {
 /// Draws one screen of the chaos screen saver: the wallpaper, the windows as a grid of pieces, the letters, buttons
 /// and icons on top, and the smoke and flames of the blasts. Runs the `ChaosWorld` and restores the desktop (with a fade)
 /// once most of it has been destroyed.
-final class ChaosRenderer {
-    let device: MTLDevice
-    let queue: MTLCommandQueue
-    let screenSize: SIMD2<Float>
-    let pixelScale: Float
+public final class ChaosRenderer {
+    public let device: MTLDevice
+    public let queue: MTLCommandQueue
+    public let screenSize: SIMD2<Float>
+    public let pixelScale: Float
 
     private enum Phase { case playing, fadingOut, fadingIn }
 
     private let scene: ChaosScene
     private let settings: ChaosSettings
-    private(set) var world: ChaosWorld
+    public private(set) var world: ChaosWorld
     private var phase = Phase.playing
     private var fade: Float = 0
     /// Seconds since the saver started.
-    private(set) var elapsed: Float = 0
+    public private(set) var elapsed: Float = 0
     /// Frames drawn so far (debugging aid).
-    private(set) var frames = 0
+    public private(set) var frames = 0
 
     private let spritePipeline: MTLRenderPipelineState
     private let triPipeline: MTLRenderPipelineState
@@ -411,7 +411,7 @@ final class ChaosRenderer {
 
     private static var library: MTLLibrary?
 
-    init(device: MTLDevice, scene: ChaosScene, screenSize: CGSize, pixelScale: CGFloat, wallpaper: CGImage, settings: ChaosSettings) throws {
+    public init(device: MTLDevice, scene: ChaosScene, screenSize: CGSize, pixelScale: CGFloat, wallpaper: CGImage, settings: ChaosSettings) throws {
         guard let queue = device.makeCommandQueue(), let wallpaperTexture = ChaosTexture.make(device: device, image: wallpaper) else {
             throw ChaosRendererError.noDevice
         }
@@ -483,7 +483,7 @@ final class ChaosRenderer {
 
     // MARK: - Frame
 
-    func simulate(_ dt: Float) {
+    public func simulate(_ dt: Float) {
         elapsed += dt
         switch phase {
         case .playing:
@@ -504,7 +504,7 @@ final class ChaosRenderer {
         }
     }
 
-    func encodeFrame(commands: MTLCommandBuffer, target: MTLTexture, dt: Float) {
+    public func encodeFrame(commands: MTLCommandBuffer, target: MTLTexture, dt: Float) {
         frames += 1
         inFlight.wait()
         commands.addCompletedHandler { [inFlight] _ in inFlight.signal() }
@@ -617,7 +617,7 @@ final class ChaosRenderer {
     }
 
     /// Renders the current state once into a picture (debugging aid); the world does not advance.
-    func snapshot() -> CGImage? {
+    public func snapshot() -> CGImage? {
         let width = Int(screenSize.x * pixelScale), height = Int(screenSize.y * pixelScale)
         let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
         d.usage = [.renderTarget, .shaderRead]

@@ -277,6 +277,12 @@ final class Settings {
         set { defaults.set(newValue, forKey: "chaosEnabled") }
     }
 
+    /// Inactivity delay to restore when Kinetiq relinquishes the system screen saver.
+    var chaosPreviousIdleSeconds: Int? {
+        get { defaults.object(forKey: "chaosPreviousIdleSeconds") as? Int }
+        set { defaults.set(newValue, forKey: "chaosPreviousIdleSeconds") }
+    }
+
     var chaosIdleMinutes: Int {
         get { min(max(defaults.object(forKey: "chaosIdleMinutes") as? Int ?? 5, Self.chaosIdleRange.lowerBound), Self.chaosIdleRange.upperBound) }
         set { defaults.set(newValue, forKey: "chaosIdleMinutes") }

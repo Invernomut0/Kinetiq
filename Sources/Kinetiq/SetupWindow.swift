@@ -16,15 +16,18 @@ final class SetupModel: ObservableObject {
     private let startChaos: () -> Void
     private let enabledChanged: () -> Void
     let runtimeStatus: () -> ManagementRuntimeStatus
+    let systemSaver: SystemScreenSaver?
     private(set) var visibleWindows: [ManagedWindow] = []
 
     init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void,
-         enabledChanged: @escaping () -> Void, runtimeStatus: @escaping () -> ManagementRuntimeStatus) {
+         enabledChanged: @escaping () -> Void, runtimeStatus: @escaping () -> ManagementRuntimeStatus,
+         systemSaver: SystemScreenSaver? = nil) {
         self.settings = settings
         self.closeEffectChanged = closeEffectChanged
         self.startChaos = startChaos
         self.enabledChanged = enabledChanged
         self.runtimeStatus = runtimeStatus
+        self.systemSaver = systemSaver
     }
 
     func refresh() {
@@ -83,6 +86,18 @@ final class SetupModel: ObservableObject {
     }
 
     func resetToDefaults() {
+        if let systemSaver {
+            Task {
+                await systemSaver.setEnabled(false)
+                guard !systemSaver.hasSelection, systemSaver.errorMessage == nil else { return }
+                resetEffects()
+            }
+        } else {
+            resetEffects()
+        }
+    }
+
+    private func resetEffects() {
         settings.resetToDefaults()
         DockGenie.sync(enabled: settings.minimizeEffect != .off)
         closeEffectChanged()
@@ -250,11 +265,11 @@ struct SetupControlsView: View {
     private var screenSaver: some View {
         let settings = model.settings
         return Section {
-                Toggle("Start after Inactivity",
-                       isOn: model.binding({ settings.chaosEnabled }, { settings.chaosEnabled = $0 }))
-                SliderRow(title: "Start after (min)",
-                          value: model.binding({ Double(settings.chaosIdleMinutes) }, { settings.chaosIdleMinutes = Int($0.rounded()) }),
-                          range: Double(Settings.chaosIdleRange.lowerBound)...Double(Settings.chaosIdleRange.upperBound), decimals: 0)
+                if let systemSaver = model.systemSaver {
+                    SystemSaverControls(manager: systemSaver, settings: settings)
+                } else {
+                    Text("Use the packaged Kinetiq app to configure the macOS screen saver.").foregroundStyle(.secondary)
+                }
                 SliderRow(title: "Event every (ms)",
                           value: model.binding({ settings.chaosEventInterval }, { settings.chaosEventInterval = $0.rounded() }),
                           range: ChaosSettings.intervalRange, decimals: 0)
@@ -267,7 +282,7 @@ struct SetupControlsView: View {
                 SliderRow(title: "Intensity",
                           value: model.binding({ settings.chaosIntensity }, { settings.chaosIntensity = $0 }),
                           range: ChaosSettings.intensityRange, decimals: 1)
-                Button("Start Now") { model.startScreenSaver() }
+                Button("Preview Now") { model.startScreenSaver() }
                     .disabled(!Permissions.screenCaptureGranted)
                 if !Permissions.screenCaptureGranted {
                     Text("Grant Screen Recording in Settings before starting the screen saver.")
@@ -276,7 +291,7 @@ struct SetupControlsView: View {
             } header: {
                 Text("Screen Saver")
             } footer: {
-                Text("Your desktop falls apart: letters drop, buttons explode, windows break into pieces, and everything piles up at the bottom of the screen and fades away. Nothing real is touched; any key press, click or mouse movement ends it. Needs Screen Recording.")
+                Text("Enable to install and select Kinetiq as the default macOS screen saver on every display and Space. macOS controls inactivity, dismissal and password requirements. Preview Now runs an in-app preview only.")
         }
     }
 
@@ -439,9 +454,10 @@ final class SetupWindowController {
     private var window: NSWindow?
 
     init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void,
-         enabledChanged: @escaping () -> Void, runtimeStatus: @escaping () -> ManagementRuntimeStatus) {
+         enabledChanged: @escaping () -> Void, runtimeStatus: @escaping () -> ManagementRuntimeStatus,
+         systemSaver: SystemScreenSaver? = nil) {
         model = SetupModel(settings: settings, closeEffectChanged: closeEffectChanged, startChaos: startChaos,
-                           enabledChanged: enabledChanged, runtimeStatus: runtimeStatus)
+                           enabledChanged: enabledChanged, runtimeStatus: runtimeStatus, systemSaver: systemSaver)
     }
 
     func show() {

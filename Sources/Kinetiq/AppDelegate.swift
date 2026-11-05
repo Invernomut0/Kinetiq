@@ -29,12 +29,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var signalSources: [DispatchSourceSignal] = []
     private var setupWindow: SetupWindowController?
     private var chaosSaver: ChaosSaver?
+    private var systemScreenSaver: SystemScreenSaver?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = KinetiqController(settings: settings)
         let saver = ChaosSaver(settings: settings)
-        saver.startIdleWatching()
+        saver.observeSleep()
         chaosSaver = saver
+        let systemSaver = SystemScreenSaver(settings: settings)
+        systemSaver.startWatching()
+        systemScreenSaver = systemSaver
         if ProcessInfo.processInfo.environment["KINETIQ_CHAOS"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saver.start() }
         }
@@ -64,6 +68,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         controller?.cancelAll()
         tap?.stop()
+        chaosSaver?.stop()
+        systemScreenSaver?.stopWatching()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -171,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }, runtimeStatus: { [weak self] in
                 ManagementRuntimeStatus(metalAvailable: self?.controller != nil,
                                         eventTapRunning: self?.tap?.isRunning == true)
-            })
+            }, systemSaver: systemScreenSaver)
         }
         setupWindow?.show()
     }

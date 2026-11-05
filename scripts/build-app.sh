@@ -20,6 +20,19 @@ cp "$BIN_DIR/Kinetiq" "$APP/Contents/MacOS/Kinetiq"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 # Metal shaders and textures of the close effects (SwiftPM resource bundle, found in Contents/Resources).
 cp -R "$BIN_DIR/Kinetiq_KinetiqEffects.bundle" "$APP/Contents/Resources/"
+cp NOTICE "$APP/Contents/Resources/ThirdPartyNotices.txt"
+cp LICENSE "$APP/Contents/Resources/LICENSE"
+
+# A genuine ScreenSaver.framework module; the app installs this only after explicit opt-in.
+SAVER="$APP/Contents/Resources/Kinetiq.saver"
+mkdir -p "$SAVER/Contents/MacOS" "$SAVER/Contents/Resources"
+cp LICENSE NOTICE "$SAVER/Contents/Resources/"
+cp "$BIN_DIR/libKinetiqScreenSaver.dylib" "$SAVER/Contents/MacOS/KinetiqScreenSaver"
+cp Resources/ScreenSaver-Info.plist "$SAVER/Contents/Info.plist"
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Resources/Info.plist)"
+/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $VERSION" "$SAVER/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD" "$SAVER/Contents/Info.plist"
 
 # Icon Composer icon: actool generates Assets.car (Liquid Glass) and a fallback Kinetiq.icns.
 xcrun actool Resources/Kinetiq.icon --compile "$APP/Contents/Resources" --platform macosx \
@@ -28,8 +41,11 @@ xcrun actool Resources/Kinetiq.icon --compile "$APP/Contents/Resources" --platfo
 
 IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ { print $2; exit }')}"
 if [[ -n "${IDENTITY:-}" ]]; then
+    codesign --force --options runtime --sign "$IDENTITY" "$SAVER"
     codesign --force --options runtime --sign "$IDENTITY" "$APP"
 else
+    codesign --force --options runtime --sign - \
+        -r='designated => identifier "io.github.invernomut0.Kinetiq.ScreenSaver"' "$SAVER"
     # Ad-hoc: pin the requirement to the bundle id, otherwise macOS ties the Accessibility and
     # Screen Recording grants to the binary hash and asks again after every build.
     codesign --force --options runtime --sign - \

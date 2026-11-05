@@ -2,7 +2,7 @@
 
 Compiz-style wobbly windows for macOS. Drag a window and it wobbles like jelly, then settles where you drop it. Optional effects also play when a window is maximized or resized, and closing a window can burn, shatter, melt or dissolve it with one of 30 GPU shader effects.
 
-Kinetiq is a menu bar app with no private APIs and no dependencies. It is a fork of [Wobbly](https://github.com/jsgrrchg/Wobbly) by José Gurruchaga.
+Kinetiq is a native menu bar app, forked from [Wobbly](https://github.com/jsgrrchg/Wobbly) by José Gurruchaga. Window effects use public macOS APIs. Optional system screen saver selection uses PaperSaverKit 0.4.3 and macOS's undocumented wallpaper preference store; Apple provides no public API for selecting the default screen saver.
 
 https://github.com/user-attachments/assets/40bc5530-d253-4d47-bc57-3eccdac83d70
 
@@ -27,7 +27,7 @@ The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from
 | **Windows** | Read-only snapshot of normal-level on-screen windows: owning app, title when available, and dimensions. Refresh manually for an updated snapshot. This page never moves or captures a window. |
 | **Effects** | Close shader, Open jelly entrance, Minimize Dock morph and close-animation duration multiplier. |
 | **Physics** | Preset, friction, spring, speedup, mass, mesh density, maximize/resize effects, shadow, glide, tilt, focus glow and drop ripple. |
-| **Screen Saver** | Idle activation, event interval, fragment lifetime, speed, intensity and Start Now (requires Screen Recording). |
+| **Screen Saver** | Install/select Kinetiq as the macOS default, system inactivity delay, actual selection status, event interval, fragment lifetime, speed, intensity and Preview Now (requires Screen Recording). |
 | **App Rules** | Per-app close-effect overrides and exclusions. Add running apps or choose installed apps from disk. |
 | **Diagnostics** | Actual Metal renderer and event-tap state, permission grants, physics preset, mesh, rule counts, OS and app version. No estimated FPS or simulated telemetry. |
 | **Settings** | Enable state, title-bar drag, shortcut modifier, permissions and confirmed reset of effect settings. Reset preserves the enable state and drag controls. |
@@ -71,7 +71,13 @@ Minimizing, hiding, switching Spaces, closing a tab with ⌘W, or a close that t
 
 ### Screen saver
 
-**Setup › Screen Saver** can start a screen saver after a number of minutes without input (or right away with *Start Now*). It saves a picture of everything on the desktop (windows, Dock, menu bar, wallpaper) and lets it fall apart, slowly: every so often (*Event every*, 100–5000 ms) something happens: a blast breaks the windows like glass and throws letters and icons around, the letters of a few lines or an area come loose and drop, a button or an icon blinks red and explodes (neighbouring buttons chain-react), a crack runs through a window and pieces of it fall. Everything that comes loose falls, bounces and piles up at the bottom of the screen, and fades away after *Pieces vanish after* seconds, so the screen never fills up. *Speed* slows the whole simulation down (0.55 by default) and *Intensity* sets the size of the blasts. When most of the desktop is gone it fades out and is rebuilt. Nothing real is touched; any key press, click or mouse movement ends it and the untouched desktop is back.
+In **Setup › Screen Saver**, turn on **Use as macOS Screen Saver** and confirm the privacy notice. Kinetiq installs its signed native `Kinetiq.saver` in `~/Library/Screen Savers`, selects it for every display and Space, and applies the inactivity delay to macOS. WallpaperAgent restarts briefly. The control reports the actual system selection and any error, not just an app preference. Previous versions' in-app inactivity setting is not silently migrated into a system selection: opt in again.
+
+macOS owns automatic activation, dismissal and authentication; Kinetiq does not change your password or lock policy. **Preview Now** remains an in-app visual preview, not a lock screen. Disabling restores the previously selected screen saver only in slots still using Kinetiq, preserves newer wallpaper/other-saver choices, restores the old inactivity delay if it is still the Kinetiq-applied value, and deletes the saved scene. Reset Effect Settings performs the same restoration first. A different screen saver chosen later in System Settings is never automatically replaced.
+
+**Privacy:** the module runs in Apple's sandboxed screen saver host and does not inherit Kinetiq's Screen Recording grant. Kinetiq prepares a real desktop snapshot on enable and shortly before the system inactivity deadline while the app runs. It is stored locally in `~/Library/Caches/io.github.invernomut0.Kinetiq/SystemSaver/desktop.plist` (directory mode 0700, file mode 0600), never uploaded. The saved windows can contain private content and can appear on the lock screen; enable only if this is acceptable. When the app is closed, the module keeps using the last saved scene; if the cache is purged, it asks you to open Kinetiq again. Open Kinetiq to refresh the scene after changing displays. The previous selection is backed up in `~/Library/Application Support/Kinetiq/PreviousScreenSaver.plist` until disabled. Deleting the app does not uninstall the system module: disable it first, or select another saver in macOS and remove `~/Library/Screen Savers/Kinetiq.saver` and its cache manually.
+
+The desktop falls apart slowly: every so often (*Event every*, 100–5000 ms) a blast breaks the windows like glass and throws letters and icons around, letters come loose and drop, a button or icon blinks red and explodes (neighbouring buttons chain-react), or a crack runs through a window. Everything that comes loose falls, bounces, piles up and fades after *Pieces vanish after* seconds. *Speed* slows the simulation down (0.55 by default), and *Intensity* sets blast size. When most of the desktop is gone it fades out and rebuilds. No real window is changed.
 
 Blasts leave marks and debris. The broken edges of the pieces are charred (dark and ragged) and glow like embers until they cool. The edges that stay behind, those of the pieces around a hole, are left bare when their neighbour breaks away: they char, glow with a flickering ember light, give off small flames, a little smoke and now and then an ember, and are eaten away very slowly, so a sharp cut turns into a ragged, rounded, burnt edge (about 0.2 pixels per second, up to 9). The border of a window does not burn. Jagged cracks with side branches and a few arcs spread from every blast across the pieces of window around it that stay in place, and a piece that comes loose later takes its cracks along. Explosions throw sparks that cool from white-yellow to red and fall back as embers, flames, smoke, and fine dust that hangs in the air; pieces landing hard raise dust. An explosion of an icon of the Dock is much stronger than the others: a blast radius about three times larger, a flash of light, a shaking screen, a ring of dust and many more sparks. Once per session, after at least 25 seconds and then at random (at the latest after two minutes), a nuclear blast goes off at ground level: a short flash, a shock wave that reaches a limited part of the screen and breaks and throws the pieces in its way (up to a fixed number, fewer and fewer the farther away), a fireball and a mushroom cloud. It is deliberately contained, so the screen stays smooth.
 
@@ -92,12 +98,12 @@ An app closes its windows by itself, so Kinetiq can't intercept a close: it capt
 
 ## Building
 
-Requires macOS 14 or later and Xcode 26 or later.
+Requires macOS 14 or later and Xcode 26 or later (Swift 6 for PaperSaverKit). SwiftPM resolves the pinned MIT-licensed PaperSaver 0.4.3 dependency; its ArgumentParser dependency is for PaperSaver's CLI, not bundled in Kinetiq.
 
 ```sh
 swift build                # build
-swift test                 # run the physics and effect tests
-scripts/build-app.sh       # package and sign build/Kinetiq.app
+swift test                 # physics, effects, management and native screen saver tests
+scripts/build-app.sh       # universal signed app, including its signed native .saver
 
 # Render the close effects headlessly: checks every shader, texture and seed,
 # and writes one contact sheet (PNG) per effect.
@@ -105,7 +111,9 @@ swift run kinetiq-effects-preview --check --out /tmp/wobbly-effects
 swift run kinetiq-effects-preview --effect fire --out /tmp/wobbly-effects
 ```
 
-`build-app.sh` signs with your "Apple Development" identity if you have one, or with `SIGN_IDENTITY` if set. Otherwise it falls back to ad-hoc signing, in which case macOS asks for permissions again after every build.
+`build-app.sh` signs with your "Apple Development" identity if you have one, or with `SIGN_IDENTITY` if set. Otherwise it uses ad-hoc signing with stable bundle-identifier requirements to preserve permission grants across rebuilds. Both the app and embedded screen saver are signed.
+
+The `KinetiqSaverSupport` target shares the Metal renderer and private scene archive between the app and `KinetiqScreenSaver`. Packaging embeds the universal `.saver` in `Kinetiq.app/Contents/Resources`; running a bare `swift run Kinetiq` cannot install the module. Native integration tests read the real wallpaper store and write only temporary copies. Desktop capture tests use real windows and skip when Screen Recording or a graphical session is unavailable; they never change the user's default screen saver. Run `swift test --enable-code-coverage` for coverage. Future macOS changes to the undocumented selection store may require a PaperSaver update; failures are surfaced in the Screen Saver page, with a shortcut to System Settings.
 
 ## Credits
 
@@ -113,6 +121,7 @@ swift run kinetiq-effects-preview --effect fire --out /tmp/wobbly-effects
 - The physics, presets and resize effect are ported from the GNOME Shell extension [Compiz windows effect](https://github.com/hermes83/compiz-windows-effect) by Mauro Pepe.
 - The trick for hiding the real window comes from [AeroSpace](https://github.com/nikitabobko/AeroSpace).
 - The close effects, their settings and their textures come from [Burn-My-Windows](https://github.com/Schneegans/Burn-My-Windows) by Simon Schneegans: the GLSL shaders were ported to Metal. The brush, claws, dust, matrix font and shard textures are licensed CC-BY-4.0.
+- Native screen saver selection uses [PaperSaverKit](https://github.com/AerialScreensaver/PaperSaver) 0.4.3 (MIT); the full notice is included in `NOTICE` and in the packaged app.
 
 ## License
 
