@@ -5,6 +5,29 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — Build 35
+
+### Changed
+
+- **Menu bar organized by window event.** Drag, Open, Close and Minimize are top-level submenus whose titles show the current choice (“Close: Fire”). Each lists Off, Random, every compatible built-in effect and the compatible Studio presets; choosing an item applies it immediately through the same `SetupModel.assign` path as the library. The six abstract categories, the three-level effect menus and the “Title — Original Close…” labels are gone; categories remain as metadata and group **Try an Effect on the Front Window** (19 Studio effects, run once and restored). Title-bar drag and the shortcut modifier moved to Settings. Added **Effects Library…** (⌘E); **Setup…** is now **Settings…**.
+- **Effects library rebuilt around what you do.** Sidebar sections “When you drag a window”, “When a window opens”, “When a window closes”, “When you minimize” and “Overview & layouts” list every compatible effect with a one-line description and a checkmark on the active one; headers show the current choice and offer Off/Random; search covers all 65. The detail page is preview first, then one **Use when…** button per supported event, then collapsible **Customize** and **More**. The five-tab detail, the separate original detail view and the Window Trigger Assignments footer were removed.
+- **Previews need no window.** A drawn sample window (`SampleWindow`) is packaged like a ScreenCaptureKit capture, so every effect — including all 46 originals — previews immediately and loops; the source menu switches to a real window (captured only). The shared `PreviewSourceStore` keeps the choice across effects and the Studio. Playback self-paces: a frame starts only after the previous one finished, with a short hold on the last frame before looping.
+- **Wobbly preview uses the real spring mesh.** `OriginalPreviewRenderer` replays `KinetiqModel` under a scripted title-bar drag (1.8 s move, release, settle to 3 s) with the preset's stiffness, friction, speed and amplitude. Catalog previews now render through the preview renderer's own `CatalogEffectRenderer` into a stage with room around the window, so Genie's funnel and falling fragments are not cropped and the desktop runtime is never compiled by navigation.
+- **Animation Studio explains itself.** A dismissable how-it-works card, an empty state with **Add Layer** and **Load an Example** (Ripple then a keyframed Fold), labelled Undo/Redo, a **File** menu, a Save button that reads “Saved” when nothing changed, and inspector tabs **Edit**, **Keyframes**, **Use It** and **Advanced**. **Use It** saves the layer as the effect's preset and assigns it to a window event in one step. **Open in Animation Studio** in the library adds the current preset as a layer. The Studio previews on the sample window too; Run on Window targets the preview source.
+- **Dashboard: 11 pages.** Layouts and Workspaces merged into **Layouts** (Exposé 3D, Orbit, Cube, each with a preview and a Start button). Sidebar groups everyday pages and a System group. Overview gained a **What plays right now** card.
+- **Studio Wobbly shader** now reads as a spring sheet let go after a drag (lagging far edge, overshoot, damped ring-out driven by stiffness and friction) instead of a generic membrane. Endpoints are still exact.
+- `LibraryEffect` gained `blurb`, `kindLabel`, `isStudio`, `automaticTriggers` and `supporting(_:)`; `EffectTrigger` gained user-facing `eventTitle`, `shortTitle`, `symbol`, `explanation` and `librarySections`; `TriggerAssignment` resolves what an event currently plays across the catalog store and original settings. Persisted identifiers, preferences, the 19-effect catalog and JSON schema 1 are unchanged.
+
+### Fixed
+
+- Per-call `CatalogRuntime` instances (and a Metal library compile) are no longer created for every catalog preview frame.
+- Importing a preset for a different effect from an effect's page now reports which effect it belongs to instead of silently switching pages.
+
+### Verification
+
+- `swift test` (debug): **283 tests — 144 Core + 36 Effects + 103 app; 0 failures.** 28 app tests were skipped because the test host had no Screen Recording grant (real-capture, Liquid integration and runtime restoration tests); they are unchanged. New `SampleWindowPreviewTests` render all 65 effects, the scripted Wobbly replay, multi-layer documents and budget refusals on the sample window without any permission, and can dump PNGs (`KINETIQ_PREVIEW_DUMP`) for inspection.
+- `StudioUITests` now verify the event-based menu: every compatible effect per trigger, correct tokens, exactly one checked choice per event, and the 19-effect Try menu.
+
 ## [0.2.1] — Build 34
 
 ### Fixed

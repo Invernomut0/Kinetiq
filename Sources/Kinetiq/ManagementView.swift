@@ -8,7 +8,7 @@ import SwiftUI
 
 /// Only destinations backed by real engine capabilities appear in the sidebar.
 enum ManagementPage: String, CaseIterable, Identifiable {
-    case overview, windows, effects, animationStudio, physics, layouts, workspaces, rules, performance, diagnostics, settings, screenSaver
+    case overview, effects, animationStudio, physics, layouts, rules, screenSaver, performance, windows, diagnostics, settings
 
     var id: String { rawValue }
 
@@ -20,7 +20,6 @@ enum ManagementPage: String, CaseIterable, Identifiable {
         case .animationStudio: return "Animation Studio"
         case .physics: return "Physics"
         case .layouts: return "Layouts"
-        case .workspaces: return "Workspaces"
         case .screenSaver: return "Screen Saver"
         case .rules: return "Rules"
         case .performance: return "Performance"
@@ -37,7 +36,6 @@ enum ManagementPage: String, CaseIterable, Identifiable {
         case .animationStudio: return "timeline.selection"
         case .physics: return "atom"
         case .layouts: return "rectangle.3.group"
-        case .workspaces: return "cube"
         case .performance: return "gauge.with.dots.needle.67percent"
         case .screenSaver: return "display"
         case .rules: return "line.3.horizontal.decrease.circle"
@@ -50,11 +48,10 @@ enum ManagementPage: String, CaseIterable, Identifiable {
         switch self {
         case .overview: return "Your desktop, with a little more life."
         case .windows: return "A read-only snapshot of visible desktop windows."
-        case .effects: return "Give every arrival, exit and minimize its own character."
-        case .animationStudio: return "Compose captured-window motion with layers, tracks and keyframes."
-        case .physics: return "Tune the spring model behind every movement."
-        case .layouts: return "Arrange captured windows with Orbit and Exposé 3D."
-        case .workspaces: return "Current Space only, no native Space switching."
+        case .effects: return "Choose what happens when you drag, open, close or minimize a window."
+        case .animationStudio: return "Stack effects on a timeline and change their parameters over time."
+        case .physics: return "Tune the spring model behind every wobble."
+        case .layouts: return "Arrange the windows of the current Space with Exposé 3D, Orbit or Cube."
         case .performance: return "Actual GPU completion timings and active resource budgets."
         case .screenSaver: return "Let your desktop fall apart. Bring it back with a gesture."
         case .rules: return "Choose which apps join in, and which stay untouched."
@@ -62,6 +59,10 @@ enum ManagementPage: String, CaseIterable, Identifiable {
         case .settings: return "General controls, permissions and a fresh start."
         }
     }
+
+    /// Sidebar grouping: what you configure every day versus system pages.
+    static let primary: [ManagementPage] = [.overview, .effects, .animationStudio, .physics, .layouts, .rules, .screenSaver]
+    static let system: [ManagementPage] = [.performance, .windows, .diagnostics, .settings]
 }
 
 /// The delegate supplies process state; permissions alone do not imply a running engine.
@@ -106,11 +107,21 @@ struct SetupView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             VStack(spacing: 0) {
                 List(selection: $selection) {
-                    ForEach(ManagementPage.allCases) { destination in
-                        Label(destination.title, systemImage: destination.symbol)
-                            .font(.system(size: 14, weight: .medium))
-                            .padding(.vertical, 5)
-                            .tag(destination)
+                    Section {
+                        ForEach(ManagementPage.primary) { destination in
+                            Label(destination.title, systemImage: destination.symbol)
+                                .font(.system(size: 14, weight: .medium))
+                                .padding(.vertical, 5)
+                                .tag(destination)
+                        }
+                    }
+                    Section("System") {
+                        ForEach(ManagementPage.system) { destination in
+                            Label(destination.title, systemImage: destination.symbol)
+                                .font(.system(size: 14, weight: .medium))
+                                .padding(.vertical, 5)
+                                .tag(destination)
+                        }
                     }
                 }
                 .listStyle(.sidebar)
@@ -145,16 +156,21 @@ struct SetupView: View {
                 } else if page == .effects {
                     EffectsLibraryView(model: model, initialCategory: libraryCategory)
                 } else if page == .animationStudio {
-                    AnimationStudioView()
+                    AnimationStudioView(model: model)
                 } else if page == .performance {
                     PerformanceView()
-                } else if page == .layouts || page == .workspaces {
-                    CatalogArrangementView(workspaces: page == .workspaces)
+                } else if page == .layouts {
+                    CatalogArrangementView(model: model)
                 } else if page == .physics {
                     VStack(alignment: .leading, spacing: 0) {
-                        Button("Explore Physics in Effects Library", systemImage: "atom") {
-                            libraryCategory = .physics
-                            selection = .effects
+                        HStack {
+                            Text("These springs drive the classic wobble, the open entrances and the Wobbly preview.")
+                                .font(.callout).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Drag Effects", systemImage: "hand.draw") {
+                                libraryCategory = .physics
+                                selection = .effects
+                            }
                         }
                         .padding(.horizontal, 32).padding(.top, 12)
                         SetupControlsView(model: model, page: page)
@@ -239,8 +255,33 @@ struct SetupView: View {
                             .help("Pausing restores windows involved in active effects")
                     }
                     HStack(spacing: 12) {
-                        Button("Explore Effects") { selection = .effects }.buttonStyle(.borderedProminent)
+                        Button("Choose Effects") { selection = .effects }.buttonStyle(.borderedProminent)
                         Button("Tune Physics") { selection = .physics }.buttonStyle(.bordered)
+                        Button("Animation Studio") { selection = .animationStudio }.buttonStyle(.bordered)
+                    }
+                }
+            }
+
+            ManagementCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("What plays right now").font(.headline)
+                    ForEach([EffectTrigger.drag, .open, .close, .minimize], id: \.self) { trigger in
+                        let assignment = model.assignment(for: trigger)
+                        HStack(spacing: 12) {
+                            Image(systemName: trigger.symbol).frame(width: 22).foregroundStyle(.blue)
+                            Text(trigger.eventTitle).frame(width: 190, alignment: .leading)
+                            Text(assignment.title).fontWeight(.medium)
+                            if case .effect(let effect) = assignment {
+                                Text(effect.kindLabel).font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Change") {
+                                if let effect = assignment.effect { model.requestedLibraryEffect = effect.id }
+                                selection = .effects
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                        .font(.system(size: 13))
                     }
                 }
             }

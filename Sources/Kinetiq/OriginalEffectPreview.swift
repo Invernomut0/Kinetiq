@@ -11,13 +11,24 @@ import SwiftUI
 private enum OriginalPreviewError: String, LocalizedError {
     case window = "The selected window is no longer eligible. Refresh the window list."
     case capture = "The window capture is empty or invalid."
-    case metal = "Metal could not prepare this original effect."
+    case metal = "Metal could not prepare this effect."
     case gpu = "The GPU did not complete the preview."
     case budget = "The preview exceeds the current rendering safety budget."
     case progress = "Preview progress must be finite and between zero and one."
     case disabled = "Effects are paused."
     case settings = "The original effect settings contain invalid simulation parameters."
     var errorDescription: String? { rawValue }
+}
+
+/// What a preview is rendered from: the built-in drawn sample window, or a real one on screen.
+enum PreviewSource: Hashable {
+    case sample
+    case window(CGWindowID)
+
+    var windowID: CGWindowID? {
+        if case .window(let id) = self { return id }
+        return nil
+    }
 }
 
 /// Owns the IOSurface AND its CoreVideo mapping until command completion, even
@@ -42,14 +53,34 @@ private final class OriginalPreviewCapture: @unchecked Sendable {
     }
 }
 
-/// Read-only, offscreen adapter for the original shader and physics paths.
+/// Multiplies the displacement of another deformer, like the live overlay's `deformationScale`.
+private final class ScaledDeformer: WindowDeformer {
+    let base: any WindowDeformer
+    let scale: Float
+    init(_ base: any WindowDeformer, scale: Float) { self.base = base; self.scale = scale }
+    var size: SIMD2<Float> { base.size }
+    var origin: SIMD2<Float> { base.origin }
+    var isSettled: Bool { base.isSettled }
+    func step(_ dt: Float) { base.step(dt) }
+    func snapToRest() { base.snapToRest() }
+    func displacement(u: Float, v: Float) -> SIMD2<Float> { base.displacement(u: u, v: v) * scale }
+}
+
+/// Read-only, offscreen renderer for every library effect: original shaders and physics,
+/// Studio catalog materials and the real spring model behind Wobbly.
 /// No AX APIs, overlays, native close/minimize actions or preference writes.
 @MainActor
 final class OriginalPreviewRenderer {
+    /// Seconds of scripted drag-and-release that the Wobbly preview replays.
+    static let wobblyPreviewSeconds = 3.0
+    /// Seconds of the scripted drag before the window is let go.
+    static let wobblyReleaseSeconds = 1.8
+
     private let budgetProvider: @MainActor () -> RenderBudget
     private let capture = WindowCapture()
     private var gpu: GPU?
     private var generation = UUID()
+    private var sampleCapture: OriginalPreviewCapture?
     private(set) var inFlight = 0
 
     init(budget: @escaping @MainActor () -> RenderBudget = { RenderQualityManager.shared.budget }) {
@@ -59,19 +90,63 @@ final class OriginalPreviewRenderer {
     /// Invalidates results immediately; committed GPU work still retains its backing.
     func cancel() { generation = UUID() }
 
+    /// The timeline length a preview scrubs through, in seconds.
+    static func timelineSeconds(effect: LibraryEffect, preset: EffectPreset?, settings: Settings) -> Double {
+        switch effect {
+        case .catalog(.wobbly): return wobblyPreviewSeconds
+        case .catalog(let id): return preset?.duration ?? EffectPreset(effect: id).duration
+        case .close(let close): return close.duration * settings.closeDuration
+        case .entrance: return 2.5
+        case .minimize(let style): return Double(style.duration) * settings.closeDuration
+        case .liquid: return 6 * settings.closeDuration
+        }
+    }
+
+    /// Library entry point: any effect, from the sample window or a real one.
+    func preview(effect: LibraryEffect, preset: EffectPreset? = nil, source: PreviewSource,
+                 progress: Double, settings: Settings) async throws -> NSImage {
+        let document = preset.map { StudioDocument(duration: $0.duration, layers: [StudioLayer(preset: $0)]) }
+        switch source {
+        case .sample:
+            let token = try begin(progress: progress, settings: settings)
+            defer { inFlight -= 1 }
+            let frame = try SampleWindow.frame()
+            return try await render(effect: effect, document: document, frame: frame, windowFrame: SampleWindow.frameOnStage,
+                                    progress: progress, settings: settings, token: token)
+        case .window(let id):
+            return try await preview(effect: effect, document: document, windowID: id, progress: progress, settings: settings)
+        }
+    }
+
+    /// Studio composition on the sample window or a real one, at a document time in seconds.
+    func preview(document: StudioDocument, time: Double, source: PreviewSource, settings: Settings) async throws -> NSImage {
+        let document = try document.validated()
+        guard time.isFinite, document.duration > 0 else { throw OriginalPreviewError.progress }
+        let progress = min(1, max(0, time / document.duration))
+        let effect: LibraryEffect = .catalog(document.layers.first?.preset.effect ?? .wobbly)
+        switch source {
+        case .sample:
+            let token = try begin(progress: progress, settings: settings)
+            defer { inFlight -= 1 }
+            let frame = try SampleWindow.frame()
+            return try await render(effect: effect, document: document, frame: frame, windowFrame: SampleWindow.frameOnStage,
+                                    progress: progress, settings: settings, token: token)
+        case .window(let id):
+            return try await preview(effect: effect, document: document, windowID: id, progress: progress, settings: settings)
+        }
+    }
+
     func preview(effect: LibraryEffect, windowID: CGWindowID, progress: Double, settings: Settings) async throws -> NSImage {
+        try await preview(effect: effect, document: nil, windowID: windowID, progress: progress, settings: settings)
+    }
+
+    private func preview(effect: LibraryEffect, document: StudioDocument?, windowID: CGWindowID,
+                         progress: Double, settings: Settings) async throws -> NSImage {
         let token = try begin(progress: progress, settings: settings)
         defer { inFlight -= 1 }
         let runtime = CatalogRuntime(settings: settings, budget: budgetProvider)
         guard runtime.availableWindows().contains(where: { $0.id == windowID }),
               let rect = WindowLocator.frame(of: windowID) else { throw OriginalPreviewError.window }
-        if case .catalog(let id) = effect {
-            let preset = EffectPreset(effect: id)
-            let image = try await runtime.preview(document: StudioDocument(duration: preset.duration,
-                layers: [StudioLayer(preset: preset)]), time: progress * preset.duration, windowID: windowID)
-            try validate(token, settings: settings)
-            return image
-        }
         // Bound native capture allocation too, including WindowCapture's shadow room.
         let scale = NSScreen.containing(cgPoint: CGPoint(x: rect.midX, y: rect.midY))?.backingScaleFactor ?? 2
         guard (rect.width + 200) * (rect.height + 200) * scale * scale <= 32_000_000,
@@ -82,7 +157,7 @@ final class OriginalPreviewRenderer {
         try validate(token, settings: settings)
         guard runtime.availableWindows().contains(where: { $0.id == windowID }),
               WindowLocator.frame(of: windowID) == rect else { throw OriginalPreviewError.window }
-        let image = try await render(effect: effect, frame: frame, windowFrame: rect, progress: progress,
+        let image = try await render(effect: effect, document: document, frame: frame, windowFrame: rect, progress: progress,
                                      settings: settings, token: token)
         try validate(token, settings: settings)
         guard runtime.availableWindows().contains(where: { $0.id == windowID }),
@@ -96,7 +171,7 @@ final class OriginalPreviewRenderer {
                          progress: Double, settings: Settings) async throws -> NSImage {
         let token = try begin(progress: progress, settings: settings)
         defer { inFlight -= 1 }
-        return try await render(effect: effect, frame: frame, windowFrame: windowFrame,
+        return try await render(effect: effect, document: nil, frame: frame, windowFrame: windowFrame,
                                 progress: progress, settings: settings, token: token)
     }
 
@@ -117,11 +192,19 @@ final class OriginalPreviewRenderer {
         guard settings.enabled else { throw OriginalPreviewError.disabled }
     }
 
-    private func render(effect: LibraryEffect, frame: CapturedFrame, windowFrame: CGRect,
+    private func source(for frame: CapturedFrame, gpu: GPU) throws -> OriginalPreviewCapture {
+        if frame.windowID == SampleWindow.windowID, let sampleCapture,
+           sampleCapture.frame.pixelBuffer === frame.pixelBuffer { return sampleCapture }
+        let capture = try OriginalPreviewCapture(frame, cache: gpu.cache)
+        if frame.windowID == SampleWindow.windowID { sampleCapture = capture }
+        return capture
+    }
+
+    private func render(effect: LibraryEffect, document: StudioDocument?, frame: CapturedFrame, windowFrame: CGRect,
                         progress: Double, settings: Settings, token: UUID) async throws -> NSImage {
         let buffer = frame.pixelBuffer
         let bounds = CGRect(x: 0, y: 0, width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
-                guard bounds.width * bounds.height <= 32_000_000,
+        guard bounds.width * bounds.height <= 32_000_000,
               max(bounds.width, bounds.height) <= 16384 else { throw OriginalPreviewError.budget }
         guard Self.valid(windowFrame), windowFrame.size == frame.pointSize,
               Self.valid(frame.windowRect), bounds.contains(frame.windowRect),
@@ -131,22 +214,13 @@ final class OriginalPreviewRenderer {
               CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA,
               frame.isPainted else { throw OriginalPreviewError.capture }
         try validate(token, settings: settings)
-        if case .catalog(let id) = effect {
-            let preset = EffectPreset(effect: id)
-            let runtime = CatalogRuntime(settings: settings, budget: budgetProvider)
-            let image = try await runtime.previewCaptured(frame, windowFrame: windowFrame,
-                document: StudioDocument(duration: preset.duration, layers: [StudioLayer(preset: preset)]),
-                time: progress * preset.duration)
-            try validate(token, settings: settings)
-            return image
-        }
         let budget = budgetProvider()
         guard budget.textureScale.isFinite, budget.textureScale > 0, budget.meshLimit > 0 else {
             throw OriginalPreviewError.budget
         }
         if gpu == nil { gpu = try GPU() }
         guard let gpu else { throw OriginalPreviewError.metal }
-        let source = try OriginalPreviewCapture(frame, cache: gpu.cache)
+        let source = try source(for: frame, gpu: gpu)
         let origin = SIMD2(Float(windowFrame.minX), Float(windowFrame.minY))
         let size = SIMD2(Float(windowFrame.width), Float(windowFrame.height))
         let margin = max(24, windowFrame.width * 0.15,
@@ -155,6 +229,7 @@ final class OriginalPreviewRenderer {
         var scene: EffectScene?
         var deformer: (any WindowDeformer)?
         var world: LiquidWorld?
+        var catalog: StudioDocument?
         var alpha: Float = 1
         var tilesX = CatalogDragPolicy.meshTiles(requested: settings.tilesX, meshLimit: min(64, budget.meshLimit))
         var tilesY = CatalogDragPolicy.meshTiles(requested: settings.tilesY, meshLimit: min(64, budget.meshLimit))
@@ -211,7 +286,32 @@ final class OriginalPreviewRenderer {
             if gpu.liquid == nil { gpu.liquid = try LiquidEffectRenderer(device: gpu.device) }
             gpu.liquid?.geometryScale = budget.textureScale
             world = liquid
-        case .catalog: preconditionFailure("Catalog uses its existing renderer")
+        case .catalog(let id):
+            let document = try (document ?? StudioDocument(duration: EffectPreset(effect: id).duration,
+                                                           layers: [StudioLayer(preset: EffectPreset(effect: id))])).validated()
+            let active = document.layers.filter(\.enabled)
+            for layer in active { try Self.allowed(layer.preset, budget: budget) }
+            if active.count == 1, active[0].preset.effect == .wobbly {
+                // The preview of Wobbly is the real spring mesh under a scripted drag,
+                // not the shader membrane used for timeline compositions.
+                let preset = active[0].preset
+                let physics = settings.physics
+                guard (1...10).contains(physics.friction), (1...10).contains(physics.spring),
+                      (2...40).contains(physics.speedup), (20...80).contains(physics.mass) else {
+                    throw OriginalPreviewError.settings
+                }
+                let seconds = progress * Self.wobblyPreviewSeconds
+                let model = KinetiqModel(size: size, origin: origin, settings: physics)
+                try await scriptedDrag(model, preset: preset, seconds: seconds, token: token, settings: settings)
+                let amplitude = Float(preset.value("amplitude", at: min(preset.duration, seconds)))
+                deformer = ScaledDeformer(model, scale: amplitude)
+                let reach = Self.dragOffset(at: Self.wobblyReleaseSeconds * 0.5, size: size)
+                stage = stage.insetBy(dx: -CGFloat(abs(reach.x)) - 8, dy: -CGFloat(abs(reach.y)) - 8)
+            } else {
+                // Room below for Genie's funnel and for fragments that fall.
+                stage.size.height += windowFrame.height * 0.6
+                catalog = document
+            }
         }
         try validate(token, settings: settings)
         let nativeScale = Double(frame.windowRect.width / frame.pointSize.width)
@@ -223,28 +323,33 @@ final class OriginalPreviewRenderer {
         descriptor.usage = [.renderTarget, .shaderRead]
         guard let target = gpu.device.makeTexture(descriptor: descriptor),
               let command = gpu.queue.makeCommandBuffer() else { throw OriginalPreviewError.metal }
-        let pass = MTLRenderPassDescriptor()
-        pass.colorAttachments[0].texture = target
-        pass.colorAttachments[0].loadAction = .clear
-        pass.colorAttachments[0].storeAction = .store
-        pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
-        guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { throw OriginalPreviewError.gpu }
-        if let scene {
-            guard gpu.close?.encode(scene, into: encoder, screenRect: stage) == true else {
-                encoder.endEncoding()
-                throw OriginalPreviewError.metal
+        if let catalog {
+            try gpu.encodeCatalog(catalog, time: progress * catalog.duration, source: source, windowFrame: windowFrame,
+                                  stage: stage, target: target, descriptor: descriptor, budget: budget, command: command)
+        } else {
+            let pass = MTLRenderPassDescriptor()
+            pass.colorAttachments[0].texture = target
+            pass.colorAttachments[0].loadAction = .clear
+            pass.colorAttachments[0].storeAction = .store
+            pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
+            guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { throw OriginalPreviewError.gpu }
+            if let scene {
+                guard gpu.close?.encode(scene, into: encoder, screenRect: stage) == true else {
+                    encoder.endEncoding()
+                    throw OriginalPreviewError.metal
+                }
             }
-        }
-        if let deformer {
-            do {
-                try gpu.encodeMesh(deformer, source: source, stage: stage, alpha: alpha,
-                                   tilesX: tilesX, tilesY: tilesY, encoder: encoder)
-            } catch { encoder.endEncoding(); throw error }
-        }
-        encoder.endEncoding()
-        if let world {
-            gpu.liquid?.encode(world: world, texture: source.texture, uvRect: source.uv,
-                               into: command, target: target, screenRect: stage)
+            if let deformer {
+                do {
+                    try gpu.encodeMesh(deformer, source: source, stage: stage, alpha: alpha,
+                                       tilesX: tilesX, tilesY: tilesY, encoder: encoder)
+                } catch { encoder.endEncoding(); throw error }
+            }
+            encoder.endEncoding()
+            if let world {
+                gpu.liquid?.encode(world: world, texture: source.texture, uvRect: source.uv,
+                                   into: command, target: target, screenRect: stage)
+            }
         }
         RenderQualityManager.trackGPUCompletion(command)
         let success: Bool = await withCheckedContinuation { continuation in
@@ -258,6 +363,53 @@ final class OriginalPreviewRenderer {
         guard success else { throw OriginalPreviewError.gpu }
         try validate(token, settings: settings)
         return try Self.image(target, pointSize: stage.size)
+    }
+
+    /// Mirrors the runtime's safety checks so a preview never shows what playback would refuse.
+    private static func allowed(_ preset: EffectPreset, budget: RenderBudget) throws {
+        let descriptor = EffectCatalog.descriptor(preset.effect)
+        guard !descriptor.expensive || budget.allowsExpensive else { throw OriginalPreviewError.budget }
+        guard budget.meshLimit > 0,
+              (preset.effect != .shatter && preset.effect != .explode) || budget.maxParticles > 0 else {
+            throw OriginalPreviewError.budget
+        }
+    }
+
+    /// Pointer travel of the scripted Wobbly drag: a wide swing to the right that comes back home.
+    static func dragOffset(at seconds: Double, size: SIMD2<Float>) -> SIMD2<Float> {
+        let s = min(1, max(0, seconds / wobblyReleaseSeconds))
+        let eased = s * s * (3 - 2 * s)
+        return SIMD2(Float(sin(.pi * eased)) * size.x * 0.22, Float(sin(2 * .pi * eased)) * size.y * 0.07)
+    }
+
+    /// Grab the title bar, move for `wobblyReleaseSeconds`, let go and let the springs settle. 120 Hz replay.
+    private func scriptedDrag(_ model: KinetiqModel, preset: EffectPreset, seconds: Double,
+                              token: UUID, settings: Settings) async throws {
+        let home = model.origin
+        let grab = home + SIMD2(model.size.x * 0.5, 14)
+        model.grab(at: grab)
+        let dt = 1.0 / 120
+        let ticks = Int((seconds * 120).rounded(.down))
+        var released = false
+        for tick in 0..<ticks {
+            if tick.isMultiple(of: 24) { await Task.yield(); try validate(token, settings: settings) }
+            let now = Double(tick) * dt
+            if preset.effect == .wobbly {
+                var physics = settings.physics
+                physics.spring = Float(preset.value("stiffness", at: min(preset.duration, now)))
+                physics.friction = Float(preset.value("friction", at: min(preset.duration, now)))
+                model.updateSettings(physics, speed: Float(preset.value("speed", at: min(preset.duration, now))))
+            }
+            if now < Self.wobblyReleaseSeconds {
+                let offset = Self.dragOffset(at: now, size: model.size)
+                model.moveGrab(to: grab + offset, origin: home + offset)
+            } else if !released {
+                model.release(origin: home)
+                released = true
+            }
+            model.step(Float(dt))
+        }
+        if seconds >= Self.wobblyReleaseSeconds, !released { model.release(origin: home) }
     }
 
     private func advance(_ model: any WindowDeformer, seconds: Double, token: UUID, settings: Settings) async throws {
@@ -305,6 +457,7 @@ final class OriginalPreviewRenderer {
         let cache: CVMetalTextureCache
         var close: CloseEffectRenderer?
         var liquid: LiquidEffectRenderer?
+        private var catalog: CatalogEffectRenderer?
         private var mesh: MTLRenderPipelineState?
 
         init() throws {
@@ -318,6 +471,58 @@ final class OriginalPreviewRenderer {
                 throw OriginalPreviewError.capture
             }
             self.cache = cache
+        }
+
+        /// Sequential layer composition over the stage, like the runtime's offscreen ping-pong,
+        /// but with room around the window so fragments and funnels are not cropped.
+        func encodeCatalog(_ document: StudioDocument, time: Double, source: OriginalPreviewCapture, windowFrame: CGRect,
+                           stage: CGRect, target: MTLTexture, descriptor: MTLTextureDescriptor, budget: RenderBudget,
+                           command: MTLCommandBuffer) throws {
+            if catalog == nil { catalog = try CatalogEffectRenderer(device: device) }
+            guard let catalog else { throw OriginalPreviewError.metal }
+            var layers = document.layers.filter { $0.enabled && time >= $0.start && time <= $0.start + $0.preset.duration }
+            if layers.isEmpty {
+                var identity = EffectPreset(effect: .wobbly); identity.parameters["amplitude"] = 0
+                layers = [StudioLayer(preset: identity, start: time)]
+            }
+            if layers.count > 1 {
+                guard let scratch = device.makeTexture(descriptor: descriptor) else { throw OriginalPreviewError.metal }
+                try encodeLayers(layers, time: time, catalog: catalog, source: source, windowFrame: windowFrame,
+                                 stage: stage, final: target, scratch: scratch, budget: budget, command: command)
+            } else {
+                try encodeLayers(layers, time: time, catalog: catalog, source: source, windowFrame: windowFrame,
+                                 stage: stage, final: target, scratch: nil, budget: budget, command: command)
+            }
+        }
+
+        private func encodeLayers(_ layers: [StudioLayer], time: Double, catalog: CatalogEffectRenderer,
+                                  source: OriginalPreviewCapture, windowFrame: CGRect, stage: CGRect,
+                                  final: MTLTexture, scratch: MTLTexture?, budget: RenderBudget, command: MTLCommandBuffer) throws {
+            var texture = source.texture, uv = source.uv, frame = windowFrame
+            for (index, layer) in layers.enumerated() {
+                // Count back from the end so the last layer lands in the final target and
+                // consecutive layers always alternate between the two textures.
+                let output = (layers.count - 1 - index).isMultiple(of: 2) ? final : (scratch ?? final)
+                let pass = MTLRenderPassDescriptor()
+                pass.colorAttachments[0].texture = output
+                pass.colorAttachments[0].loadAction = .clear
+                pass.colorAttachments[0].storeAction = .store
+                pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
+                guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { throw OriginalPreviewError.gpu }
+                let preset = layer.preset
+                let local = time - layer.start
+                let values = Dictionary(uniqueKeysWithValues: EffectCatalog.descriptor(preset.effect).parameters.map {
+                    ($0.id, Float(preset.value($0.id, at: local)))
+                })
+                let clock = preset.curve.value(at: local / preset.duration)
+                let progress = preset.trigger == .open ? 1 - clock : clock
+                catalog.encode(effect: preset.effect, texture: texture, uvRect: uv, frame: frame, screenRect: stage,
+                               progress: Float(progress), amplitude: values["amplitude"] ?? 1, speed: values["speed"] ?? 1,
+                               meshLimit: budget.meshLimit, particleLimit: budget.maxParticles,
+                               blurPasses: budget.blurPasses, parameters: values, into: encoder)
+                encoder.endEncoding()
+                texture = output; uv = SIMD4(0, 0, 1, 1); frame = stage
+            }
         }
 
         func encodeMesh(_ model: any WindowDeformer, source: OriginalPreviewCapture, stage: CGRect,
@@ -386,93 +591,5 @@ final class OriginalPreviewRenderer {
             return image.sample(s, in.uv * u.uv.zw + u.uv.xy) * u.opacity.x;
         }
         """
-    }
-}
-
-private struct OriginalPreviewRequest: Equatable {
-    let effect: LibraryEffect
-    let window: CGWindowID?
-    let progress: Double
-    let revision: Int
-    let visible: Bool
-}
-
-/// Embedded preview only; the five detail tabs and assignments belong to the library.
-@MainActor
-struct OriginalEffectPreview: View {
-    let effect: LibraryEffect
-    let settings: Settings
-    @State private var renderer = OriginalPreviewRenderer()
-    @State private var windowID: CGWindowID?
-    @State private var progress = 0.0
-    @State private var image: NSImage?
-    @State private var error: String?
-    @State private var rendering = false
-    @State private var revision = 0
-    @State private var visible = true
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            CatalogWindowPicker(selection: $windowID)
-            ZStack {
-                Color(nsColor: .underPageBackgroundColor)
-                if let image {
-                    Image(nsImage: image).resizable().scaledToFit().padding(12)
-                        .accessibilityLabel("Original effect rendered from the selected window capture")
-                } else {
-                    Label(windowID == nil ? "Choose a real window to preview" : "Captured-window preview", systemImage: "macwindow")
-                        .foregroundStyle(.secondary)
-                }
-                if rendering { ProgressView().padding().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing) }
-            }
-            .frame(minHeight: 140, maxHeight: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            Slider(value: $progress, in: 0...1) { Text("Original effect progress") }
-                .accessibilityLabel("Original effect progress")
-            HStack {
-                Text("\(progress * 100, specifier: "%.0f")%").font(.caption.monospacedDigit())
-                Spacer()
-                Button("Recapture") { revision += 1 }.disabled(windowID == nil)
-            }
-            if let error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-            Text(disclosure).font(.caption).foregroundStyle(.secondary)
-        }
-        .task(id: OriginalPreviewRequest(effect: effect, window: windowID, progress: progress, revision: revision, visible: visible)) {
-            image = nil; error = nil; rendering = false
-            guard visible, let windowID else { return }
-            do {
-                try await Task.sleep(for: .milliseconds(80))
-                try Task.checkCancellation()
-                rendering = true
-                let result = try await renderer.preview(effect: effect, windowID: windowID, progress: progress, settings: settings)
-                try Task.checkCancellation()
-                image = result; rendering = false
-            } catch is CancellationError {
-                // The replacement structured task owns the view state.
-            } catch {
-                guard !Task.isCancelled else { return }
-                self.error = error.localizedDescription; rendering = false
-            }
-        }
-        .onAppear { visible = true }
-        .onDisappear { visible = false; renderer.cancel(); image = nil }
-        .onChange(of: effect) { _, _ in progress = 0; image = nil }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
-            if isManagementWindow(note) { visible = false; renderer.cancel(); image = nil }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-            if isManagementWindow(note) { visible = true }
-        }
-    }
-
-    private var disclosure: String {
-        switch effect {
-        case .minimize:
-            return "Original Dock morph physics; destination is local to this preview panel, not the actual Dock. The live window is never moved or minimized."
-        case .liquid:
-            return "Original Liquid simulation, 0–6 normalized seconds, with a retained local floor stage and no desktop obstacles. The live window is never closed or minimized."
-        default:
-            return "Original rendering path on an actual captured window. Preview only: no live window movement, closing or minimizing."
-        }
     }
 }

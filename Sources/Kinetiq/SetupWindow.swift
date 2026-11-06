@@ -102,6 +102,57 @@ final class SetupModel: ObservableObject {
         } catch { effectError = error.localizedDescription }
     }
 
+    // MARK: - Trigger assignments (shared by the library, the menu bar and the Studio)
+
+    func assignment(for trigger: EffectTrigger) -> TriggerAssignment {
+        TriggerAssignment.current(trigger, settings: settings, store: .shared)
+    }
+
+    func isAssigned(_ effect: LibraryEffect, to trigger: EffectTrigger) -> Bool {
+        assignment(for: trigger) == .effect(effect)
+    }
+
+    /// Makes `effect` what `trigger` plays. Studio presets keep their saved parameters and tracks;
+    /// originals write their existing preference. Returns false and sets `effectError` on failure.
+    @discardableResult
+    func assign(_ effect: LibraryEffect, to trigger: EffectTrigger) -> Bool {
+        do {
+            if case .catalog(let id) = effect {
+                var preset = CatalogStore.shared.preset(id)
+                guard EffectCatalog.descriptor(id).triggers.contains(trigger) else {
+                    throw StudioUIError.message("\(effect.title) cannot be used for \(trigger.shortTitle).")
+                }
+                preset.trigger = trigger
+                try CatalogStore.shared.save(preset)
+            } else {
+                try OriginalEffectAssignment.apply(effect, trigger: trigger, settings: settings, store: .shared)
+            }
+            afterAssignmentChange(trigger)
+            return true
+        } catch { effectError = error.localizedDescription; return false }
+    }
+
+    /// Off or Random for a trigger; releases any Studio owner first.
+    @discardableResult
+    func setTrigger(_ trigger: EffectTrigger, random: Bool) -> Bool {
+        guard releaseCatalogTrigger(trigger) else { return false }
+        switch trigger {
+        case .close: settings.closeEffect = random ? .random : .off
+        case .open: settings.openEffect = random ? .random : .off
+        case .minimize: settings.minimizeEffect = random ? .random : .off
+        case .drag, .overview, .manual: break
+        }
+        afterAssignmentChange(trigger)
+        return true
+    }
+
+    private func afterAssignmentChange(_ trigger: EffectTrigger) {
+        if trigger == .minimize { DockGenie.sync(enabled: settings.minimizeEffect != .off) }
+        effectError = nil
+        closeEffectChanged()
+        refresh()
+    }
+
     private func releaseCatalogTrigger(_ trigger: EffectTrigger) -> Bool {
         do { try CatalogStore.shared.releaseAssignment(to: trigger); effectError = nil; return true }
         catch { effectError = error.localizedDescription; return false }
@@ -478,7 +529,7 @@ private struct PermissionRow: View {
 /// Owns the detached Setup window; reopening brings the same window forward.
 @MainActor
 final class SetupWindowController {
-    private let model: SetupModel
+    let model: SetupModel
     private var window: NSWindow?
 
     init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void,

@@ -7,128 +7,92 @@ import KinetiqCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-enum EffectDetailTab: String, CaseIterable, Identifiable {
-    case preview = "Preview", parameters = "Parameters", triggers = "Triggers"
-    case performance = "Performance", reset = "Reset"
-    var id: String { rawValue }
+/// One row of the library: an effect seen through the window event it would react to.
+struct LibrarySelection: Hashable {
+    let effect: LibraryEffect
+    let trigger: EffectTrigger
+
+    /// The section an effect is shown in when nothing more specific was requested.
+    static func primary(_ effect: LibraryEffect) -> LibrarySelection {
+        let trigger = EffectTrigger.librarySections.first { effect.triggers.contains($0) } ?? .manual
+        return LibrarySelection(effect: effect, trigger: trigger)
+    }
 }
 
-/// Six permanent categories; manifest entries, not navigation destinations, populate the library.
+/// Effects grouped by what the user does (drag, open, close, minimize), each with a live preview
+/// and one obvious action: use it for that event. Studio and built-in effects share the same page.
 @MainActor
 struct EffectsLibraryView: View {
     @ObservedObject var model: SetupModel
     @ObservedObject private var store = CatalogStore.shared
-    @ObservedObject private var runtime = CatalogRuntime.shared
-    @State private var category: EffectCategory
-    @State private var selected: EffectID
-    @State private var original: LibraryEffect?
-    @State private var editing: EffectPreset
-    @State private var tab: EffectDetailTab = .preview
-    @State private var windowID: CGWindowID?
-    @State private var previewTime = 0.0
-    @State private var error: String?
-    @State private var notice: String?
-    @State private var legacyExpanded = false
-    @State private var runTask: Task<Void, Never>?
+    @State private var selection: LibrarySelection
+    @State private var search = ""
 
     init(model: SetupModel, initialCategory: EffectCategory? = nil) {
         self.model = model
-        let category = initialCategory ?? .windowMotion
-        let first = EffectCatalog.effects.first(where: { $0.category == category })?.id ?? .wobbly
-        _category = State(initialValue: category)
-        _selected = State(initialValue: first)
-        _editing = State(initialValue: CatalogStore.shared.preset(first))
-        if let requested = model.requestedLibraryEffect.flatMap(LibraryEffect.find) {
-            _category = State(initialValue: requested.category)
-            if case .catalog(let id) = requested {
-                _selected = State(initialValue: id)
-                _editing = State(initialValue: CatalogStore.shared.preset(id))
-            } else { _original = State(initialValue: requested) }
+        var initial = LibrarySelection.primary(.catalog(.wobbly))
+        if let category = initialCategory,
+           let first = LibraryEffect.all.first(where: { $0.category == category }) {
+            initial = .primary(first)
         }
+        if let requested = model.requestedLibraryEffect.flatMap(LibraryEffect.find) { initial = .primary(requested) }
+        _selection = State(initialValue: initial)
     }
 
-    private var descriptor: EffectDescriptor { EffectCatalog.descriptor(selected) }
-    private var entries: [LibraryEffect] { LibraryEffect.all.filter { $0.category == category } }
-    private var selection: LibraryEffect { original ?? .catalog(selected) }
-    private var submenus: [String] { Array(Set(entries.map(\.submenu))).sorted() }
-
     var body: some View {
-        VStack(spacing: 0) {
-            HSplitView {
-                librarySidebar.frame(minWidth: 170, idealWidth: 190, maxWidth: 240)
-                Group {
-                    if let original {
-                        OriginalEffectDetailView(effect: original, model: model).id(original.id)
-                    } else { detail }
-                }
-                .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
-            }
-            Divider()
-            DisclosureGroup("Window Trigger Assignments", isExpanded: $legacyExpanded) {
-                SetupControlsView(model: model, page: .effects).frame(height: 310)
-                if let error = model.effectError { Text(error).foregroundStyle(.red).font(.caption) }
-            }
-            .padding(12)
-        }
-        .onChange(of: category) { _, value in
-            if selection.category != value,
-               let first = LibraryEffect.all.first(where: { $0.category == value }) { select(first) }
+        HSplitView {
+            sidebar.frame(minWidth: 250, idealWidth: 280, maxWidth: 340)
+            EffectDetailView(selection: selection, model: model)
+                .id(selection)
+                .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
         }
         .onChange(of: model.requestedLibraryEffect, initial: true) { _, id in
             if let effect = id.flatMap(LibraryEffect.find) {
-                select(effect)
+                selection = .primary(effect)
+                search = ""
                 model.requestedLibraryEffect = nil
             }
         }
-        .onChange(of: editing.duration) { _, duration in previewTime = min(previewTime, duration) }
-        .onDisappear { runTask?.cancel(); runtime.stop() }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
-            if isManagementWindow(note) { runTask?.cancel(); runtime.stop() }
+    }
+
+    // MARK: - Sidebar
+
+    private var matches: [LibraryEffect] {
+        let query = search.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return [] }
+        return LibraryEffect.all.filter {
+            $0.title.localizedCaseInsensitiveContains(query) || $0.blurb.localizedCaseInsensitiveContains(query)
         }
     }
 
-    private var librarySidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("LIBRARY · \(LibraryEffect.all.count) EFFECTS")
-                .font(.caption2.weight(.semibold)).foregroundStyle(.secondary).padding(12)
-            ForEach(EffectCategory.allCases, id: \.self) { item in
-                Button {
-                    category = item
-                } label: {
-                    HStack {
-                        Label(item.title, systemImage: item.symbol)
-                        Spacer(minLength: 3)
-                        Text("\(LibraryEffect.all.filter { $0.category == item }.count)")
-                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 7)
-                    .background(category == item ? Color.accentColor.opacity(0.13) : .clear,
-                                in: RoundedRectangle(cornerRadius: 6))
-                    .contentShape(Rectangle())
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search \(LibraryEffect.all.count) effects", text: $search).textFieldStyle(.plain)
+                if !search.isEmpty {
+                    Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                        .buttonStyle(.plain).accessibilityLabel("Clear search")
                 }
-                .buttonStyle(.plain).padding(.horizontal, 6)
-                .accessibilityAddTraits(category == item ? .isSelected : [])
             }
-            Divider().padding(.top, 10)
-            List {
-                ForEach(submenus, id: \.self) { submenu in
-                    Section(submenu) {
-                        ForEach(entries.filter { $0.submenu == submenu }) { entry in
-                            Button { select(entry) } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(entry.title)
-                                        Text(entry.badge).font(.caption2).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if selection == entry { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
-                                }
-                                .contentShape(Rectangle())
+            .padding(8)
+            .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+            .padding(10)
+            List(selection: Binding(get: { Optional(selection) }, set: { if let value = $0 { selection = value } })) {
+                if search.isEmpty {
+                    ForEach(EffectTrigger.librarySections, id: \.self) { trigger in
+                        Section {
+                            ForEach(LibraryEffect.supporting(trigger)) { effect in
+                                row(effect, trigger: trigger).tag(LibrarySelection(effect: effect, trigger: trigger))
                             }
-                            .buttonStyle(.plain)
-                            .padding(.vertical, 3)
-                            .accessibilityLabel("\(entry.title), \(entry.badge)")
-                            .accessibilityAddTraits(selection == entry ? .isSelected : [])
+                        } header: { sectionHeader(trigger) }
+                    }
+                } else if matches.isEmpty {
+                    Text("No effect matches “\(search)”.").foregroundStyle(.secondary)
+                } else {
+                    Section("Results") {
+                        ForEach(matches) { effect in
+                            row(effect, trigger: LibrarySelection.primary(effect).trigger).tag(LibrarySelection.primary(effect))
                         }
                     }
                 }
@@ -138,119 +102,289 @@ struct EffectsLibraryView: View {
         .background(.background.opacity(0.5))
     }
 
-    private var detail: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("\(descriptor.category.title) / \(descriptor.submenu)").font(.caption).foregroundStyle(.secondary)
-                    Text(descriptor.title).font(.title2.bold())
-                    Text(descriptor.summary).font(.callout).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 4)
+    private func sectionHeader(_ trigger: EffectTrigger) -> some View {
+        let assignment = model.assignment(for: trigger)
+        return HStack(spacing: 6) {
+            Label(trigger.eventTitle, systemImage: trigger.symbol)
+            Spacer(minLength: 4)
+            if trigger != .overview {
                 Menu {
-                    ForEach(descriptor.presets, id: \.name) { preset in
-                        Button(preset.name) { editing = preset; notice = "Variant loaded. Save to apply." }
-                    }
+                    Text("Now: \(assignment.title)")
                     Divider()
-                    Button("Import Preset…") { importPreset() }
-                    Button("Export Saved Preset…") {
-                        attempt { try CatalogFilePanels.write(store.exportPreset(selected), name: "\(selected.rawValue).json") }
+                    if trigger != .drag {
+                        Button("Off") { model.setTrigger(trigger, random: false) }
+                        Button("Random") { model.setTrigger(trigger, random: true) }
+                    } else {
+                        Button("Classic wobble (no Studio preset)") { model.setTrigger(.drag, random: false) }
                     }
-                    Button("Copy Parameters") { attempt { try PresetClipboard.copy(editing) } }
-                    Button("Paste Parameters") { attempt { editing = try PresetClipboard.paste(into: editing) } }
-                } label: { Image(systemName: "ellipsis.circle") }
-                .help("Presets and parameters")
+                } label: {
+                    Text(assignment.title).font(.caption).lineLimit(1)
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .help("What this event currently plays. Choose Off or Random here; pick an effect in the list to use it.")
             }
-            Picker("Detail", selection: $tab) {
-                ForEach(EffectDetailTab.allCases) { Text($0.rawValue).tag($0) }
+        }
+    }
+
+    private func row(_ effect: LibraryEffect, trigger: EffectTrigger) -> some View {
+        let active = model.isAssigned(effect, to: trigger)
+        return HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(effect.title)
+                Text(effect.blurb).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
-            .pickerStyle(.segmented).labelsHidden()
-            if let error { Label(error, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.red).textSelection(.enabled) }
-            if let notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
-            if let error = runtime.errorMessage { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-            tabContent.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            Divider()
-            HStack {
-                Text(editing == store.preset(selected) ? "Saved preset" : "Unsaved changes")
-                    .font(.caption).foregroundStyle(.secondary)
+            Spacer(minLength: 2)
+            if effect.isStudio {
+                Image(systemName: "slider.horizontal.3").font(.caption2).foregroundStyle(.tertiary)
+                    .help("Studio preset: parameters and timeline can be edited")
+            }
+            if active {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
+                    .accessibilityLabel("Active")
+            }
+        }
+        .padding(.vertical, 2)
+        .accessibilityLabel("\(effect.title), \(effect.kindLabel)\(active ? ", active" : "")")
+    }
+}
+
+/// Preview first, then the one decision that matters, then optional tuning.
+@MainActor
+struct EffectDetailView: View {
+    let selection: LibrarySelection
+    @ObservedObject var model: SetupModel
+    @ObservedObject private var store = CatalogStore.shared
+    @ObservedObject private var runtime = CatalogRuntime.shared
+    @ObservedObject private var sources = PreviewSourceStore.shared
+    @State private var editing: EffectPreset?
+    @State private var customizeExpanded = false
+    @State private var moreExpanded = false
+    @State private var notice: String?
+    @State private var error: String?
+    @State private var runTask: Task<Void, Never>?
+
+    private var effect: LibraryEffect { selection.effect }
+    private var catalogID: EffectID? { if case .catalog(let id) = effect { return id }; return nil }
+    private var saved: EffectPreset? { catalogID.map { store.preset($0) } }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                EffectPreviewPlayer(subject: .effect(effect, editing ?? saved), settings: model.settings)
+                    .frame(height: 340)
+                assignBar
+                if let message = error ?? model.effectError ?? runtime.errorMessage {
+                    Label(message, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.red).textSelection(.enabled)
+                }
+                if let notice { Label(notice, systemImage: "checkmark.circle").font(.callout).foregroundStyle(.secondary) }
+                DisclosureGroup(isExpanded: $customizeExpanded) {
+                    customize.padding(.top, 8)
+                } label: {
+                    Label(effect.isStudio ? "Customize parameters" : "Adjust", systemImage: "slider.horizontal.3").font(.headline)
+                }
+                DisclosureGroup(isExpanded: $moreExpanded) {
+                    more.padding(.top, 8)
+                } label: { Label("More", systemImage: "ellipsis.circle").font(.headline) }
+            }
+            .padding(20)
+        }
+        .onAppear { editing = saved }
+        .onChange(of: store.presets) { _, _ in if editing == nil { editing = saved } }
+        .onDisappear { runTask?.cancel(); runtime.stop() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
+            if isManagementWindow(note) { runTask?.cancel(); runtime.stop() }
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(effect.title).font(.title.bold())
+                Text(effect.kindLabel).font(.caption.weight(.medium)).padding(.horizontal, 7).padding(.vertical, 2)
+                    .background(effect.isStudio ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.07), in: Capsule())
                 Spacer()
-                Button("Revert") { editing = store.preset(selected); error = nil; notice = nil }
-                Button("Save & Apply") {
-                    attempt { try store.save(editing); notice = "Preset saved. Trigger assignment persisted." }
+                if effect.isStudio, let editing, let saved, editing != saved {
+                    Text("Unsaved changes").font(.caption).foregroundStyle(.orange)
+                }
+            }
+            Text(effect.blurb).font(.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(effectDetails).font(.caption).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var effectDetails: String {
+        switch effect {
+        case .catalog(let id):
+            let descriptor = EffectCatalog.descriptor(id)
+            let events = descriptor.triggers.filter { $0 != .manual }.map(\.shortTitle)
+            return "Rendering: \(descriptor.rendering.title)\(descriptor.expensive ? " (GPU-heavy)" : "")."
+                + (events.isEmpty ? " Runs manually only." : " Can react to: \(events.joined(separator: ", ")).")
+        case .entrance: return "Uses the spring settings from Physics. Shown on the window that just opened."
+        case .close: return "Plays on the captured image of the window after it has really closed. Duration follows the shared multiplier."
+        case .minimize: return "Travels to the window's Dock icon. In this preview the destination is local, not your actual Dock."
+        case .liquid: return "A particle fluid simulation. Here it pools on a local floor instead of behind your Dock."
+        }
+    }
+
+    // MARK: - Assign
+
+    private var assignBar: some View {
+        let triggers = effect.automaticTriggers
+        return VStack(alignment: .leading, spacing: 8) {
+            if triggers.isEmpty {
+                HStack {
+                    Text("This effect has no automatic event. Run it on a window from the menu bar or below.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Spacer()
+                    runButtons
+                }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { assignButtons(triggers) }
+                    VStack(alignment: .leading, spacing: 8) { assignButtons(triggers) }
+                }
+                Text(selection.trigger.explanation).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder private func assignButtons(_ triggers: [EffectTrigger]) -> some View {
+        ForEach(triggers, id: \.self) { trigger in
+            let active = model.isAssigned(effect, to: trigger)
+            let current = model.assignment(for: trigger)
+            HStack(spacing: 4) {
+                Button {
+                    if effect.isStudio, let editing, editing != saved { attempt { try store.save(editing) } }
+                    if model.assign(effect, to: trigger) { notice = "\(effect.title) now plays \(trigger.eventTitle.lowercased())." }
+                } label: {
+                    Label(active ? "Active \(trigger.eventTitle.lowercased())" : "Use \(trigger.eventTitle.lowercased())",
+                          systemImage: active ? "checkmark.circle.fill" : trigger.symbol)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(active ? .green : .accentColor)
+                .disabled(active)
+                .help(active ? "Currently in use" : "Replaces: \(current.title)")
+                if active, trigger != .drag {
+                    Button("Turn off") { if model.setTrigger(trigger, random: false) { notice = "\(trigger.shortTitle) effects are off." } }
+                        .buttonStyle(.bordered)
+                } else if active, trigger == .drag {
+                    Button("Use classic wobble") { if model.setTrigger(.drag, random: false) { notice = "Drag uses the classic spring wobble." } }
+                        .buttonStyle(.bordered)
+                }
             }
         }
-        .padding(18)
     }
 
-    @ViewBuilder private var tabContent: some View {
-        switch tab {
-        case .preview:
+    // MARK: - Customize
+
+    @ViewBuilder private var customize: some View {
+        if let id = catalogID, let saved {
+            let descriptor = EffectCatalog.descriptor(id)
             VStack(alignment: .leading, spacing: 12) {
-                CatalogWindowPicker(selection: $windowID)
-                CapturedEffectPreview(document: StudioDocument(duration: editing.duration, layers: [StudioLayer(preset: editing)]),
-                                      time: previewTime, windowID: windowID)
-                Slider(value: $previewTime, in: 0...editing.duration) { Text("Preview time") }
-                    .accessibilityLabel("Preview time")
                 HStack {
-                    Text("\(previewTime, specifier: "%.2f") s").monospacedDigit().font(.caption)
-                    Spacer()
-                    Button("Run on Window", systemImage: "play.rectangle") {
-                        runTask?.cancel()
-                        runTask = Task { await runtime.play(editing, windowID: windowID) }
+                    Text("Variants").font(.subheadline)
+                    ForEach(descriptor.presets, id: \.name) { preset in
+                        Button(preset.name) { editing = preset; notice = nil }
+                            .buttonStyle(.bordered).controlSize(.small)
                     }
-                    .disabled(windowID == nil || runtime.isPlaying)
-                    Button("Stop & Restore") { runTask?.cancel(); runtime.stop() }.disabled(!runtime.isPlaying)
+                    Spacer()
                 }
-                Text("Preview only renders the captured target here. Run on Window performs a manual, restoring desktop action; it does not close the target.")
+                PresetParameterControls(preset: Binding(get: { editing ?? saved }, set: { editing = $0 }))
+                HStack {
+                    Text("Changes show in the preview right away. Save to keep them.").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Revert") { editing = saved; notice = nil }.disabled(editing == saved)
+                    Button("Save") {
+                        if let editing { attempt { try store.save(editing); notice = "Preset saved." } }
+                    }
+                    .buttonStyle(.borderedProminent).disabled(editing == saved)
+                }
+            }
+        } else if case .entrance = effect {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Entrances replay the same spring model as dragging. Tune stiffness, friction and mass on the Physics page.")
+                    .font(.callout).foregroundStyle(.secondary)
+                Button("Open Physics", systemImage: "atom") { model.requestedPage = .physics }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Duration")
+                    Slider(value: model.binding({ model.settings.closeDuration }, { model.settings.closeDuration = $0 }),
+                           in: Settings.closeSpeedRange).frame(maxWidth: 320)
+                        .accessibilityLabel("Duration multiplier")
+                    Text("\(model.settings.closeDuration, specifier: "%.2f")×").monospacedDigit().frame(width: 52, alignment: .trailing)
+                    Button("1×") { model.settings.closeDuration = 1; model.refresh() }.controlSize(.small)
+                        .disabled(model.settings.closeDuration == 1)
+                }
+                Text("Shared by all built-in close and minimize effects. 1× is each effect's own default speed.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-        case .parameters:
-            ScrollView { PresetParameterControls(preset: $editing).padding(.vertical, 4) }
-        case .triggers:
-            VStack(alignment: .leading, spacing: 16) {
-                Picker("Trigger", selection: $editing.trigger) {
-                    ForEach(descriptor.triggers, id: \.self) { Text($0.title).tag($0) }
+        }
+    }
+
+    // MARK: - More
+
+    @ViewBuilder private var more: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let id = catalogID {
+                HStack {
+                    Text("Try it on a real window").font(.subheadline)
+                    Spacer()
+                    runButtons
                 }
-                Text("Save & Apply persists this preset and trigger. Original effects are available in these same categories; Window Trigger Assignments below also offers Off and Random.")
+                Text("Plays the saved preset once on the window selected as preview source. The window is captured, animated and put back exactly where it was. Nothing is closed or minimized.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Divider()
+                HStack {
+                    Button("Open in Animation Studio", systemImage: "timeline.selection") {
+                        StudioLaunchRequest.shared.preset = editing ?? store.preset(id)
+                        model.requestedPage = .animationStudio
+                    }
+                    Menu("Import / Export") {
+                        Button("Import Preset…") { importPreset() }
+                        Button("Export Saved Preset…") {
+                            attempt { try CatalogFilePanels.write(store.exportPreset(id), name: "\(id.rawValue).json") }
+                        }
+                        Divider()
+                        Button("Copy Parameters") { attempt { try PresetClipboard.copy(editing ?? store.preset(id)) } }
+                        Button("Paste Parameters") { attempt { editing = try PresetClipboard.paste(into: editing ?? store.preset(id)) } }
+                    }
+                    .fixedSize()
+                    Spacer()
+                    Button("Reset to Defaults", role: .destructive) {
+                        store.reset(id); editing = store.preset(id); notice = "Default preset restored."
+                    }
+                }
+                Divider()
+                LabeledContent("Shader status", value: runtime.shaderStatus).font(.caption)
+            } else {
+                Text("Built-in effects keep their original engines and compiled defaults. They have no JSON preset; per-app close rules and exclusions live on the Rules page.")
                     .font(.callout).foregroundStyle(.secondary)
-            }
-        case .performance:
-            VStack(alignment: .leading, spacing: 8) {
-                LabeledContent("Rendering", value: descriptor.rendering.title)
-                LabeledContent("Resource class", value: descriptor.expensive ? "Expensive" : "Standard")
-                LabeledContent("Shader status", value: runtime.shaderStatus)
-                Text(descriptor.fallback).font(.caption).foregroundStyle(.secondary)
-                PerformanceView()
-            }
-        case .reset:
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Restore \(descriptor.title)").font(.headline)
-                Text("Replace the saved preset, parameters, tracks and trigger with this effect’s catalog defaults. Other effects are unchanged.")
-                    .foregroundStyle(.secondary)
-                Button("Reset This Effect", role: .destructive) {
-                    store.reset(selected)
-                    editing = store.preset(selected)
-                    notice = "Default preset restored."
+                HStack {
+                    Button("Rules", systemImage: "line.3.horizontal.decrease.circle") { model.requestedPage = .rules }
+                    Button("Performance", systemImage: "gauge.with.dots.needle.67percent") { model.requestedPage = .performance }
                 }
             }
         }
     }
 
-    private func select(_ effect: LibraryEffect) {
-        category = effect.category
-        if case .catalog(let id) = effect { original = nil; select(id) }
-        else { original = effect }
-    }
-
-    private func select(_ id: EffectID) {
-        original = nil
-        selected = id
-        editing = store.preset(id)
-        previewTime = 0
-        error = nil
-        notice = nil
+    private var runButtons: some View {
+        HStack(spacing: 6) {
+            Button("Run on Window", systemImage: "play.rectangle") {
+                guard let id = catalogID else { return }
+                runTask?.cancel()
+                let preset = store.preset(id)
+                runTask = Task { await runtime.play(preset, windowID: sources.source.windowID) }
+            }
+            .disabled(catalogID == nil || runtime.isPlaying)
+            .help(sources.source == .sample ? "Uses the frontmost app's window. Pick a window as preview source to target it." : "Runs on the window chosen as preview source")
+            Button { runTask?.cancel(); runtime.stop() } label: { Image(systemName: "stop.fill") }
+                .disabled(!runtime.isPlaying).help("Stop and restore the window").accessibilityLabel("Stop and restore")
+        }
     }
 
     private func attempt(_ operation: () throws -> Void) {
@@ -261,9 +395,11 @@ struct EffectsLibraryView: View {
         attempt {
             guard let data = try CatalogFilePanels.read() else { return }
             let preset = try EffectPreset.decode(data)
+            guard preset.effect == catalogID else {
+                throw StudioUIError.message("That file is a \(EffectCatalog.descriptor(preset.effect).title) preset. Select that effect first.")
+            }
             try store.importPreset(data)
-            category = EffectCatalog.descriptor(preset.effect).category
-            select(preset.effect)
+            editing = store.preset(preset.effect)
             notice = "Preset imported and saved."
         }
     }
@@ -326,9 +462,9 @@ struct CatalogWindowPicker: View {
     var body: some View {
         HStack {
             Picker("Target", selection: $selection) {
-                Text("Choose a real window…").tag(Optional<CGWindowID>.none)
+                Text("Frontmost app's window").tag(Optional<CGWindowID>.none)
                 ForEach(windows) { window in
-                    Text("\(window.owner) — \(window.title.isEmpty ? "Untitled" : window.title) (\(window.id))")
+                    Text("\(window.owner) — \(window.title.isEmpty ? "Untitled" : window.title)")
                         .tag(Optional(window.id))
                 }
             }
@@ -341,76 +477,6 @@ struct CatalogWindowPicker: View {
     private func refresh() {
         windows = CatalogRuntime.shared.availableWindows()
         if let selection, !windows.contains(where: { $0.id == selection }) { self.selection = nil }
-    }
-}
-
-private struct PreviewRequest: Equatable {
-    let document: StudioDocument
-    let time: Double
-    let windowID: CGWindowID?
-    let visible: Bool
-}
-
-/// Structured, cancellable preview work. A target must be chosen; no synthetic window is drawn.
-@MainActor
-struct CapturedEffectPreview: View {
-    let document: StudioDocument
-    let time: Double
-    let windowID: CGWindowID?
-    @State private var image: NSImage?
-    @State private var error: String?
-    @State private var rendering = false
-    @State private var visible = true
-
-    var body: some View {
-        ZStack {
-            Color(nsColor: .underPageBackgroundColor)
-            if let image {
-                Image(nsImage: image).resizable().scaledToFit().padding(12)
-                    .accessibilityLabel("Rendered capture of selected window")
-            } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "macwindow").font(.largeTitle).foregroundStyle(.secondary)
-                    Text(windowID == nil ? "Choose a window to preview" : "Captured-window preview")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-            }
-            if rendering { ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(10) }
-        }
-        .frame(minHeight: 140, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(alignment: .bottomLeading) {
-            if let error { Text(error).font(.caption).foregroundStyle(.red).padding(10).background(.regularMaterial).textSelection(.enabled) }
-        }
-        .task(id: PreviewRequest(document: document, time: time, windowID: windowID, visible: visible)) {
-            guard visible, let windowID else { image = nil; rendering = false; return }
-            do {
-                try await Task.sleep(for: .milliseconds(60))
-                try Task.checkCancellation()
-                rendering = true
-                let result = try await CatalogRuntime.shared.preview(document: document, time: time, windowID: windowID)
-                try Task.checkCancellation()
-                image = result
-                error = nil
-                rendering = false
-            } catch is CancellationError {
-                // A newer structured task owns the progress state now.
-            } catch {
-                guard !Task.isCancelled else { return }
-                self.error = error.localizedDescription
-                image = nil
-                rendering = false
-            }
-        }
-        .onChange(of: windowID) { _, _ in image = nil; error = nil }
-        .onAppear { visible = true }
-        .onDisappear { visible = false }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
-            if isManagementWindow(note) { visible = false }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-            if isManagementWindow(note) { visible = true }
-        }
     }
 }
 
@@ -479,42 +545,49 @@ enum PresetClipboard {
 /// Desktop composition is explicit and uses the same restoring runtime as the library.
 @MainActor
 struct CatalogArrangementView: View {
-    let workspaces: Bool
     @ObservedObject private var runtime = CatalogRuntime.shared
+    @ObservedObject var model: SetupModel
     @State private var runTask: Task<Void, Never>?
     @State private var windowID: CGWindowID?
 
-    private var effects: [EffectID] { workspaces ? [.workspaceCube, .orbit, .expose3D] : [.orbit, .expose3D] }
+    private let effects: [EffectID] = [.expose3D, .orbit, .workspaceCube]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Label("Current Space only, no native Space switching", systemImage: "info.circle")
-                    .font(.callout).foregroundStyle(.secondary)
+                Text("Spread the windows of the current Space into a temporary 3D arrangement. Click a window to bring it to the front, or press Escape to put everything back. Kinetiq never switches native Spaces.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 CatalogWindowPicker(selection: $windowID)
                 ForEach(effects, id: \.self) { id in
                     let descriptor = EffectCatalog.descriptor(id)
                     GroupBox {
                         HStack(alignment: .top, spacing: 16) {
-                            Image(systemName: descriptor.category.symbol).font(.title2).foregroundStyle(Color.accentColor)
-                            VStack(alignment: .leading, spacing: 6) {
+                            EffectPreviewPlayer(subject: .effect(.catalog(id), CatalogStore.shared.preset(id)), settings: model.settings,
+                                                showsSourcePicker: false, autoplay: false,
+                                                startTime: CatalogStore.shared.preset(id).duration * 0.5)
+                                .frame(width: 300, height: 190)
+                            VStack(alignment: .leading, spacing: 8) {
                                 Text(descriptor.title).font(.headline)
                                 Text(descriptor.summary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                Text("The preview shows one window. On the desktop up to eight windows are arranged.")
+                                    .font(.caption).foregroundStyle(.tertiary)
+                                HStack {
+                                    Button("Start", systemImage: "play.fill") {
+                                        runTask?.cancel()
+                                        runTask = Task { await runtime.play(CatalogStore.shared.preset(id), windowID: windowID) }
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(runtime.isPlaying)
+                                    Button("Edit") { model.requestedLibraryEffect = LibraryEffect.catalog(id).id; model.requestedPage = .effects }
+                                }
                             }
                             Spacer()
-                            Button("Run", systemImage: "play.fill") {
-                                runTask?.cancel()
-                                runTask = Task { await runtime.play(CatalogStore.shared.preset(id), windowID: windowID) }
-                            }
-                            .disabled(runtime.isPlaying || windowID == nil)
                         }
                         .padding(12)
                     }
                 }
                 Button("Stop & Restore Windows") { runTask?.cancel(); runtime.stop() }.disabled(!runtime.isPlaying)
                 if let error = runtime.errorMessage { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-                Text("Run composes actual eligible captured windows. Exclusions, permissions and restoration are enforced by the runtime. These controls do not move windows between native Spaces.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
             .padding(24)
         }

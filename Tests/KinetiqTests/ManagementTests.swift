@@ -28,8 +28,8 @@ final class ManagementTests: XCTestCase {
     }
 
     func testEveryDestinationHasUniqueIdentityAndAvailableSystemSymbol() {
-        XCTAssertEqual(ManagementPage.allCases.count, 12)
-        XCTAssertEqual(Set(ManagementPage.allCases.map(\.id)).count, 12)
+        XCTAssertEqual(ManagementPage.allCases.count, 11)
+        XCTAssertEqual(Set(ManagementPage.allCases.map(\.id)).count, 11)
         for page in ManagementPage.allCases {
             XCTAssertFalse(page.title.isEmpty)
             XCTAssertFalse(page.subtitle.isEmpty)
@@ -137,7 +137,7 @@ final class ManagementTests: XCTestCase {
                 assertFiniteLayout(shell, page: page)
                 XCTAssertFalse(CatalogRuntime.shared.isPlaying, page.title)
                 XCTAssertFalse(CatalogRuntime.shared.hasScene, page.title)
-                XCTAssertEqual(CatalogRuntime.shared.shaderStatus, shaderStatus, "Navigation must not compile a captured preview")
+                XCTAssertEqual(CatalogRuntime.shared.shaderStatus, shaderStatus, "Previews use their own renderer, never the desktop runtime")
             }
         }
         XCTAssertEqual(CatalogStore.shared.presets, presets)
@@ -156,7 +156,7 @@ final class ManagementTests: XCTestCase {
         XCTAssertFalse(CatalogRuntime.shared.isPlaying)
         await settleLayout(shell, window: window)
         XCTAssertEqual(window.title, "Kinetiq — Animation Studio")
-        for page in [ManagementPage.effects, .effects, .layouts, .workspaces, .performance, .animationStudio, .overview] {
+        for page in [ManagementPage.effects, .effects, .layouts, .performance, .animationStudio, .overview] {
             model.requestedPage = page
             await settleLayout(shell, window: window)
             XCTAssertEqual(window.title, "Kinetiq — \(page.title)")

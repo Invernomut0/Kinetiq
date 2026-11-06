@@ -111,7 +111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
     }
 
-    /// Only the everyday controls live in the menu; everything else is in the detached Setup window.
+    /// Organized by what the user does: one submenu per window event, each showing its
+    /// current choice in the title. Selecting an item applies it immediately.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
@@ -120,52 +121,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(enabled)
         menu.addItem(.separator())
 
-        let titleBar = NSMenuItem(title: "Drag from Title Bar", action: #selector(toggleTitleBarDrag), keyEquivalent: "")
-        titleBar.state = settings.titleBarDrag ? .on : .off
-        menu.addItem(titleBar)
-
-        let modifierMenu = NSMenu()
-        for modifier in DragModifier.allCases {
-            let entry = NSMenuItem(title: modifier.title, action: #selector(selectModifier(_:)), keyEquivalent: "")
-            entry.representedObject = modifier.rawValue
-            entry.state = settings.modifier == modifier ? .on : .off
-            entry.target = self
-            modifierMenu.addItem(entry)
+        for trigger in [EffectTrigger.drag, .open, .close, .minimize] {
+            let assignment = TriggerAssignment.current(trigger, settings: settings, store: .shared)
+            let item = NSMenuItem(title: "\(trigger.shortTitle): \(assignment.title)", action: nil, keyEquivalent: "")
+            item.image = NSImage(systemSymbolName: trigger.symbol, accessibilityDescription: nil)
+            item.submenu = triggerMenu(trigger, assignment: assignment)
+            menu.addItem(item)
         }
-        let modifierItem = NSMenuItem(title: "Shortcut (Anywhere): \(settings.modifier.title)", action: nil, keyEquivalent: "")
-        modifierItem.submenu = modifierMenu
-        menu.addItem(modifierItem)
 
         menu.addItem(.separator())
-        for category in EffectCategory.allCases {
-            let categoryItem = NSMenuItem(title: category.title, action: nil, keyEquivalent: "")
-            let categoryMenu = NSMenu()
-            let effects = LibraryEffect.all.filter { $0.category == category }
-            for submenu in Array(Set(effects.map(\.submenu))).sorted() {
-                let group = NSMenuItem(title: submenu, action: nil, keyEquivalent: "")
-                let choices = NSMenu()
-                for effect in effects.filter({ $0.submenu == submenu }) {
-                    let item = NSMenuItem(title: effect.menuTitle, action: nil, keyEquivalent: "")
-                    if case .catalog(let id) = effect {
-                        item.action = #selector(runCatalogEffect(_:))
-                        item.representedObject = id.rawValue
-                    } else {
-                        item.action = #selector(configureOriginalEffect(_:))
-                        item.representedObject = effect.id
-                        item.state = effect.triggers.contains {
-                            OriginalEffectAssignment.isSelected(effect, trigger: $0, settings: settings, store: .shared)
-                        } ? .on : .off
-                    }
-                    item.target = self
-                    choices.addItem(item)
-                }
-                group.submenu = choices
-                categoryMenu.addItem(group)
-            }
-            categoryItem.submenu = categoryMenu
-            menu.addItem(categoryItem)
-        }
-        let quality = NSMenuItem(title: "Render Quality", action: nil, keyEquivalent: "")
+        let tryItem = NSMenuItem(title: "Try an Effect on the Front Window", action: nil, keyEquivalent: "")
+        tryItem.image = NSImage(systemSymbolName: "play.circle", accessibilityDescription: nil)
+        tryItem.submenu = tryMenu()
+        menu.addItem(tryItem)
+        let stop = NSMenuItem(title: "Stop & Restore Windows", action: #selector(stopCatalog), keyEquivalent: "")
+        stop.isEnabled = CatalogRuntime.shared.isPlaying || controller != nil
+        menu.addItem(stop)
+
+        menu.addItem(.separator())
+        let quality = NSMenuItem(title: "Render Quality: \(RenderQualityManager.shared.title)", action: nil, keyEquivalent: "")
         let qualityMenu = NSMenu()
         for choice in RenderQuality.allCases {
             let item = NSMenuItem(title: choice.title, action: #selector(selectQuality(_:)), keyEquivalent: "")
@@ -176,8 +150,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         quality.submenu = qualityMenu
         menu.addItem(quality)
-        menu.addItem(NSMenuItem(title: "Stop & Restore Windows", action: #selector(stopCatalog), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Animation Studio…", action: #selector(showStudio), keyEquivalent: ""))
 
         if controller == nil {
             menu.addItem(.separator())
@@ -185,7 +157,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Setup…", action: #selector(showSetup), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Effects Library…", action: #selector(showEffects), keyEquivalent: "e"))
+        menu.addItem(NSMenuItem(title: "Animation Studio…", action: #selector(showStudio), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(showSetup), keyEquivalent: ","))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Kinetiq", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
@@ -194,18 +168,102 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Encodes an effect/trigger pair for `assignEffect(_:)`; `TriggerMenuAction.parse` reads it back.
+    static func menuToken(_ effect: LibraryEffect, _ trigger: EffectTrigger) -> String { "\(effect.id)|\(trigger.rawValue)" }
+
+    private func triggerMenu(_ trigger: EffectTrigger, assignment: TriggerAssignment) -> NSMenu {
+        let menu = NSMenu()
+        if trigger == .drag {
+            let header = NSMenuItem(title: "Wobble preset", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            for preset in WobblePreset.allCases where preset != .custom || settings.preset == .custom {
+                let item = NSMenuItem(title: preset.title, action: #selector(selectWobblePreset(_:)), keyEquivalent: "")
+                item.representedObject = preset.rawValue
+                item.state = settings.preset == preset ? .on : .off
+                item.target = self
+                item.indentationLevel = 1
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
+            let studioHeader = NSMenuItem(title: "Drag behavior", action: nil, keyEquivalent: "")
+            studioHeader.isEnabled = false
+            menu.addItem(studioHeader)
+            let classic = NSMenuItem(title: TriggerAssignment.classicWobble.title, action: #selector(setTriggerChoice(_:)), keyEquivalent: "")
+            classic.representedObject = "off|\(trigger.rawValue)"
+            classic.state = assignment == .classicWobble ? .on : .off
+            classic.target = self
+            classic.indentationLevel = 1
+            menu.addItem(classic)
+        } else {
+            for (title, raw) in [("Off", "off"), ("Random", "random")] {
+                let item = NSMenuItem(title: title, action: #selector(setTriggerChoice(_:)), keyEquivalent: "")
+                item.representedObject = "\(raw)|\(trigger.rawValue)"
+                item.state = (raw == "off" && assignment == .off) || (raw == "random" && assignment == .random) ? .on : .off
+                item.target = self
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
+        }
+        let effects = LibraryEffect.supporting(trigger)
+        let originals = effects.filter { !$0.isStudio }
+        let studio = effects.filter(\.isStudio)
+        for effect in originals {
+            menu.addItem(effectItem(effect, trigger: trigger, assignment: assignment))
+        }
+        if !studio.isEmpty {
+            if !originals.isEmpty { menu.addItem(.separator()) }
+            let header = NSMenuItem(title: "Studio presets", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            for effect in studio {
+                let item = effectItem(effect, trigger: trigger, assignment: assignment)
+                item.indentationLevel = 1
+                menu.addItem(item)
+            }
+        }
+        return menu
+    }
+
+    private func effectItem(_ effect: LibraryEffect, trigger: EffectTrigger, assignment: TriggerAssignment) -> NSMenuItem {
+        let item = NSMenuItem(title: effect.title, action: #selector(assignEffect(_:)), keyEquivalent: "")
+        item.representedObject = Self.menuToken(effect, trigger)
+        item.state = assignment == .effect(effect) ? .on : .off
+        item.toolTip = effect.blurb
+        item.target = self
+        return item
+    }
+
+    /// Studio effects can be played once on the frontmost window; built-ins need a real close/open/minimize.
+    private func tryMenu() -> NSMenu {
+        let menu = NSMenu()
+        for category in EffectCategory.allCases {
+            let effects = EffectCatalog.effects.filter { $0.category == category }
+            guard !effects.isEmpty else { continue }
+            let header = NSMenuItem(title: category.title, action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            for descriptor in effects {
+                let item = NSMenuItem(title: descriptor.title, action: #selector(runCatalogEffect(_:)), keyEquivalent: "")
+                item.representedObject = descriptor.id.rawValue
+                item.toolTip = descriptor.summary
+                item.indentationLevel = 1
+                item.target = self
+                menu.addItem(item)
+            }
+        }
+        return menu
+    }
+
     @objc private func toggleEnabled() {
         settings.enabled.toggle()
         if !settings.enabled { controller?.cancelAll() }
     }
 
-    @objc private func toggleTitleBarDrag() {
-        settings.titleBarDrag.toggle()
-    }
-
-    @objc private func selectModifier(_ sender: NSMenuItem) {
-        if let raw = sender.representedObject as? String, let modifier = DragModifier(rawValue: raw) {
-            settings.modifier = modifier
+    @objc private func selectWobblePreset(_ sender: NSMenuItem) {
+        if let raw = sender.representedObject as? String, let preset = WobblePreset(rawValue: raw), preset != .custom {
+            settings.preset = preset
+            setupController?.model.refresh()
         }
     }
 
@@ -222,11 +280,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func configureOriginalEffect(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String, let effect = LibraryEffect.find(id) else { return }
-        if case .catalog = effect { return }
-        showSetup()
-        setupWindow?.show(effect: effect)
+    /// "effectID|trigger": makes that effect what the trigger plays, through the same path as the library.
+    @objc private func assignEffect(_ sender: NSMenuItem) {
+        guard let token = sender.representedObject as? String, let (effect, trigger) = Self.parseToken(token) else { return }
+        ensureSetupController().model.assign(effect, to: trigger)
+    }
+
+    /// "off|trigger" or "random|trigger".
+    @objc private func setTriggerChoice(_ sender: NSMenuItem) {
+        guard let token = sender.representedObject as? String else { return }
+        let parts = token.split(separator: "|", maxSplits: 1).map(String.init)
+        guard parts.count == 2, let trigger = EffectTrigger(rawValue: parts[1]) else { return }
+        ensureSetupController().model.setTrigger(trigger, random: parts[0] == "random")
+    }
+
+    static func parseToken(_ token: String) -> (LibraryEffect, EffectTrigger)? {
+        guard let bar = token.lastIndex(of: "|"),
+              let effect = LibraryEffect.find(String(token[..<bar])),
+              let trigger = EffectTrigger(rawValue: String(token[token.index(after: bar)...])) else { return nil }
+        return (effect, trigger)
     }
 
     @objc private func stopCatalog() { controller?.cancelAll(); CatalogRuntime.shared.stop() }
@@ -236,20 +308,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupWindow?.show(page: .animationStudio)
     }
 
+    @objc private func showEffects() {
+        showSetup()
+        setupWindow?.show(page: .effects)
+    }
+
     @objc private func showSetup() {
-        if setupWindow == nil {
-            setupWindow = SetupWindowController(settings: settings, closeEffectChanged: { [weak self] in
-                self?.controller?.closeEffectChanged()
-            }, startChaos: { [weak self] in
-                self?.chaosSaver?.start()
-            }, enabledChanged: { [weak self] in
-                guard let self, !self.settings.enabled else { return }
-                self.controller?.cancelAll()
-            }, runtimeStatus: { [weak self] in
-                ManagementRuntimeStatus(metalAvailable: self?.controller != nil,
-                                        eventTapRunning: self?.tap?.isRunning == true)
-            }, systemSaver: systemScreenSaver)
-        }
-        setupWindow?.show()
+        ensureSetupController().show()
+    }
+
+    private var setupController: SetupWindowController? { setupWindow }
+
+    /// The management model also serves menu bar actions, so it exists even while its window is closed.
+    @discardableResult
+    private func ensureSetupController() -> SetupWindowController {
+        if let setupWindow { return setupWindow }
+        let controller = SetupWindowController(settings: settings, closeEffectChanged: { [weak self] in
+            self?.controller?.closeEffectChanged()
+        }, startChaos: { [weak self] in
+            self?.chaosSaver?.start()
+        }, enabledChanged: { [weak self] in
+            guard let self, !self.settings.enabled else { return }
+            self.controller?.cancelAll()
+        }, runtimeStatus: { [weak self] in
+            ManagementRuntimeStatus(metalAvailable: self?.controller != nil,
+                                    eventTapRunning: self?.tap?.isRunning == true)
+        }, systemSaver: systemScreenSaver)
+        setupWindow = controller
+        return controller
     }
 }
