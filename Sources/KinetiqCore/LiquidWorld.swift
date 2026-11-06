@@ -41,15 +41,21 @@ public final class LiquidWorld {
     public let spacing: Float
     public let meltDuration: Float
 
-    /// Opacity stays at one through melting, falling and a three-second linger.
-    public var alpha: Float {
-        guard !particles.isEmpty else { return 0 }
-        let t = Float(ticks) / 120
-        let fraction = min(1, max(0, (t - fadeStart) / 3))
-        return 1 - fraction * fraction * (3 - 2 * fraction)
-    }
+    /// Material never fades: it disappears only after its complete support leaves the display.
+    public var alpha: Float { isFinished ? 0 : 1 }
 
-    public var isFinished: Bool { particles.isEmpty || Float(ticks) / 120 >= fadeStart + 3 }
+    public var isFinished: Bool { drainedCount == particles.count }
+    /// Caller seconds at which the bottom outlets begin opening, after the pool lingers.
+    public var drainStart: Float { drainageStart * scale }
+    /// Conservative replay/deadline length, including falling after the outlets fully open.
+    public var duration: Float { Self.duration(for: screenBounds, durationScale: scale) }
+
+    /// Shared by desktop playback and preview transport; duration never controls opacity.
+    public static func duration(for screenBounds: CGRect, durationScale: Float = 1) -> Float {
+        let scale = durationScale.isFinite ? min(3, max(0.25, durationScale)) : 1
+        let fall = fallAllowance(screenBounds)
+        return (min(11, 1.4 + fall + 3) + drainageSeconds + fall + 1) * scale
+    }
 
     private struct Cell: Hashable {
         let x: Int
@@ -57,12 +63,14 @@ public final class LiquidWorld {
     }
 
     private let scale: Float
-    private let fadeStart: Float
+    private let drainageStart: Float
     private let radius: Float
     private let lower: SIMD2<Float>
     private let upper: SIMD2<Float>
     private var accumulator: Double = 0
     private var ticks = 0
+    private var drained: [Bool] = []
+    private var drainedCount = 0
     private var obstacles: [CGRect] = []
     private var support: [Int] = []
     private var heads: [Cell: Int] = [:]
@@ -70,6 +78,7 @@ public final class LiquidWorld {
     private var density: [Float] = []
     private var changes: [SIMD2<Float>] = []
     private let gravity: Float = 1200
+    private static let drainageSeconds: Float = 6
 
     /// Inputs must be finite, positive-area rectangles. Off-screen source portions
     /// are clipped before sampling; even enormous windows allocate at most 1500 samples.
@@ -105,10 +114,9 @@ public final class LiquidWorld {
         }
         spacing = valid ? max(0.01, Float(max(clipped.width / CGFloat(columns), clipped.height / CGFloat(rows)))) : 8
         radius = valid ? min(spacing * 0.38, Float(min(screenBounds.width, screenBounds.height)) * 0.25) : 1
-        // A terminal-speed-aware fall allowance, then linger and fade. Hard upper
-        // bound is 14 normalized seconds, even if a shelf prevents reaching the floor.
-        let fall = valid ? min(6.6, (2 * Float(screenBounds.height) / 1200).squareRoot() + Float(screenBounds.height) / 1200) : 0
-        fadeStart = min(11, 1.4 + fall + 3)
+        // Keep the original melting/falling/linger phase. Then open the floor from
+        // both bottom corners towards the center over six normalized seconds.
+        drainageStart = min(11, 1.4 + Self.fallAllowance(screenBounds) + 3)
 
         if valid {
             particles.reserveCapacity(columns * rows)
@@ -124,6 +132,7 @@ public final class LiquidWorld {
             }
         }
         support = Array(repeating: -1, count: particles.count)
+        drained = Array(repeating: false, count: particles.count)
         next = support
         density = Array(repeating: 0, count: particles.count)
         changes = Array(repeating: .zero, count: particles.count)
@@ -176,6 +185,22 @@ public final class LiquidWorld {
             && rect.maxX.isFinite && rect.maxY.isFinite
     }
 
+    private static func fallAllowance(_ screen: CGRect) -> Float {
+        guard valid(screen) else { return 0 }
+        let height = Float(min(screen.height, 20_000_000))
+        return min(6.6, (2 * height / 1200).squareRoot() + height / 1200)
+    }
+
+    private var drainageProgress: Float {
+        let t = min(1, max(0, (Float(ticks) / 120 - drainageStart) / Self.drainageSeconds))
+        return t * t * (3 - 2 * t)
+    }
+
+    private func floorIsOpen(at x: Float) -> Bool {
+        let progress = drainageProgress
+        return progress > 0 && min(x - lower.x, upper.x - x) <= (upper.x - lower.x) * 0.5 * progress
+    }
+
     private func cell(_ p: SIMD2<Float>) -> Cell {
         let width = max(spacing * 2.2, 0.02)
         return Cell(x: Int(floor((p.x - lower.x) / width)), y: Int(floor((p.y - lower.y) / width)))
@@ -183,7 +208,7 @@ public final class LiquidWorld {
 
     private func buildGrid() {
         heads.removeAll(keepingCapacity: true)
-        for i in particles.indices where particles[i].isReleased {
+        for i in particles.indices where particles[i].isReleased && !drained[i] {
             let key = cell(particles[i].position)
             next[i] = heads[key] ?? -1
             heads[key] = i
@@ -193,7 +218,7 @@ public final class LiquidWorld {
     /// Stable index traversal rather than Dictionary iteration keeps runs deterministic.
     private func pairs(_ visit: (Int, Int, SIMD2<Float>, Float) -> Void) {
         let reach = spacing * 2.2
-        for i in particles.indices where particles[i].isReleased {
+        for i in particles.indices where particles[i].isReleased && !drained[i] {
             let key = cell(particles[i].position)
             for y in (key.y - 1)...(key.y + 1) {
                 for x in (key.x - 1)...(key.x + 1) {
@@ -241,7 +266,7 @@ public final class LiquidWorld {
             changes[i] += viscosity - force
             changes[j] += force - viscosity
         }
-        for i in particles.indices where particles[i].isReleased {
+        for i in particles.indices where particles[i].isReleased && !drained[i] {
             var velocity = particles[i].velocity
             velocity += (bounded(changes[i], length: 4000) + SIMD2(0, gravity)) * h
             velocity *= 1 / (1 + 0.15 * h)
@@ -260,6 +285,14 @@ public final class LiquidWorld {
                 } else {
                     support[i] = -1
                 }
+            }
+            let floor = upper.y - radius
+            let p = particles[i].position
+            if drainageProgress > 0, p.y <= floor + 0.001,
+               p.y > floor - max(50, spacing * 6) {
+                let direction: Float = p.x < (lower.x + upper.x) * 0.5 ? -1 : 1
+                let speed = max(35, min(180, (upper.x - lower.x) / 10))
+                velocity.x += (direction * speed - velocity.x) * min(1, 2 * h) * drainageProgress
             }
             particles[i].velocity = bounded(velocity, length: 1200)
             particles[i].position += particles[i].velocity * h
@@ -288,10 +321,19 @@ public final class LiquidWorld {
                     changes[j] += correction
                 }
             }
-            for i in particles.indices where particles[i].isReleased {
+            for i in particles.indices where particles[i].isReleased && !drained[i] {
                 particles[i].position += bounded(changes[i], length: spacing * 0.35)
                 collide(i, from: old[i])
             }
+        }
+        // Retain sample indices/UVs but stop simulating material whose entire kernel
+        // is below the screen. Completion is geometric, never a global alpha ramp.
+        let exit = upper.y + spacing * 1.5 + 1
+        for i in particles.indices where !drained[i] && particles[i].position.y >= exit {
+            particles[i].position.y = exit
+            particles[i].velocity = .zero
+            drained[i] = true
+            drainedCount += 1
         }
     }
 
@@ -335,7 +377,8 @@ public final class LiquidWorld {
             }
         }
         let floor = upper.y - radius
-        if p.y >= floor {
+          if p.y >= floor, !floorIsOpen(at: p.x),
+              drainageProgress == 0 || old.y <= floor + 0.001 {
             p.y = floor
             particles[i].velocity.y = min(0, particles[i].velocity.y)
             particles[i].velocity.x *= 0.985

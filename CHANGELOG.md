@@ -5,6 +5,20 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] — Build 37
+
+### Changed
+
+- Replace original Liquid's final global fade with slow physical drainage through bottom outlets opening from both corners towards the center over six normalized seconds. Gentle outward floor flow preserves the initial melt, real-window shelf collisions and behind-Dock pool.
+- Keep material opaque until every particle's full kernel is below the display. Retain particle indices/UVs while retiring drained samples from physics, bounding their final positions just below the screen.
+- Replay the complete Liquid ending in sample/real-window previews, sharing geometry-dependent timing with the desktop safety deadline. Update library and settings descriptions without changing assignments, preferences or Studio Liquid Morph.
+- Cover progressive physical exit, no early leakage from thin bottom-aligned sources, negative display origins, duration scaling, deterministic stepping and real capture-to-Metal opacity/clear completion.
+
+### Verification
+
+- Final direct release suite with coverage: **287 tests — 146 Core + 36 Effects + 105 app; 0 failures, 0 skips**, including opt-in native UI captures and genuine captured-document drainage/preview regressions. Initial native helper-frontmost failure passed on isolated retry and the complete final suite, without weakening assertions.
+- Actual drainage contact sheet visually inspected; universal arm64/x86_64 app and embedded saver passed strict signature checks. Packaged 0.3.2/build 37 launched; Quick Look/Finder refreshed. Current line coverage: LiquidWorld 98.70%, Liquid renderer Swift 100%, player 95.89%, original preview 92.16% (not Metal shader branch coverage).
+
 ## [0.3.1] — Build 36
 
 ### Fixed

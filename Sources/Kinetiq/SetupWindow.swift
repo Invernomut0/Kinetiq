@@ -331,7 +331,7 @@ struct SetupControlsView: View {
                         Text($0.title).tag(MinimizeEffectChoice.morph($0).rawValue)
                     }
                 }
-                Text("Liquid melts from the top-right, spills over window edges and pools behind the Dock before slowly fading. Other minimize effects morph into the Dock icon. Minimize effects apply to the yellow button only; ⌘M remains native.")
+                Text("Liquid melts from the top-right, spills over window edges and pools behind the Dock before slowly draining off the bottom edges. Other minimize effects morph into the Dock icon. Minimize effects apply to the yellow button only; ⌘M remains native.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 SliderRow(title: "Duration",

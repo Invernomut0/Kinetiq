@@ -93,7 +93,7 @@ enum LibraryEffect: Hashable, Identifiable {
         switch self {
         case .catalog(let effect): return EffectCatalog.descriptor(effect).summary
         case .liquid:
-            return "The window melts from the top-right corner, spills over its edges and pools behind the Dock before fading away."
+            return "The window melts from the top-right corner, pools behind the Dock, then slowly drains off the bottom edges."
         case .entrance(let entrance):
             switch entrance {
             case .wobblePop: return "The new window springs in with a jelly pop from its center and settles."

@@ -1,4 +1,4 @@
-# Original (built-in) effects — v0.3.0 (build 35)
+# Original (built-in) effects — v0.3.2 (build 37)
 
 Every prior effect is discoverable by the window event it reacts to: the menu bar's **Open**, **Close** and **Minimize** submenus and the matching Effects sections list each built-in next to the compatible Studio presets, with a live preview and a **Use when…** button. The six legacy categories below remain as metadata (they group the **Try an Effect** menu and the Studio's Add Layer menu). Nothing here replaces the original engines, migrates preferences or expands Studio's JSON schema.
 
@@ -96,6 +96,8 @@ Liquid is distinct from Studio **Liquid Morph**. Original Morph, Portal, Ripple 
 
 ## Preview and use a built-in effect
 
+Since v0.3.2, Liquid's final pool stays opaque and drains physically off the bottom edges. Outlets open gradually from the lower corners towards the center over six normalized seconds after the existing linger; completed material stops simulating only after its full rendering support has left the display. Melting, exposed-window collisions and behind-Dock layering are unchanged.
+
 1. In **Effects**, open the section for the event (*When a window opens*, *When a window closes*, *When you minimize*) and select the effect, or pick it straight from the matching menu bar submenu (which applies it immediately).
 2. The preview loops at once on the sample window; switch the source menu to a real eligible window to see it on your own content. Screen Recording and an enabled engine are required for real captures. The panel reports capture, permission, Metal and budget errors rather than displaying a fabricated demo.
 3. Press **Use when a window closes**, **Use when a window opens** or **Use when you minimize**. Liquid has independent Close and Minimize buttons; activating one does not assign the other. The active one reads **Active when…** and offers **Turn off**.
@@ -111,7 +113,7 @@ Selecting, previewing or scrubbing never changes assignments. Under **Adjust**, 
 | Close shaders | `CloseEffectRenderer` with the selected `CloseEffect` / `EffectScene` | No actual close; the capture is rendered offscreen. |
 | Open entrances | `WobbleEntrance.apply` on `KinetiqModel`, stepped at 120 Hz | Original spring/mesh motion, not Studio Ripple/Wobbly substitution; no AX movement. |
 | Minimize morphs | `DockMorphDeformer` | Local preview destination, **not the actual Dock**; no native minimize or Dock preference change from previewing. |
-| Liquid | `LiquidWorld` with `LiquidEffectRenderer` | Retained local floor stage, **no actual desktop obstacles**; scrubbing covers 0–6 normalized seconds, scaled by shared duration. |
+| Liquid | `LiquidWorld` with `LiquidEffectRenderer` | Retained local floor stage, **no actual desktop obstacles**; scrubbing covers the full geometry-dependent melt/pool/drain lifecycle, scaled by shared duration. |
 
 Previews never move, park, close or minimize a live window. Liquid's local stage is retained so falling/pooling fluid is not cropped to the now-empty source rectangle. It does not capture or simulate other desktop windows as obstacles. These panel boundaries do not change native playback: actual minimize still uses the real Dock path, and native Liquid still uses live window-top obstacles and per-display floors as described in the [README](../README.md#liquid-close-and-minimize-v0131).
 
@@ -129,8 +131,10 @@ Close observes actual window disappearance/fade after pre-capture; refused close
 
 ## Verification status
 
-**Current v0.2.1 / build 34:** the final release suite passed **277 tests: 144 Core + 36 Effects + 97 app; 0 failures, 0 skips**. The app suite includes **11 Management + 7 OriginalEffectLibrary + 8 OriginalEffectPreview + 10 StudioUI + 61 other existing tests**. All 30 original shaders, six entrances, nine minimize morphs and Liquid passed genuine real-capture tests, including the README Liquid regression. All 65 effect navigation requests are routed and consumed, including repeated navigation, after fixing `@Published` reentrancy with `onChange(initial: true)`. Final log: `/tmp/kinetiq-v021-suite.log`; opt-in UI captures: `/tmp/kinetiq-v021-ui`.
+**Current v0.3.2 / build 37:** **287 release tests: 146 Core + 36 Effects + 105 app; 0 failures, 0 skips**, including real-capture bottom-edge drainage and a completely empty final preview. Actual material remains opaque during partial drainage, and final particles have moved below the complete kernel-support margin. Universal app/saver signatures and launch were verified; Quick Look/Finder refreshed. Log: `/tmp/kinetiq-v032-acceptance-direct.log`; build: `/tmp/kinetiq-v032-final-build.log`. See the [README](../README.md#building) for current line coverage and the preserved optical/runtime regression coverage.
+
+**Historical v0.2.1 / build 34:** the final release suite passed **277 tests: 144 Core + 36 Effects + 97 app; 0 failures, 0 skips**. The app suite includes **11 Management + 7 OriginalEffectLibrary + 8 OriginalEffectPreview + 10 StudioUI + 61 other existing tests**. All 30 original shaders, six entrances, nine minimize morphs and Liquid passed genuine real-capture tests, including the README Liquid regression. All 65 effect navigation requests are routed and consumed, including repeated navigation, after fixing `@Published` reentrancy with `onChange(initial: true)`. Final log: `/tmp/kinetiq-v021-suite.log`; opt-in UI captures: `/tmp/kinetiq-v021-ui`.
 
 Build script completed (`/tmp/kinetiq-v021-build.log`); both app and embedded `.saver` passed direct arm64/x86_64 `lipo` and strict signature checks. Actual packaged version **0.2.1 / build 34** was confirmed, the app launched and Quick Look/Finder refreshed. Native **Destruction → Dissolution → Fire — Original Close…** opened the exact original Fire detail; Accessibility inspection confirmed 65 effects and `/tmp/kinetiq-v021-fire.png` was visually inspected. This inspection did not activate an effect or change user assignments. [TODO R2](../TODO.md) and task 9 are **Done**.
 
-Current merged release line coverage (`/tmp/kinetiq-v021-coverage.txt`): `LibraryEffect.swift` **100%**, `CatalogStore.swift` **100%**, `OriginalEffectPreview.swift` **85.32%**, `OriginalEffectDetailView.swift` **40.80%**. This is not Metal shader branch coverage. Historical v0.2.0 verification remains separately recorded in the [changelog](../CHANGELOG.md#020--build-33).
+Historical v0.2.1 merged release line coverage (`/tmp/kinetiq-v021-coverage.txt`): `LibraryEffect.swift` **100%**, `CatalogStore.swift` **100%**, `OriginalEffectPreview.swift` **85.32%**, `OriginalEffectDetailView.swift` **40.80%**. This is not Metal shader branch coverage. Historical v0.2.0 verification remains separately recorded in the [changelog](../CHANGELOG.md#020--build-33).

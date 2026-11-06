@@ -22,7 +22,7 @@ public final class LiquidEffectRenderer {
         var screen: SIMD4<Float>
         var window: SIMD4<Float>
         var uvRect: SIMD4<Float>
-        // Melt progress, late world opacity, support radius, density threshold.
+        // Melt progress, material opacity (no timed fade), support radius, density threshold.
         var parameters: SIMD4<Float>
         // Inverse density dimensions and size of a density texel in screen points.
         var field: SIMD4<Float>

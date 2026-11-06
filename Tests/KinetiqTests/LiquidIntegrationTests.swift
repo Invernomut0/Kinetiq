@@ -128,7 +128,7 @@ final class LiquidIntegrationTests: XCTestCase {
     }
 
     @MainActor
-    func testCapturedREADMEThroughMetalMeltPoolFadeAndGlobalOrigins() async throws {
+    func testCapturedREADMEThroughMetalMeltPoolDrainAndGlobalOrigins() async throws {
         let screen = try captureScreen()
         let device = try metalDevice()
         let window = try readmeWindow(on: screen)
@@ -144,7 +144,7 @@ final class LiquidIntegrationTests: XCTestCase {
         let floor = CGRect(x: screen.cgFrame.minX, y: screen.cgFrame.maxY - max(70, CGFloat(world.spacing) * 6),
                            width: screen.cgFrame.width, height: max(70, CGFloat(world.spacing) * 6))
         var frames: [(Double, Pixels)] = []
-        for time in [0.0, 0.4, 1, 2, 5, 8, 11] {
+        for time in [0.0, 0.4, 1, 2, 5, Double(world.drainStart) + 2, Double(world.drainStart) + 4, Double(world.duration)] {
             advance(world, to: Float(time))
             assertFinite(world)
             let output = try gpu.render(world, screen: screen.cgFrame)
@@ -171,7 +171,7 @@ final class LiquidIntegrationTests: XCTestCase {
                 XCTAssertLessThan(output.meanAlpha(in: interior, screen: screen.cgFrame), 0.8)
             }
             if time == 5 {
-                XCTAssertEqual(world.alpha, 1, "The floor pool must linger before fading")
+                XCTAssertEqual(world.alpha, 1, "The floor pool must linger before draining")
                 XCTAssertGreaterThan(output.meanAlpha(in: floor, screen: screen.cgFrame), 0.001)
                 XCTAssertGreaterThan(world.particles.filter { $0.position.y > Float(floor.minY) }.count, 0)
             }
@@ -179,13 +179,46 @@ final class LiquidIntegrationTests: XCTestCase {
         XCTAssertEqual(world.particles.map(\.uv), identity)
         let pool = try XCTUnwrap(frames.first { $0.0 == 5 }?.1)
         let late = try XCTUnwrap(frames.last?.1)
-        XCTAssertLessThan(late.alphaMass, pool.alphaMass, "Late opacity must fade the pooled surface")
-        // Tall real displays may finish after eleven seconds. Verify the actual bounded lifetime too.
-        advance(world, to: 14.1)
+        XCTAssertLessThan(late.alphaMass, pool.alphaMass, "The material must leave the display, not fade")
         XCTAssertTrue(world.isFinished)
+        XCTAssertTrue(world.particles.allSatisfy { $0.position.y > Float(screen.cgFrame.maxY) + world.spacing * 1.5 })
         XCTAssertEqual(world.alpha, 0)
         XCTAssertEqual(try gpu.render(world, screen: screen.cgFrame).alphaMass, 0)
         try dumpIfRequested(frames)
+    }
+
+    /// Actual captured material remains opaque while part of its pool flows offscreen.
+    @MainActor
+    func testCapturedREADMEPhysicalDrainRetainsOpaquePixelsUntilMaterialExits() async throws {
+        let screen = try captureScreen()
+        let window = try readmeWindow(on: screen)
+        defer { window.close() }
+        let (info, frame) = try await captured(window, using: WindowCapture())
+        let bounds = screen.cgFrame
+        let gpu = try GPU(device: metalDevice(), frame: frame, screen: bounds)
+        let world = LiquidWorld(windowFrame: info.frame, screenBounds: bounds, obstacles: [])
+        advance(world, to: world.drainStart)
+        let pooled = try gpu.render(world, screen: bounds)
+        var partialFrames = 0
+        var opaquePartialFrames = 0
+        while !world.isFinished && world.elapsed < world.duration {
+            world.step(1 / 120)
+            let exited = world.particles.filter { $0.position.y > Float(bounds.maxY) }.count
+            if exited > 0, exited < world.particles.count / 2, partialFrames < 3 {
+                let output = try gpu.render(world, screen: bounds)
+                XCTAssertEqual(world.alpha, 1, "Visible material must not fade during drainage")
+                if output.maximumAlpha > 0.98 { opaquePartialFrames += 1 }
+                XCTAssertGreaterThan(output.alphaMass, 0)
+                partialFrames += 1
+                advance(world, to: world.elapsed + 0.15)
+            }
+        }
+        XCTAssertGreaterThan(partialFrames, 0, "A real captured pool must leave the display progressively")
+        XCTAssertGreaterThan(opaquePartialFrames, 0, "The remaining real material must retain fully opaque pixels")
+        XCTAssertTrue(world.isFinished)
+        XCTAssertTrue(world.particles.allSatisfy { $0.position.y > Float(bounds.maxY) + world.spacing * 1.5 })
+        XCTAssertGreaterThan(pooled.alphaMass, 10)
+        XCTAssertEqual(try gpu.render(world, screen: bounds).alphaMass, 0)
     }
 
     /// Sharpness regression on a real README capture, at native display resolution. No desktop
@@ -847,8 +880,10 @@ final class LiquidIntegrationTests: XCTestCase {
         XCTAssertTrue(world.particles.allSatisfy {
             $0.position.x.isFinite && $0.position.y.isFinite && $0.velocity.x.isFinite && $0.velocity.y.isFinite
                 && $0.uv.x.isFinite && $0.uv.y.isFinite && $0.releaseTime.isFinite
-                && world.screenBounds.insetBy(dx: -0.1, dy: -0.1).contains(CGPoint(x: CGFloat($0.position.x), y: CGFloat($0.position.y)))
-        }, "Simulation must retain finite, screen-bounded samples", file: file, line: line)
+                && $0.position.x >= Float(world.screenBounds.minX) && $0.position.x <= Float(world.screenBounds.maxX)
+                && $0.position.y >= Float(world.screenBounds.minY)
+                && $0.position.y <= Float(world.screenBounds.maxY) + world.spacing * 1.5 + 1.01
+            }, "Simulation must retain finite samples within the display and its bottom exit margin", file: file, line: line)
     }
 
     // MARK: - Offscreen Metal, backed exclusively by the real captured IOSurface
@@ -956,6 +991,7 @@ final class LiquidIntegrationTests: XCTestCase {
         let bytes: [UInt8]
 
         var alphaMass: Double { stride(from: 3, to: bytes.count, by: 4).reduce(0) { $0 + Double(bytes[$1]) / 255 } }
+        var maximumAlpha: Double { Double(stride(from: 3, to: bytes.count, by: 4).map { bytes[$0] }.max() ?? 0) / 255 }
 
         func offset(at point: CGPoint, screen: CGRect) -> Int {
             let x = min(width - 1, max(0, Int((point.x - screen.minX) / screen.width * CGFloat(width))))

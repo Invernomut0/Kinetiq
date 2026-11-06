@@ -91,15 +91,26 @@ final class OriginalPreviewRenderer {
     func cancel() { generation = UUID() }
 
     /// The timeline length a preview scrubs through, in seconds.
-    static func timelineSeconds(effect: LibraryEffect, preset: EffectPreset?, settings: Settings) -> Double {
+    static func timelineSeconds(effect: LibraryEffect, preset: EffectPreset?, settings: Settings,
+                                source: PreviewSource = .sample) -> Double {
         switch effect {
         case .catalog(.wobbly): return wobblyPreviewSeconds
         case .catalog(let id): return preset?.duration ?? EffectPreset(effect: id).duration
         case .close(let close): return close.duration * settings.closeDuration
         case .entrance: return 2.5
         case .minimize(let style): return Double(style.duration) * settings.closeDuration
-        case .liquid: return 6 * settings.closeDuration
+        case .liquid:
+            let frame = source.windowID.flatMap { WindowLocator.frame(of: $0) } ?? SampleWindow.frameOnStage
+            return Double(LiquidWorld.duration(for: liquidStage(frame), durationScale: Float(settings.closeDuration)))
         }
+    }
+
+    /// The same local floor and timing for the scrubber and captured render path.
+    private static func liquidStage(_ frame: CGRect) -> CGRect {
+        let margin = max(24, frame.width * 0.15)
+        var stage = frame.insetBy(dx: -margin, dy: -margin)
+        stage.size.height += frame.height * 0.85
+        return stage
     }
 
     /// Library entry point: any effect, from the sample window or a real one.
@@ -277,12 +288,11 @@ final class OriginalPreviewRenderer {
             tilesY = CatalogDragPolicy.meshTiles(requested: 20, meshLimit: min(64, budget.meshLimit))
         case .liquid:
             guard budget.allowsExpensive, budget.maxParticles > 0 else { throw OriginalPreviewError.budget }
-            stage.size.height += windowFrame.height * 0.85
+            stage = Self.liquidStage(windowFrame)
             let liquid = LiquidWorld(windowFrame: windowFrame, screenBounds: stage, obstacles: [],
                 durationScale: Float(settings.closeDuration), maxParticles: budget.maxParticles)
-            // Six normalized seconds includes complete melting, fall and pooling.
-            // Keep the entire stage, not the now-empty original-window crop.
-            try await advance(liquid, seconds: progress * 6 * settings.closeDuration, token: token, settings: settings)
+            // Replay the complete physical drainage too, without cropping the local floor.
+            try await advance(liquid, seconds: progress * Double(liquid.duration), token: token, settings: settings)
             if gpu.liquid == nil { gpu.liquid = try LiquidEffectRenderer(device: gpu.device) }
             gpu.liquid?.geometryScale = budget.textureScale
             world = liquid
