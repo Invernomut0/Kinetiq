@@ -142,6 +142,7 @@ struct AnimationStudioView: View {
     @State private var playing = false
     @State private var error: String?
     @State private var notice: String?
+    @State private var showingIntro = false
     @State private var runTask: Task<Void, Never>?
 
     init(model: SetupModel) {
@@ -157,7 +158,7 @@ struct AnimationStudioView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             toolbar
-            if !introDismissed { intro }
+            if !introDismissed && editor.document.layers.isEmpty { intro }
             if let message = error ?? editor.errorMessage ?? runtime.errorMessage {
                 Label(message, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
@@ -224,7 +225,7 @@ struct AnimationStudioView: View {
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            Button { introDismissed = true } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+            Button { introDismissed = true; showingIntro = false } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
                 .accessibilityLabel("Dismiss introduction")
         }
         .padding(14)
@@ -277,10 +278,9 @@ struct AnimationStudioView: View {
                 .disabled(editor.undoCount == 0).help("Undo").accessibilityLabel("Undo studio edit")
             Button { playing = false; editor.redo() } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
                 .disabled(editor.redoCount == 0).help("Redo").accessibilityLabel("Redo studio edit")
-            if !introDismissed { EmptyView() } else {
-                Button { introDismissed = false } label: { Image(systemName: "questionmark.circle") }
-                    .buttonStyle(.borderless).help("Show how the Studio works").accessibilityLabel("Show introduction")
-            }
+            Button { showingIntro.toggle() } label: { Image(systemName: "questionmark.circle") }
+                .buttonStyle(.borderless).help("Show how the Studio works").accessibilityLabel("Show introduction")
+                .popover(isPresented: $showingIntro) { intro.frame(width: 500).padding(12) }
             Spacer(minLength: 0)
             Menu("File") {
                 Button("Import Document JSON…") { importDocument() }

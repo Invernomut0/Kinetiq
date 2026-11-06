@@ -145,6 +145,55 @@ final class ManagementTests: XCTestCase {
         XCTAssertEqual(catalogPreferences(), defaultsBefore)
     }
 
+    /// Bounds native containers, not just finite frames: a 4,000-point split can still be finite.
+    @MainActor
+    func testStudioKeepsNativeSidebarAndEditorInsideWindow() async throws {
+        let saved = CatalogStore.shared.document
+        let preferences = catalogPreferences()
+        defer { CatalogStore.shared.document = saved }
+        let populated = StudioDocument(name: "Ripple composition", duration: 3,
+                                       layers: [StudioLayer(preset: EffectPreset(effect: .ripple))])
+        for document in [StudioDocument(), populated] {
+            // In-memory documents only; never save over the user's composition.
+            CatalogStore.shared.document = document
+            let model = model(settings: try isolatedSettings())
+            model.requestedPage = .animationStudio
+            let (window, shell) = try hostingWindow(model: model)
+            let sizes = [NSSize(width: 960, height: 700), NSSize(width: 1040, height: 736),
+                         NSSize(width: 1180, height: 780)]
+            let configurations = [NSAppearance.Name.aqua, .darkAqua].flatMap { appearance in
+                sizes.map { (appearance, $0) }
+            }
+            for (appearance, size) in configurations {
+                window.appearance = NSAppearance(named: appearance)
+                window.setContentSize(size)
+                await settleLayout(shell, window: window)
+                var outlines = 0
+                var splits = 0
+                func check(_ view: NSView) {
+                    if view is NSOutlineView || view is NSSplitView {
+                        if view is NSOutlineView { outlines += 1 } else { splits += 1 }
+                        let frame = view.convert(view.bounds, to: nil)
+                        let viewport = NSRect(origin: .zero, size: window.contentView!.bounds.size)
+                        XCTAssertGreaterThan(frame.width, 100, "Collapsed \(type(of: view))")
+                        XCTAssertGreaterThan(frame.height, 100, "Collapsed \(type(of: view))")
+                        XCTAssertGreaterThanOrEqual(frame.minX, viewport.minX - 1, "Content left of window: \(frame)")
+                        XCTAssertLessThanOrEqual(frame.maxX, viewport.maxX + 1, "Content right of window: \(frame)")
+                        XCTAssertGreaterThanOrEqual(frame.minY, viewport.minY - 1, "Content above window: \(frame)")
+                        XCTAssertLessThanOrEqual(frame.maxY, viewport.maxY + 1, "Content below window: \(frame)")
+                        XCTAssertLessThanOrEqual(frame.height, window.frame.height, "Intrinsic height escaped the window")
+                    }
+                    view.subviews.forEach(check)
+                }
+                check(shell)
+                XCTAssertGreaterThan(outlines, 0, "The navigation sidebar must be mounted")
+                XCTAssertGreaterThan(splits, 0, "The navigation split must be mounted")
+            }
+            window.close()
+        }
+        XCTAssertEqual(catalogPreferences(), preferences)
+    }
+
     /// Reuses one shell, including nil and repeated requests, rather than recreating the destination views.
     @MainActor
     func testRequestedPageUpdatesMountedShellWithoutStartingPreviewOrPlayback() async throws {

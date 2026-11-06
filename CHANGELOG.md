@@ -5,6 +5,19 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — Build 36
+
+### Fixed
+
+- Bound each `NavigationSplitView` column to its actual viewport. Native ideal-size propagation previously laid out a roughly 4,146-point split inside a 768-point window, leaving the sidebar, page header, Studio toolbar, inspector and timeline outside the visible area. Bounding the outer split alone was insufficient.
+- Keep the Studio introduction inline only for empty documents. A persistent **?** button opens it in a popover, so it no longer overlaps the preview/inspector after adding a layer at compact window sizes.
+- Preserve the 960 × 700-point minimum content area, all 65 library effects, the 19 Studio effects, saved documents and event assignments.
+
+### Verification
+
+- Release suite with coverage: **284 tests — 144 Core + 36 Effects + 104 app; 0 failures, 0 skips**. The new native geometry regression failed against the original layout and passes with empty/populated documents at three window sizes in light/dark appearances. Existing shader, real-capture, runtime restoration and editor tests remain in the suite.
+- Final app and embedded saver verified universal arm64/x86_64 with strict signatures; packaged version 0.3.1/build 36 launched. Native Studio checked empty and after Add Layer, including inspector tabs and keyframe-track creation at minimum size, without saving a user document. Quick Look/Finder refreshed.
+
 ## [0.3.0] — Build 35
 
 ### Changed

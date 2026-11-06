@@ -105,79 +105,17 @@ struct SetupView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            VStack(spacing: 0) {
-                List(selection: $selection) {
-                    Section {
-                        ForEach(ManagementPage.primary) { destination in
-                            Label(destination.title, systemImage: destination.symbol)
-                                .font(.system(size: 14, weight: .medium))
-                                .padding(.vertical, 5)
-                                .tag(destination)
-                        }
-                    }
-                    Section("System") {
-                        ForEach(ManagementPage.system) { destination in
-                            Label(destination.title, systemImage: destination.symbol)
-                                .font(.system(size: 14, weight: .medium))
-                                .padding(.vertical, 5)
-                                .tag(destination)
-                        }
-                    }
-                }
-                .listStyle(.sidebar)
-                Spacer(minLength: 0)
-                VStack(alignment: .leading, spacing: 10) {
-                    Divider()
-                    HStack(spacing: 8) {
-                        Image(systemName: "water.waves").foregroundStyle(Color.accentColor)
-                        Text("KINETIQ").font(.system(size: 12, weight: .bold, design: .rounded)).tracking(1.8)
-                        Spacer()
-                    }
-                    Text("Made to move.").font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(18)
+            // Bound each native column, not just the outer split: its hosting views otherwise
+            // propagate oversized ideal heights from Lists and nested editors to NSSplitView.
+            GeometryReader { viewport in
+                sidebar
+                    .frame(width: viewport.size.width, height: viewport.size.height)
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 215, max: 250)
         } detail: {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                if [.overview, .windows, .diagnostics].contains(page) {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 26) {
-                            switch page {
-                            case .overview: overview
-                            case .windows: windows
-                            default: diagnostics
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(32)
-                    }
-                } else if page == .effects {
-                    EffectsLibraryView(model: model, initialCategory: libraryCategory)
-                } else if page == .animationStudio {
-                    AnimationStudioView(model: model)
-                } else if page == .performance {
-                    PerformanceView()
-                } else if page == .layouts {
-                    CatalogArrangementView(model: model)
-                } else if page == .physics {
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack {
-                            Text("These springs drive the classic wobble, the open entrances and the Wobbly preview.")
-                                .font(.callout).foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Drag Effects", systemImage: "hand.draw") {
-                                libraryCategory = .physics
-                                selection = .effects
-                            }
-                        }
-                        .padding(.horizontal, 32).padding(.top, 12)
-                        SetupControlsView(model: model, page: page)
-                    }
-                } else {
-                    SetupControlsView(model: model, page: page).id(page)
-                }
+            GeometryReader { viewport in
+                detail
+                    .frame(width: viewport.size.width, height: viewport.size.height)
             }
             .background(Color(nsColor: .windowBackgroundColor))
             .navigationTitle("Kinetiq — \(page.title)")
@@ -192,6 +130,84 @@ struct SetupView: View {
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didTerminateApplicationNotification)) { _ in model.refreshWindows() }
         .onChange(of: selection) { _, page in
             if page == .windows { model.refreshWindows() } else { model.refresh() }
+        }
+    }
+
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            List(selection: $selection) {
+                Section {
+                    ForEach(ManagementPage.primary) { destination in
+                        Label(destination.title, systemImage: destination.symbol)
+                            .font(.system(size: 14, weight: .medium))
+                            .padding(.vertical, 5)
+                            .tag(destination)
+                    }
+                }
+                Section("System") {
+                    ForEach(ManagementPage.system) { destination in
+                        Label(destination.title, systemImage: destination.symbol)
+                            .font(.system(size: 14, weight: .medium))
+                            .padding(.vertical, 5)
+                            .tag(destination)
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: 10) {
+                Divider()
+                HStack(spacing: 8) {
+                    Image(systemName: "water.waves").foregroundStyle(Color.accentColor)
+                    Text("KINETIQ").font(.system(size: 12, weight: .bold, design: .rounded)).tracking(1.8)
+                    Spacer()
+                }
+                Text("Made to move.").font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(18)
+        }
+    }
+
+    private var detail: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            if [.overview, .windows, .diagnostics].contains(page) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 26) {
+                        switch page {
+                        case .overview: overview
+                        case .windows: windows
+                        default: diagnostics
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(32)
+                }
+            } else if page == .effects {
+                EffectsLibraryView(model: model, initialCategory: libraryCategory)
+            } else if page == .animationStudio {
+                AnimationStudioView(model: model)
+            } else if page == .performance {
+                PerformanceView()
+            } else if page == .layouts {
+                CatalogArrangementView(model: model)
+            } else if page == .physics {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("These springs drive the classic wobble, the open entrances and the Wobbly preview.")
+                            .font(.callout).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Drag Effects", systemImage: "hand.draw") {
+                            libraryCategory = .physics
+                            selection = .effects
+                        }
+                    }
+                    .padding(.horizontal, 32).padding(.top, 12)
+                    SetupControlsView(model: model, page: page)
+                }
+            } else {
+                SetupControlsView(model: model, page: page).id(page)
+            }
         }
     }
 
