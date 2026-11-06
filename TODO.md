@@ -4,7 +4,8 @@ Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (imple
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| R1 | v0.2.0 build 33 final release verification | Done | Owner: Copilot. 260 release tests, zero failures/skips; universal app and embedded saver built, strict signatures verified, packaged app launched and visually inspected. Quick Look and Finder refreshed. |
+| R2 | v0.2.1 build 34 original-effects recovery final verification | Done | Owner: Copilot. 277 release tests passed (144 Core, 36 Effects, 97 app), zero failures/skips, including genuine original-engine captures and the README Liquid regression. Current line coverage recorded; app and embedded saver verified universal arm64/x86_64 with strict signatures and actual version 0.2.1 / build 34. Packaged app launched, exact native Fire detail inspected without activation/assignment changes, Quick Look/Finder refreshed. |
+| R1 | v0.2.0 build 33 final release verification | Done | Owner: Copilot. Historical evidence only: 260 release tests, zero failures/skips; universal app and embedded saver built, strict signatures verified, packaged app launched and visually inspected. Quick Look and Finder refreshed. Does not verify build 34. |
 | 1 | Open effects | Done | Owner: Copilot. The v0.1.9 reversed-shader path was superseded by v0.1.22 jelly entrances; v0.2.0 also supports explicitly assigned captured catalog entrances. Code/test verification is complete; final release acceptance is R1. |
 | 2 | Inertia and bounce off the screen edges after releasing a drag | Done | Owner: Copilot. `KinetiqModel.fling`, bounded real-screen physics and settling covered by the release suite. |
 | 3 | 3D tilt while dragging | Done | Owner: Copilot. Unit-tested `Tilt`, perspective mesh projection and quality safety gating. |
@@ -13,17 +14,29 @@ Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (imple
 | 6 | Focus highlight | Done | Owner: Copilot. Optional accent glow on focus; deferred after entrances and quality-gated. Global dimming of other windows is not implemented or claimed. |
 | 7 | Ripple at the drop point | Done | Owner: Copilot. Bounded radial wave, settling and explicit catalog Drag policy are tested. |
 | 8 | Native screen saver and desktop destruction | Done | Owner: Copilot. Voronoi fragments, letters/buttons, Metal renderer, real archive, native module and selective system selection/restoration tested. Final packaged build verification is R1. |
-| 9 | Nineteen-effect catalog and permanent category mapping | Done | Owner: Copilot. Shared manifest / NSMenu / library: 2 Window Motion, 4 Transitions, 4 Destruction, 4 Spatial, 2 Physics, 3 Workspace; original 30 close shaders and Liquid retained. |
+| 9 | Shared 65-effect library and permanent category mapping | Done | Owner: Copilot. LibraryEffect / NSMenu / library totals: 5 Window Motion, 31 Transitions, 14 Destruction, 10 Spatial, 2 Physics, 3 Workspace. Includes 19 unchanged Studio entries and 46 originals (30 close, 6 entrances, 9 minimize, Liquid once). All 65 routing requests consumed, repeated navigation tested, five-tab details and explicit per-trigger assignments verified; exact native Fire menu/detail inspection completed under R2. |
 | 10 | Adaptive quality and truthful performance diagnostics | Done | Owner: Copilot. Five choices, 13-step Auto ladder/recovery, actual completed GPU timings, thermal/power caps and bounded native/intermediate resource handling. |
 | 11 | Animation Studio and validated preset/document storage | Done | Owner: Copilot. Timeline/layers/tracks/keys, five outgoing curves, 100-snapshot undo/redo, guarded copy/paste and strict schema-1 JSON. No tangent editor claimed. |
 | 12 | Twelve-page dashboard and five-tab Effects library | Done | Owner: Copilot. Original eight pages plus Studio, Layouts, Workspaces and Performance; real-window previews and explicit save/run/reset controls. |
 | 13 | Real runtime adapters, trigger ownership and safe fallbacks | Done | Owner: Copilot. Native Close/Minimize/Open routing, snapshotted Drag, real AX physics and bounded interactive current-Space overviews. Unsupported mixed physics/overview compositions fail explicitly. |
 | 14 | v0.2.0 English documentation | Done | Owner: Copilot. README, changelog and Studio guide reflect actual schema, catalog, budgets, runtime limits and final verification evidence. |
+| 15 | v0.2.1 original-effects English documentation | Done | Owner: Copilot. README, changelog, TODO, Studio guide and original-effects guide describe exact categories/full original list, existing IDs, explicit assignment ownership, panel-only previews and unchanged Studio schema/Physics controls. Final build-34 verification and current line coverage are recorded separately from historical evidence. |
 
-## Verification evidence and scope
+## Current v0.2.1 / build 34 verification
 
-- Final `/tmp/kinetiq-v02-final-suite.log`: **260 release tests passed — 144 Core + 36 Effects + 80 app; 0 failures, 0 skips**. Includes 19 management/Studio tests, all compiled catalog effects and real-capture Liquid regressions.
-- Build-33 app and native saver both contain arm64/x86_64 and pass `codesign --verify --deep --strict`; the actual packaged app was launched and visually inspected. Local coverage is recorded in `/tmp/kinetiq-v02-final-coverage.txt`; shader encoding-path coverage is not Metal branch coverage.
+- **277 release tests passed: 144 Core + 36 Effects + 97 app; 0 failures, 0 skips.** The app suite includes 11 Management + 7 OriginalEffectLibrary + 8 OriginalEffectPreview + 10 StudioUI + 61 other existing tests. Final log: `/tmp/kinetiq-v021-suite.log`; opt-in UI captures: `/tmp/kinetiq-v021-ui`.
+- **R2 and task 9 are Done.** All 65 navigation requests are routed and consumed, including repeated navigation; `onChange(initial: true)` fixes `@Published` reentrancy. Original assignment tests verify release of only the selected owner, preserving its parameters/tracks, other owners, per-app rules and exclusions.
+- All 30 original shaders, six entrances, nine minimize morphs and Liquid passed genuine real-capture tests, including the README Liquid regression. Preview safety checks cover no native move/close/minimize, local minimize destination, retained Liquid floor/no desktop obstacles, 8 MP / 8192 target bounds, 32 MP source capture bound, two-request limit, cancellation/backing lifetime and explicit expensive-mode refusal.
+- `CatalogRuntimeTests` waits for WindowServer opacity **and** an origin matching the child window's actual AppKit frame before testing restoration: macOS can slide an already opaque native window in from negative X. No restoration assertions were weakened.
+- Build script completed (`/tmp/kinetiq-v021-build.log`). App and embedded `.saver` each passed direct arm64/x86_64 `lipo` and strict signature checks; actual packaged version is 0.2.1 / build 34. App launched and Quick Look/Finder refreshed.
+- Native **Destruction → Dissolution → Fire — Original Close…** opened the exact original Fire detail. Accessibility inspection confirmed the 65-effect library; `/tmp/kinetiq-v021-fire.png` was visually inspected. No effect was activated and user assignments were unchanged.
+- Current merged release line coverage (`/tmp/kinetiq-v021-coverage.txt`): `LibraryEffect.swift` 100%, `CatalogStore.swift` 100%, `OriginalEffectPreview.swift` 85.32%, `OriginalEffectDetailView.swift` 40.80%. This is not Metal shader branch coverage.
+- Studio remains 19 effects/schema 1; originals are not JSON layers. Shared original close/minimize duration stays 0.25×–3× (default 1×); entrances and older glide/tilt/focus/ripple/maximize/resize controls stay on Physics.
+
+## Historical v0.2.0 / build 33 evidence and scope
+
+- Historical final `/tmp/kinetiq-v02-final-suite.log`: **260 release tests passed — 144 Core + 36 Effects + 80 app; 0 failures, 0 skips**. Includes 19 management/Studio tests, all compiled catalog effects and that version's real-capture Liquid regressions. Not current build-34 verification.
+- Build-33 app and native saver both contain arm64/x86_64 and passed `codesign --verify --deep --strict`; the actual packaged app was launched and visually inspected. Historical v0.2.0 coverage is recorded in `/tmp/kinetiq-v02-final-coverage.txt`; it is not current coverage, and shader encoding-path coverage is not Metal branch coverage.
 - Product boundaries: no native Spaces switching/private Spaces APIs, no permanent Orbit layout, no global desktop DOF/depth buffer, no Bézier tangent editor, and no desktop mixing of physics/overview with other enabled layers. These are explicit limits, not substitute demos.
 
 ## Done

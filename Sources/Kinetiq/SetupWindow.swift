@@ -18,6 +18,8 @@ final class SetupModel: ObservableObject {
     let runtimeStatus: () -> ManagementRuntimeStatus
     let systemSaver: SystemScreenSaver?
     @Published var requestedPage: ManagementPage?
+    @Published var requestedLibraryEffect: String?
+    @Published private(set) var effectError: String?
     private(set) var visibleWindows: [ManagedWindow] = []
 
     init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void,
@@ -68,22 +70,41 @@ final class SetupModel: ObservableObject {
     }
 
     func selectCloseEffect(_ raw: String) {
+        guard releaseCatalogTrigger(.close) else { return }
         settings.closeEffect = CloseEffectChoice(rawValue: raw)
         closeEffectChanged()
         refresh()
     }
 
     func selectOpenEffect(_ raw: String) {
+        guard releaseCatalogTrigger(.open) else { return }
         settings.openEffect = OpenEffectChoice(rawValue: raw)
         closeEffectChanged()
         refresh()
     }
 
     func selectMinimizeEffect(_ raw: String) {
+        guard releaseCatalogTrigger(.minimize) else { return }
         settings.minimizeEffect = MinimizeEffectChoice(rawValue: raw)
         DockGenie.sync(enabled: settings.minimizeEffect != .off)
         closeEffectChanged()
         refresh()
+    }
+
+    /// Original engines keep their existing keys and native trigger lifecycle.
+    func applyOriginalEffect(_ effect: LibraryEffect, trigger: EffectTrigger) {
+        do {
+            try OriginalEffectAssignment.apply(effect, trigger: trigger, settings: settings, store: .shared)
+            if trigger == .minimize { DockGenie.sync(enabled: settings.minimizeEffect != .off) }
+            effectError = nil
+            closeEffectChanged()
+            refresh()
+        } catch { effectError = error.localizedDescription }
+    }
+
+    private func releaseCatalogTrigger(_ trigger: EffectTrigger) -> Bool {
+        do { try CatalogStore.shared.releaseAssignment(to: trigger); effectError = nil; return true }
+        catch { effectError = error.localizedDescription; return false }
     }
 
     func resetToDefaults() {
@@ -467,7 +488,7 @@ final class SetupWindowController {
                            enabledChanged: enabledChanged, runtimeStatus: runtimeStatus, systemSaver: systemSaver)
     }
 
-    func show(page: ManagementPage? = nil) {
+    func show(page: ManagementPage? = nil, effect: LibraryEffect? = nil) {
         if window == nil {
             let hosting = NSHostingController(rootView: SetupView(model: model))
             let window = NSWindow(contentViewController: hosting)
@@ -484,6 +505,10 @@ final class SetupWindowController {
         }
         model.refreshWindows()
         if let page { model.requestedPage = page }
+        if let effect {
+            model.requestedPage = .effects
+            model.requestedLibraryEffect = effect.id
+        }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
     }

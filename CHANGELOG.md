@@ -5,6 +5,32 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — Build 34
+
+### Fixed
+
+- Restored all prior effects directly to the six shared native-menu/library categories through `LibraryEffect`: 65 entries (19 Studio, 30 original close shaders, 6 original entrances, 9 original minimize morphs and Liquid counted once). Combined category counts are Window Motion 5, Transitions 31, Destruction 14, Spatial Effects 10, Physics 2 and Workspace & Overview 3.
+- Original menu actions identify their engine with “Title — Original Close/Open/Minimize…” labels (Liquid: “Original Close / Minimize…”) and open the exact detail instead of silently assigning a trigger or running a Studio namesake.
+- Original details provide Preview, Parameters, Triggers, Performance and Reset tabs. Explicit Use for Close/Open/Minimize writes the existing Settings/raw IDs and releases only the corresponding catalog owner, preserving its parameters/tracks and all other owners. Opening a detail or preview makes no assignment changes. Per-app close overrides and exclusions remain unchanged; per-app choices can still override the global original close selection.
+- Real captured-window original previews reuse `CloseEffectRenderer`, `KinetiqModel` entrances, `DockMorphDeformer` and `LiquidWorld` / `LiquidEffectRenderer`. Playback stays inside the panel: no real movement, close or minimize; minimize has a local destination, and Liquid retains a local floor without desktop obstacles. Native trigger playback is unchanged.
+- Original previews enforce 8-megapixel / 8192-per-dimension targets, 32-megapixel source captures, at most two in-flight requests, cancellation and capture-backing retention through GPU completion. Original shader and Liquid previews refuse playback when expensive effects are disallowed.
+- Fixed `@Published` navigation reentrancy using `onChange(initial: true)`; all 65 effect requests are routed and consumed, including repeated navigation.
+- Stabilized the `CatalogRuntimeTests` window helper by waiting until WindowServer reports both opacity and the same origin as the child window's actual AppKit frame before testing restoration. macOS can slide a native Core Graphics window in from negative X even after it becomes opaque; restoration assertions were not weakened.
+
+### Changed
+
+- Renamed the former Legacy Window Triggers footer to Window Trigger Assignments, retaining all global choices, Off and Random; originals no longer depend on that footer for discovery.
+- Kept the shared original close/minimize duration at 0.25×–3×, default 1×. Original entrances still use Physics; older spring/mesh, glide, tilt, focus, ripple, maximize and resize controls remain there. Original shader uniforms keep compiled defaults, not new per-effect JSON controls.
+- The 19-effect Studio catalog, schema-1 presets/documents and layer model are unchanged. Originals are not Studio JSON layers; similarly named effects remain distinct.
+- Updated English README, Studio guide and TODO, and added a complete original-effects guide. This is a v0.2.1 / build 34 correction, not a v0.3.0 schema expansion.
+
+### Verification
+
+- Final release suite: **277 passed — 144 Core + 36 Effects + 97 app; 0 failures, 0 skips** (`/tmp/kinetiq-v021-suite.log`). App tests comprise 11 Management, 7 OriginalEffectLibrary, 8 OriginalEffectPreview, 10 StudioUI and 61 other existing tests. All 30 original shaders, six entrances, nine minimize morphs and Liquid passed genuine real-capture tests, including the README regression.
+- Build script completed (`/tmp/kinetiq-v021-build.log`); app and embedded `.saver` both verified directly as universal arm64/x86_64 with strict signatures. Packaged version 0.2.1 / build 34 confirmed, app launched, Quick Look/Finder refreshed.
+- Native NSMenu selection Destruction → Dissolution → Fire — Original Close… opened the exact original Fire detail. Accessibility inspection confirmed 65 effects and `/tmp/kinetiq-v021-fire.png` was visually inspected; no effect was activated and no user assignment changed.
+- Merged release line coverage (`/tmp/kinetiq-v021-coverage.txt`): `LibraryEffect.swift` 100%, `CatalogStore.swift` 100%, `OriginalEffectPreview.swift` 85.32%, `OriginalEffectDetailView.swift` 40.80%. These are not Metal shader branch-coverage figures. TODO R2 and task 9 are Done.
+
 ## [0.2.0] — Build 33
 
 ### Added
@@ -26,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unavailable or budget-refused effects report errors/refuse playback and preserve native behavior instead of showing substitute demos. Physics/interactive overview desktop playback requires one enabled layer; panel composition does not imply native physics composition.
 - Workspace names describe captured current-Space overviews, not private-API native Space switching, permanent layouts or a full workspace compositor. DOF affects the captured target only, not a global desktop depth buffer. “Blur passes” denotes shader sampling rings, not full-screen multipass blur.
 
-### Verification
+### Verification (historical v0.2.0 evidence)
 
 - Final release suite: 260 passed (144 Core, 36 Effects, 80 app), zero failures and zero skips, including real-capture Liquid regressions, compiled catalog shaders and 19 management/Studio tests.
 - Build 33 app and embedded native saver: universal arm64/x86_64, strict signatures verified; packaged app launched and inspected. Quick Look/Finder refreshed.

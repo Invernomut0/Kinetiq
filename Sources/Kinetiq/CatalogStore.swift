@@ -66,6 +66,13 @@ final class CatalogStore: ObservableObject {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    /// Releases only this action, retaining its preset, tracks and all other owners.
+    func releaseAssignment(to trigger: EffectTrigger) throws {
+        guard var owner = assigned(to: trigger) else { return }
+        owner.trigger = .manual
+        try save(owner)
+    }
+
     func resetAll() {
         defaults.removeObject(forKey: Self.presetKey)
         defaults.removeObject(forKey: Self.documentKey)

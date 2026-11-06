@@ -140,13 +140,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for category in EffectCategory.allCases {
             let categoryItem = NSMenuItem(title: category.title, action: nil, keyEquivalent: "")
             let categoryMenu = NSMenu()
-            let effects = EffectCatalog.effects.filter { $0.category == category }
+            let effects = LibraryEffect.all.filter { $0.category == category }
             for submenu in Array(Set(effects.map(\.submenu))).sorted() {
                 let group = NSMenuItem(title: submenu, action: nil, keyEquivalent: "")
                 let choices = NSMenu()
                 for effect in effects.filter({ $0.submenu == submenu }) {
-                    let item = NSMenuItem(title: effect.title, action: #selector(runCatalogEffect(_:)), keyEquivalent: "")
-                    item.representedObject = effect.id.rawValue
+                    let item = NSMenuItem(title: effect.menuTitle, action: nil, keyEquivalent: "")
+                    if case .catalog(let id) = effect {
+                        item.action = #selector(runCatalogEffect(_:))
+                        item.representedObject = id.rawValue
+                    } else {
+                        item.action = #selector(configureOriginalEffect(_:))
+                        item.representedObject = effect.id
+                        item.state = effect.triggers.contains {
+                            OriginalEffectAssignment.isSelected(effect, trigger: $0, settings: settings, store: .shared)
+                        } ? .on : .off
+                    }
                     item.target = self
                     choices.addItem(item)
                 }
@@ -211,6 +220,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let raw = sender.representedObject as? String, let choice = RenderQuality(rawValue: raw) {
             RenderQualityManager.shared.selection = choice
         }
+    }
+
+    @objc private func configureOriginalEffect(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String, let effect = LibraryEffect.find(id) else { return }
+        if case .catalog = effect { return }
+        showSetup()
+        setupWindow?.show(effect: effect)
     }
 
     @objc private func stopCatalog() { controller?.cancelAll(); CatalogRuntime.shared.stop() }

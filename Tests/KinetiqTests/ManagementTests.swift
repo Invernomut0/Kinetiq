@@ -169,6 +169,46 @@ final class ManagementTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testEveryLibraryRequestMountsAndIsConsumedWithoutChangingAssignments() async throws {
+        let model = model(settings: try isolatedSettings())
+        model.requestedPage = .effects
+        let (window, shell) = try hostingWindow(model: model)
+        defer { window.close() }
+        let before = catalogPreferences()
+        let shaderStatus = CatalogRuntime.shared.shaderStatus
+        for effect in LibraryEffect.all {
+            model.requestedLibraryEffect = effect.id
+            await settleLayout(shell, window: window)
+            XCTAssertNil(model.requestedLibraryEffect, effect.id)
+            XCTAssertEqual(window.title, "Kinetiq — Effects", effect.id)
+            assertFiniteLayout(shell, page: .effects)
+            XCTAssertFalse(CatalogRuntime.shared.isPlaying, effect.id)
+            XCTAssertEqual(CatalogRuntime.shared.shaderStatus, shaderStatus)
+        }
+        XCTAssertEqual(catalogPreferences(), before)
+    }
+
+    @MainActor
+    func testOriginalRequestIsNotReplayedAfterLeavingAndReenteringEffects() async throws {
+        let model = model(settings: try isolatedSettings())
+        model.requestedPage = .effects
+        model.requestedLibraryEffect = LibraryEffect.close(.fire).id
+        let (window, shell) = try hostingWindow(model: model)
+        defer { window.close() }
+        await settleLayout(shell, window: window)
+        XCTAssertNil(model.requestedLibraryEffect)
+        model.requestedPage = .physics
+        await settleLayout(shell, window: window)
+        XCTAssertEqual(window.title, "Kinetiq — Physics")
+        model.requestedLibraryEffect = LibraryEffect.minimize(.genie).id
+        model.requestedPage = .effects
+        await settleLayout(shell, window: window)
+        XCTAssertNil(model.requestedLibraryEffect)
+        XCTAssertEqual(window.title, "Kinetiq — Effects")
+        XCTAssertFalse(CatalogRuntime.shared.isPlaying)
+    }
+
     /// Optional real-UI artifacts. Permission failures skip only this test, never the layout coverage.
     @MainActor
     func testOptInScreenshotsOfOwnEffectsStudioAndPerformanceWindow() async throws {
@@ -251,7 +291,8 @@ final class ManagementTests: XCTestCase {
     /// AppKit may lazily register framework defaults; only Kinetiq's catalog persistence is relevant here.
     @MainActor
     private func catalogPreferences() -> NSDictionary {
-        let keys: Set<String> = ["catalogPresets.v1", "studioDocument.v1", "renderQuality"]
+        let keys: Set<String> = ["catalogPresets.v1", "studioDocument.v1", "renderQuality",
+                     "closeEffect", "openEffect", "minimizeEffect", "closeDuration"]
         return UserDefaults.standard.dictionaryRepresentation().filter { keys.contains($0.key) } as NSDictionary
     }
 

@@ -21,6 +21,7 @@ struct EffectsLibraryView: View {
     @ObservedObject private var runtime = CatalogRuntime.shared
     @State private var category: EffectCategory
     @State private var selected: EffectID
+    @State private var original: LibraryEffect?
     @State private var editing: EffectPreset
     @State private var tab: EffectDetailTab = .preview
     @State private var windowID: CGWindowID?
@@ -37,27 +38,47 @@ struct EffectsLibraryView: View {
         _category = State(initialValue: category)
         _selected = State(initialValue: first)
         _editing = State(initialValue: CatalogStore.shared.preset(first))
+        if let requested = model.requestedLibraryEffect.flatMap(LibraryEffect.find) {
+            _category = State(initialValue: requested.category)
+            if case .catalog(let id) = requested {
+                _selected = State(initialValue: id)
+                _editing = State(initialValue: CatalogStore.shared.preset(id))
+            } else { _original = State(initialValue: requested) }
+        }
     }
 
     private var descriptor: EffectDescriptor { EffectCatalog.descriptor(selected) }
-    private var entries: [EffectDescriptor] { EffectCatalog.effects.filter { $0.category == category } }
+    private var entries: [LibraryEffect] { LibraryEffect.all.filter { $0.category == category } }
+    private var selection: LibraryEffect { original ?? .catalog(selected) }
     private var submenus: [String] { Array(Set(entries.map(\.submenu))).sorted() }
 
     var body: some View {
         VStack(spacing: 0) {
             HSplitView {
                 librarySidebar.frame(minWidth: 170, idealWidth: 190, maxWidth: 240)
-                detail.frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+                Group {
+                    if let original {
+                        OriginalEffectDetailView(effect: original, model: model).id(original.id)
+                    } else { detail }
+                }
+                .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
             }
             Divider()
-            DisclosureGroup("Legacy Window Triggers", isExpanded: $legacyExpanded) {
+            DisclosureGroup("Window Trigger Assignments", isExpanded: $legacyExpanded) {
                 SetupControlsView(model: model, page: .effects).frame(height: 310)
+                if let error = model.effectError { Text(error).foregroundStyle(.red).font(.caption) }
             }
             .padding(12)
         }
         .onChange(of: category) { _, value in
-            if descriptor.category != value,
-               let first = EffectCatalog.effects.first(where: { $0.category == value }) { select(first.id) }
+            if selection.category != value,
+               let first = LibraryEffect.all.first(where: { $0.category == value }) { select(first) }
+        }
+        .onChange(of: model.requestedLibraryEffect, initial: true) { _, id in
+            if let effect = id.flatMap(LibraryEffect.find) {
+                select(effect)
+                model.requestedLibraryEffect = nil
+            }
         }
         .onChange(of: editing.duration) { _, duration in previewTime = min(previewTime, duration) }
         .onDisappear { runTask?.cancel(); runtime.stop() }
@@ -68,7 +89,7 @@ struct EffectsLibraryView: View {
 
     private var librarySidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("LIBRARY · \(EffectCatalog.effects.count) EFFECTS")
+            Text("LIBRARY · \(LibraryEffect.all.count) EFFECTS")
                 .font(.caption2.weight(.semibold)).foregroundStyle(.secondary).padding(12)
             ForEach(EffectCategory.allCases, id: \.self) { item in
                 Button {
@@ -77,7 +98,7 @@ struct EffectsLibraryView: View {
                     HStack {
                         Label(item.title, systemImage: item.symbol)
                         Spacer(minLength: 3)
-                        Text("\(EffectCatalog.effects.filter { $0.category == item }.count)")
+                        Text("\(LibraryEffect.all.filter { $0.category == item }.count)")
                             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 7)
@@ -93,17 +114,21 @@ struct EffectsLibraryView: View {
                 ForEach(submenus, id: \.self) { submenu in
                     Section(submenu) {
                         ForEach(entries.filter { $0.submenu == submenu }) { entry in
-                            Button { select(entry.id) } label: {
+                            Button { select(entry) } label: {
                                 HStack {
-                                    Text(entry.title)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(entry.title)
+                                        Text(entry.badge).font(.caption2).foregroundStyle(.secondary)
+                                    }
                                     Spacer()
-                                    if selected == entry.id { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                                    if selection == entry { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
                                 }
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .padding(.vertical, 3)
-                            .accessibilityAddTraits(selected == entry.id ? .isSelected : [])
+                            .accessibilityLabel("\(entry.title), \(entry.badge)")
+                            .accessibilityAddTraits(selection == entry ? .isSelected : [])
                         }
                     }
                 }
@@ -188,7 +213,7 @@ struct EffectsLibraryView: View {
                 Picker("Trigger", selection: $editing.trigger) {
                     ForEach(descriptor.triggers, id: \.self) { Text($0.title).tag($0) }
                 }
-                Text("Save & Apply persists this preset and trigger. Automatic catalog trigger routing is managed by the engine; existing close, open and minimize controls remain below.")
+                Text("Save & Apply persists this preset and trigger. Original effects are available in these same categories; Window Trigger Assignments below also offers Off and Random.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         case .performance:
@@ -213,7 +238,14 @@ struct EffectsLibraryView: View {
         }
     }
 
+    private func select(_ effect: LibraryEffect) {
+        category = effect.category
+        if case .catalog(let id) = effect { original = nil; select(id) }
+        else { original = effect }
+    }
+
     private func select(_ id: EffectID) {
+        original = nil
         selected = id
         editing = store.preset(id)
         previewTime = 0

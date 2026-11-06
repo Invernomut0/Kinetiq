@@ -241,9 +241,25 @@ final class CatalogRuntimeTests: XCTestCase {
             await Task.detached { process.waitUntilExit() }.value
         }
         let data = await Task.detached { output.fileHandleForReading.availableData }.value
-        let id = try XCTUnwrap(CGWindowID(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
-        try await Task.sleep(for: .milliseconds(100))
-        return (process, id)
+        let fields = String(decoding: data, as: UTF8.self).split(whereSeparator: \.isWhitespace)
+        XCTAssertEqual(fields.count, 3)
+        guard fields.count == 3 else { throw StudioUIError.message("Invalid helper window metadata.") }
+        let id = try XCTUnwrap(CGWindowID(fields[0]))
+        let expectedOrigin = CGPoint(x: try XCTUnwrap(Double(fields[1])), y: try XCTUnwrap(Double(fields[2])))
+        // AppKit's display call precedes WindowServer's native fade completion.
+        // Wait for both opacity and the child's actual AppKit origin: WindowServer
+        // can report an opaque but still sliding intermediate window position.
+        let deadline = CACurrentMediaTime() + 2
+        repeat {
+            let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] ?? []
+            if windows.contains(where: {
+                ($0[kCGWindowNumber as String] as? UInt32) == id
+                    && ($0[kCGWindowAlpha as String] as? Double ?? 0) > 0.97
+            }), WindowLocator.frame(of: id)?.origin == expectedOrigin { return (process, id) }
+            try await Task.sleep(for: .milliseconds(20))
+        } while CACurrentMediaTime() < deadline
+        throw StudioUIError.message("The owned helper did not settle at its AppKit origin.")
     }
 
     @MainActor func testSelectedHelperPreviewRequiresNoAccessibilityAndKeepsItsOrigin() async throws {
@@ -376,7 +392,8 @@ final class CatalogRuntimeTests: XCTestCase {
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
         window.displayIfNeeded()
-        FileHandle.standardOutput.write(Data("\(window.windowNumber)\n".utf8))
+        let top = NSScreen.screens.first!.frame.maxY
+        FileHandle.standardOutput.write(Data("\(window.windowNumber) \(window.frame.minX) \(top - window.frame.maxY)\n".utf8))
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + 20) { exit(0) }
     app.run()

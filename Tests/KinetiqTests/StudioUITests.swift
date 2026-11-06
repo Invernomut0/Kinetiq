@@ -17,6 +17,7 @@ final class StudioUITests: XCTestCase {
         let menu = NSMenu(title: "Catalog UI test")
         let presets = CatalogStore.shared.presets
         let document = CatalogStore.shared.document
+        let defaultsBefore = UserDefaults.standard.dictionaryRepresentation() as NSDictionary
         XCTAssertFalse(CatalogRuntime.shared.isPlaying)
         delegate.menuNeedsUpdate(menu)
         var identifiers: [String] = []
@@ -24,26 +25,34 @@ final class StudioUITests: XCTestCase {
         XCTAssertEqual(categories.map(\.title), EffectCategory.allCases.map(\.title))
         XCTAssertEqual(categories.count, 6)
         for (category, item) in zip(EffectCategory.allCases, categories) {
-            let effects = EffectCatalog.effects.filter { $0.category == category }
+            let effects = LibraryEffect.all.filter { $0.category == category }
             let groups = try XCTUnwrap(item.submenu).items
             XCTAssertEqual(groups.map(\.title), Array(Set(effects.map(\.submenu))).sorted())
             for group in groups {
                 let expected = effects.filter { $0.submenu == group.title }
                 let entries = try XCTUnwrap(group.submenu).items
-                XCTAssertEqual(entries.map(\.title), expected.map(\.title))
-                XCTAssertEqual(entries.compactMap { $0.representedObject as? String }, expected.map { $0.id.rawValue })
-                for entry in entries {
+                XCTAssertEqual(entries.map(\.title), expected.map(\.menuTitle))
+                XCTAssertEqual(entries.count, expected.count)
+                for (entry, effect) in zip(entries, expected) {
                     XCTAssertTrue(entry.target === delegate)
-                    XCTAssertEqual(entry.action, NSSelectorFromString("runCatalogEffect:"))
+                    switch effect {
+                    case .catalog(let id):
+                        XCTAssertEqual(entry.action, NSSelectorFromString("runCatalogEffect:"))
+                        XCTAssertEqual(entry.representedObject as? String, id.rawValue)
+                    default:
+                        XCTAssertEqual(entry.action, NSSelectorFromString("configureOriginalEffect:"))
+                        XCTAssertEqual(entry.representedObject as? String, effect.id)
+                    }
                     XCTAssertTrue(delegate.responds(to: try XCTUnwrap(entry.action)))
-                    identifiers.append(try XCTUnwrap(entry.representedObject as? String))
+                    identifiers.append(effect.id)
                 }
             }
         }
-        XCTAssertEqual(identifiers.count, 19)
-        XCTAssertEqual(Set(identifiers), Set(EffectCatalog.effects.map { $0.id.rawValue }))
+        XCTAssertEqual(identifiers.count, 65)
+        XCTAssertEqual(Set(identifiers), Set(LibraryEffect.all.map(\.id)))
         XCTAssertEqual(CatalogStore.shared.presets, presets)
         XCTAssertEqual(CatalogStore.shared.document, document)
+        XCTAssertEqual(UserDefaults.standard.dictionaryRepresentation() as NSDictionary, defaultsBefore)
         XCTAssertFalse(CatalogRuntime.shared.isPlaying)
     }
 
@@ -86,6 +95,10 @@ final class StudioUITests: XCTestCase {
         XCTAssertEqual(EffectCategory.allCases.map { category in
             EffectCatalog.effects.filter { $0.category == category }.count
         }, [2, 4, 4, 4, 2, 3])
+        XCTAssertEqual(LibraryEffect.all.count, 65)
+        XCTAssertEqual(EffectCategory.allCases.map { category in
+            LibraryEffect.all.filter { $0.category == category }.count
+        }, [5, 31, 14, 10, 2, 3])
     }
 
     @MainActor
