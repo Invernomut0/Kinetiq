@@ -427,6 +427,26 @@ public final class ChaosWorld {
 
     // MARK: - Events
 
+    /// One-shot window destruction: text lets go first, then a crack front releases
+    /// every remaining piece. Unlike random saver events, no intact island is left.
+    public func destroyWindow() {
+        automaticEvents = false
+        guard bodies.prefix(originalCount).contains(where: { $0.state == .attached }) else { return }
+        let attached = bodies.prefix(originalCount).filter { $0.state == .attached }
+        let center = attached.reduce(SIMD2<Float>.zero) { $0 + $1.home } / Float(attached.count)
+        let reach = attached.map { simd_distance($0.home, center) + $0.radius }.max() ?? 1
+        addCracks(at: center, radius: reach, rays: 9, rings: 2)
+        // Schedule sprites before shards so carry(from:) cannot keep letters glued to a tile.
+        for i in 0..<originalCount where bodies[i].kind != .shard && bodies[i].state == .attached {
+            schedule(i, delay: random(0.02...0.22), velocity: SIMD2(random(-45...45), random(-25...25)), spin: random(-5...5))
+        }
+        for i in 0..<originalCount where bodies[i].kind == .shard && bodies[i].state == .attached {
+            let d = bodies[i].home - center
+            schedule(i, delay: 0.4 + simd_length(d) / max(reach, 1) * 0.65 + random(0...0.1),
+                     velocity: SIMD2(d.x / max(reach, 1) * 90 + random(-25...25), random(-55...5)), spin: random(-3...3))
+        }
+    }
+
     /// Picks an event by weight and runs it; tries the others when it does not apply (nothing left of that kind).
     @discardableResult
     public func triggerEvent() -> ChaosEvent? {

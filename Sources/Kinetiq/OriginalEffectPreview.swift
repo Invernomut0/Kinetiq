@@ -5,6 +5,7 @@ import AppKit
 import CoreVideo
 import KinetiqCore
 import KinetiqEffects
+import KinetiqSaverSupport
 @preconcurrency import Metal
 import SwiftUI
 
@@ -99,6 +100,7 @@ final class OriginalPreviewRenderer {
         case .close(let close): return close.duration * settings.closeDuration
         case .entrance: return 2.5
         case .minimize(let style): return Double(style.duration) * settings.closeDuration
+        case .destruction: return DestructionScene.duration * settings.closeDuration
         case .liquid:
             let frame = source.windowID.flatMap { WindowLocator.frame(of: $0) } ?? SampleWindow.frameOnStage
             return Double(LiquidWorld.duration(for: liquidStage(frame), durationScale: Float(settings.closeDuration)))
@@ -240,6 +242,7 @@ final class OriginalPreviewRenderer {
         var scene: EffectScene?
         var deformer: (any WindowDeformer)?
         var world: LiquidWorld?
+        var destruction: ChaosRenderer?
         var catalog: StudioDocument?
         var alpha: Float = 1
         var tilesX = CatalogDragPolicy.meshTiles(requested: settings.tilesX, meshLimit: min(64, budget.meshLimit))
@@ -286,6 +289,22 @@ final class OriginalPreviewRenderer {
             deformer = model
             tilesX = CatalogDragPolicy.meshTiles(requested: 24, meshLimit: min(64, budget.meshLimit))
             tilesY = CatalogDragPolicy.meshTiles(requested: 20, meshLimit: min(64, budget.meshLimit))
+        case .destruction:
+            guard budget.allowsExpensive else { throw OriginalPreviewError.budget }
+            stage = Self.liquidStage(windowFrame)
+            let localStage = stage
+            guard let pieces = await Task.detached(priority: .userInitiated, operation: {
+                DestructionScene.build(frame: frame, windowFrame: windowFrame, stage: localStage)
+            }).value else { throw OriginalPreviewError.capture }
+            try validate(token, settings: settings)
+            let renderer = try DestructionScene.renderer(device: gpu.device, scene: pieces, size: stage.size,
+                scale: CGFloat(frame.windowRect.width / frame.pointSize.width))
+            let ticks = Int((progress * DestructionScene.duration * 120).rounded(.down))
+            for tick in 0..<ticks {
+                if tick.isMultiple(of: 24) { await Task.yield(); try validate(token, settings: settings) }
+                renderer.simulate(1 / 120)
+            }
+            destruction = renderer
         case .liquid:
             guard budget.allowsExpensive, budget.maxParticles > 0 else { throw OriginalPreviewError.budget }
             stage = Self.liquidStage(windowFrame)
@@ -333,7 +352,9 @@ final class OriginalPreviewRenderer {
         descriptor.usage = [.renderTarget, .shaderRead]
         guard let target = gpu.device.makeTexture(descriptor: descriptor),
               let command = gpu.queue.makeCommandBuffer() else { throw OriginalPreviewError.metal }
-        if let catalog {
+        if let destruction {
+            destruction.encodeFrame(commands: command, target: target, dt: 0)
+        } else if let catalog {
             try gpu.encodeCatalog(catalog, time: progress * catalog.duration, source: source, windowFrame: windowFrame,
                                   stage: stage, target: target, descriptor: descriptor, budget: budget, command: command)
         } else {

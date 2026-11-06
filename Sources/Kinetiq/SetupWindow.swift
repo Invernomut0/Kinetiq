@@ -311,6 +311,7 @@ struct SetupControlsView: View {
                     Text("Off").tag(CloseEffectChoice.off.rawValue)
                     Text("Random").tag(CloseEffectChoice.random.rawValue)
                     Text("Liquid").tag(CloseEffectChoice.liquid.rawValue)
+                    Text(LibraryEffect.destruction.title).tag(CloseEffectChoice.destruction.rawValue)
                     Divider()
                     ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 }
@@ -386,11 +387,12 @@ struct SetupControlsView: View {
                             Text("Off").tag(CloseEffectChoice.off.rawValue)
                             Text("Random").tag(CloseEffectChoice.random.rawValue)
                             Text("Liquid").tag(CloseEffectChoice.liquid.rawValue)
+                            Text(LibraryEffect.destruction.title).tag(CloseEffectChoice.destruction.rawValue)
                             Divider()
                             ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                         }
                         .labelsHidden()
-                        .frame(width: 150)
+                        .frame(width: 190)
                     }
                 }
                 HStack {

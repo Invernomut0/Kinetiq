@@ -48,7 +48,7 @@ final class OriginalEffectLibraryTests: XCTestCase {
         try store.saveDocument()
     }
 
-    func testEveryLegacyEnumHasExactPlacementIdentityTitleAndTrigger() throws {
+    func testEveryOriginalIncludingDestructionHasExactPlacementIdentityTitleAndTrigger() throws {
         let closeGroups: [(EffectCategory, String, [CloseEffect])] = [
             (.destruction, "Fragmentation", [.brokenGlass, .mushroom, .tRexAttack]),
             (.destruction, "Dissolution", [.doom, .energizeA, .energizeB, .fire, .incinerate, .snapOfDisintegration, .wisps]),
@@ -112,21 +112,29 @@ final class OriginalEffectLibraryTests: XCTestCase {
         XCTAssertEqual(liquid.triggers, [.close, .minimize])
         XCTAssertEqual(liquid.badge, "Original Close / Minimize")
         XCTAssertEqual(liquid.menuTitle, "Liquid — Original Close / Minimize…")
+        let destruction = LibraryEffect.destruction
+        XCTAssertEqual(destruction.id, "destruction")
+        XCTAssertEqual(destruction.title, "Window Destruction")
+        XCTAssertEqual(destruction.category, .destruction)
+        XCTAssertEqual(destruction.submenu, "Fragmentation")
+        XCTAssertEqual(destruction.triggers, [.close])
+        XCTAssertEqual(destruction.badge, "Original Close")
+        XCTAssertEqual(destruction.menuTitle, "Window Destruction — Original Close…")
     }
 
-    func testAll65EffectsRemainUniqueInSixPermanentCategoriesAndCatalogMetadataIsUnchanged() {
+    func testAll66EffectsRemainUniqueInSixPermanentCategoriesAndCatalogMetadataIsUnchanged() {
         XCTAssertEqual(LibraryEffect.all, EffectID.allCases.map(LibraryEffect.catalog)
                        + CloseEffect.allCases.map(LibraryEffect.close)
                        + WobbleEntrance.allCases.map(LibraryEffect.entrance)
-                       + DockMorphStyle.allCases.map(LibraryEffect.minimize) + [.liquid])
-        XCTAssertEqual(LibraryEffect.all.count, 65)
-        XCTAssertEqual(Set(LibraryEffect.all).count, 65)
-        XCTAssertEqual(Set(LibraryEffect.all.map(\.id)).count, 65)
-        XCTAssertEqual(Set(LibraryEffect.all.map(\.menuTitle)).count, 65)
+                       + DockMorphStyle.allCases.map(LibraryEffect.minimize) + [.liquid, .destruction])
+        XCTAssertEqual(LibraryEffect.all.count, 66)
+        XCTAssertEqual(Set(LibraryEffect.all).count, 66)
+        XCTAssertEqual(Set(LibraryEffect.all.map(\.id)).count, 66)
+        XCTAssertEqual(Set(LibraryEffect.all.map(\.menuTitle)).count, 66)
         XCTAssertEqual(EffectCategory.allCases, [.windowMotion, .transitions, .destruction, .spatial, .physics, .workspace])
         XCTAssertEqual(EffectCategory.allCases.map { category in
             LibraryEffect.all.filter { $0.category == category }.count
-        }, [5, 31, 14, 10, 2, 3])
+        }, [5, 31, 15, 10, 2, 3])
         for effect in LibraryEffect.all { XCTAssertEqual(LibraryEffect.find(effect.id), effect) }
         for id in ["", "genie", "morph", "portal", "ripple", "close:unknown", "catalog:liquid"] {
             XCTAssertNil(LibraryEffect.find(id), id)
@@ -155,10 +163,12 @@ final class OriginalEffectLibraryTests: XCTestCase {
     }
 
     @MainActor
-    func testExistingRawPreferencesReloadWithoutMigrationOrCatalogWrites() async throws {
+    func testExistingAndDestructionRawPreferencesReloadWithoutMigrationOrCatalogWrites() async throws {
         let standardBefore = UserDefaults.standard.dictionaryRepresentation() as NSDictionary
         let defaults = try isolatedDefaults()
-        let closeRaw = CloseEffect.allCases.map(\.rawValue) + ["off", "random", "liquid"]
+        XCTAssertEqual(CloseEffectChoice.destruction.rawValue, "destruction")
+        XCTAssertEqual(CloseEffectChoice(rawValue: "destruction"), .destruction)
+        let closeRaw = CloseEffect.allCases.map(\.rawValue) + ["off", "random", "liquid", "destruction"]
         let openRaw = WobbleEntrance.allCases.map { "wobble:" + $0.rawValue } + ["off", "random"]
         let minimizeRaw = DockMorphStyle.allCases.map { "morph:" + $0.rawValue } + ["off", "random", "liquid"]
         for (key, values) in [("closeEffect", closeRaw), ("openEffect", openRaw), ("minimizeEffect", minimizeRaw)] {
@@ -180,7 +190,7 @@ final class OriginalEffectLibraryTests: XCTestCase {
     }
 
     @MainActor
-    func testApplyingEveryOriginalAndBothLiquidTriggersPreservesUnrelatedDataAndRestoresEffectiveSelection() async throws {
+    func testApplyingAll48OriginalTriggerChoicesIncludingDestructionPreservesUnrelatedDataAndRestoresEffectiveSelection() async throws {
         let standardBefore = UserDefaults.standard.dictionaryRepresentation() as NSDictionary
         var applications = 0
         for effect in LibraryEffect.all {
@@ -207,6 +217,7 @@ final class OriginalEffectLibraryTests: XCTestCase {
                 let raw: String
                 switch effect {
                 case .close(let value): key = "closeEffect"; raw = value.rawValue
+                case .destruction: key = "closeEffect"; raw = "destruction"
                 case .entrance(let value): key = "openEffect"; raw = "wobble:" + value.rawValue
                 case .minimize(let value): key = "minimizeEffect"; raw = "morph:" + value.rawValue
                 case .liquid: key = trigger == .close ? "closeEffect" : "minimizeEffect"; raw = "liquid"
@@ -245,7 +256,7 @@ final class OriginalEffectLibraryTests: XCTestCase {
                 applications += 1
             }
         }
-        XCTAssertEqual(applications, 47)
+        XCTAssertEqual(applications, 48)
         XCTAssertEqual(UserDefaults.standard.dictionaryRepresentation() as NSDictionary, standardBefore)
     }
 

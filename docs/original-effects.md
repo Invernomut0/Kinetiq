@@ -1,24 +1,36 @@
-# Original (built-in) effects — v0.3.2 (build 37)
+# Original (built-in) effects — v0.3.3 (build 38)
 
 Every prior effect is discoverable by the window event it reacts to: the menu bar's **Open**, **Close** and **Minimize** submenus and the matching Effects sections list each built-in next to the compatible Studio presets, with a live preview and a **Use when…** button. The six legacy categories below remain as metadata (they group the **Try an Effect** menu and the Studio's Add Layer menu). Nothing here replaces the original engines, migrates preferences or expands Studio's JSON schema.
 
-`Sources/Kinetiq/LibraryEffect.swift` is the shared discovery and classification source: **65 entries = 19 Studio + 30 original close shaders + 6 original entrances + 9 original minimize morphs + Liquid**. Liquid is one entry supporting two triggers, not two effects. The 19 Studio entries remain unchanged; see the [README catalog table](../README.md#effects-library-65-effects-six-permanent-categories) and [Studio guide](animation-studio.md).
+`Sources/Kinetiq/LibraryEffect.swift` is the shared discovery and classification source: **66 entries = 19 Studio + 30 original close shaders + 6 original entrances + 9 original minimize morphs + Liquid + Window Destruction**. Liquid is one entry supporting two triggers, not two effects; Window Destruction supports Close only. The 19 Studio entries remain unchanged; see the [README catalog table](../README.md#effects-library-66-effects-organized-by-what-you-do) and [Studio guide](animation-studio.md).
 
 | Permanent category | Studio | Originals | Combined |
 |---|---:|---:|---:|
 | Window Motion | 2 | 3 | 5 |
 | Transitions | 4 | 27 | 31 |
-| Destruction | 4 | 10 | 14 |
+| Destruction | 4 | 11 | 15 |
 | Spatial Effects | 4 | 6 | 10 |
 | Physics | 2 | 0 | 2 |
 | Workspace & Overview | 3 | 0 | 3 |
-| **Total** | **19** | **46** | **65** |
+| **Total** | **19** | **47** | **66** |
 
 **Off** and **Random** live in each event's section header and menu bar submenu; the shared close/minimize duration is under **Adjust** on any built-in's page. Existing spring/mesh, glide, tilt, focus glow, drop ripple, maximize and resize controls remain on **Physics** unchanged.
 
 ## Complete original-effects list
 
-The following tables enumerate all **46 originals**, with the exact category/submenu placement in `LibraryEffect.swift`. Preference values are the existing `Settings` raw IDs, not Studio JSON effect IDs. Discovery IDs use `close:<CloseEffect.rawValue>`, `open:<WobbleEntrance.rawValue>`, `minimize:<DockMorphStyle.rawValue>` and `liquid`; those discovery prefixes do not replace the preference formats below.
+The following tables enumerate all **47 originals**, with the exact category/submenu placement in `LibraryEffect.swift`. Preference values are `Settings` raw IDs, not Studio JSON effect IDs. Discovery IDs use `close:<CloseEffect.rawValue>`, `open:<WobbleEntrance.rawValue>`, `minimize:<DockMorphStyle.rawValue>`, `liquid` and `destruction`; those discovery prefixes do not replace the preference formats below.
+
+### Original Close — Window Destruction
+
+| Effect | Category | Submenu | Supported triggers | Preference / discovery value |
+|---|---|---|---|---|
+| Window Destruction | Destruction | Fragmentation | Close only | `destruction` |
+
+`LibraryEffect.destruction` is a distinct built-in; `CloseEffectChoice.destruction` stores the raw value `destruction` in the global close choice or a per-app close rule. It is not a 31st shader, a Studio JSON layer, an entrance or a minimize morph. Select it from the menu bar's **Close** submenu, the library's **When a window closes** section with **Use when a window closes**, or **Per-App Close Effects** in Rules. **Off** is unchanged; **Random** still selects only among the 30 shaders, and **Fire** remains the default. Studio Close ownership keeps its existing precedence.
+
+Window Destruction shares `UIObjectExtractor`, `ChaosScene`, `ChaosWorld.destroyWindow()` and `ChaosRenderer` with the screen saver, but uses transparent `oneShot` rendering: **no wallpaper, no restoring/rebuilding scene loop**. Glyphs and icons release over **0.02–0.22 normalized seconds**, shards over **0.4–1.15**. Gravity, bouncing and piling lead into fading with a **three-normalized-second piece lifetime**. The complete preview timeline is **six seconds at 1×**; release, simulation lifetime and timeline scale with the shared **0.25×–3×** duration multiplier.
+
+Native playback has a floor at each display's full bottom edge, behind the Dock, and click-through overlays. Admission allows at most **two source captures including pending work**, each capped at **32,000,000 pixels / 16384 per dimension**; per-display extraction is bounded to **1200 glyphs, 160 other objects and 256 target tiles**. It keeps captures in memory, writes no images to disk, does not activate the screen saver and leaves the existing saver behavior/settings unchanged. Preview uses a local floor, makes no AX changes and leaves the real window untouched. The expensive-effects gate refuses playback instead of substituting an animation.
 
 ### Original Close — 30 shaders
 
@@ -100,7 +112,7 @@ Since v0.3.2, Liquid's final pool stays opaque and drains physically off the bot
 
 1. In **Effects**, open the section for the event (*When a window opens*, *When a window closes*, *When you minimize*) and select the effect, or pick it straight from the matching menu bar submenu (which applies it immediately).
 2. The preview loops at once on the sample window; switch the source menu to a real eligible window to see it on your own content. Screen Recording and an enabled engine are required for real captures. The panel reports capture, permission, Metal and budget errors rather than displaying a fabricated demo.
-3. Press **Use when a window closes**, **Use when a window opens** or **Use when you minimize**. Liquid has independent Close and Minimize buttons; activating one does not assign the other. The active one reads **Active when…** and offers **Turn off**.
+3. Press **Use when a window closes**, **Use when a window opens** or **Use when you minimize**. Window Destruction offers Close only. Liquid has independent Close and Minimize buttons; activating one does not assign the other. The active one reads **Active when…** and offers **Turn off**.
 
 Selecting, previewing or scrubbing never changes assignments. Under **Adjust**, close and minimize effects share the 0.25×–3× duration multiplier; entrances link to Physics. **More** links to Rules (per-app overrides, exclusions) and Performance.
 
@@ -114,6 +126,7 @@ Selecting, previewing or scrubbing never changes assignments. Under **Adjust**, 
 | Open entrances | `WobbleEntrance.apply` on `KinetiqModel`, stepped at 120 Hz | Original spring/mesh motion, not Studio Ripple/Wobbly substitution; no AX movement. |
 | Minimize morphs | `DockMorphDeformer` | Local preview destination, **not the actual Dock**; no native minimize or Dock preference change from previewing. |
 | Liquid | `LiquidWorld` with `LiquidEffectRenderer` | Retained local floor stage, **no actual desktop obstacles**; scrubbing covers the full geometry-dependent melt/pool/drain lifecycle, scaled by shared duration. |
+| Window Destruction | `UIObjectExtractor` → `ChaosScene` → `ChaosWorld.destroyWindow()` → transparent `ChaosRenderer` in `oneShot` mode | Local floor and complete six-second timeline at 1×; no wallpaper, AX movement, actual close or screen saver activation. |
 
 Previews never move, park, close or minimize a live window. Liquid's local stage is retained so falling/pooling fluid is not cropped to the now-empty source rectangle. It does not capture or simulate other desktop windows as obstacles. These panel boundaries do not change native playback: actual minimize still uses the real Dock path, and native Liquid still uses live window-top obstacles and per-display floors as described in the [README](../README.md#liquid-close-and-minimize-v0131).
 
@@ -123,15 +136,21 @@ Previews never move, park, close or minimize a live window. Liquid's local stage
 - Each source capture is capped at **32,000,000 pixels and 16384 pixels per dimension**, including capture/shadow allocation checks. Real target eligibility and unchanged frame are checked around capture/render completion.
 - At most **two preview requests are in flight** per renderer. New work invalidates stale generations; cancellation, hidden/closed detail panels and disabled effects prevent stale results from being displayed. Bounded simulation loops yield and check cancellation.
 - The captured pixel buffer, IOSurface/CoreVideo mapping and `CVMetalTexture` backing remain retained through committed GPU command completion, even if the requesting task disappears or is superseded. Captures stay in memory, not Studio JSON or a new disk cache.
-- Mesh/particle/texture budgets still apply. When `allowsExpensive` is false, **original close shader and Liquid previews refuse playback**; there is no fallback to Glide or another misleading substitute. This preview rule does not redefine native engine lifecycle behavior.
+- Mesh/particle/texture budgets still apply. When `allowsExpensive` is false, **original close shader, Liquid and Window Destruction previews refuse playback**; there is no fallback to Glide or another misleading substitute. This preview rule does not redefine native engine lifecycle behavior.
 
-## Native playback remains unchanged
+## Native trigger lifecycle remains unchanged
 
 Close observes actual window disappearance/fade after pre-capture; refused closes, tab closes, hiding and Space changes are not window-close animations. Original Open keeps the jelly entrance lifecycle after a new standard window stabilizes. Minimize intercepts the yellow button only; capture/setup failure replays the native click, and **⌘M / Dock minimization remain native**. Explicitly enabling native minimize continues to synchronize the Dock animation preference as before; merely opening or previewing an original does not.
 
 ## Verification status
 
-**Current v0.3.2 / build 37:** **287 release tests: 146 Core + 36 Effects + 105 app; 0 failures, 0 skips**, including real-capture bottom-edge drainage and a completely empty final preview. Actual material remains opaque during partial drainage, and final particles have moved below the complete kernel-support margin. Universal app/saver signatures and launch were verified; Quick Look/Finder refreshed. Log: `/tmp/kinetiq-v032-acceptance-direct.log`; build: `/tmp/kinetiq-v032-final-build.log`. See the [README](../README.md#building) for current line coverage and the preserved optical/runtime regression coverage.
+**Current v0.3.3 / build 38:** final release suite passed **304 tests: 122 app + 36 Effects + 146 Core; 0 failures, 0 skips** (`/tmp/kinetiq-v033-acceptance.log`), with both UI and Destruction opt-in dumps. The real README capture-to-Metal contact sheet was visually inspected: text releases before shards, pieces pile up, the stage clears at six seconds at 1× and initial border clipping is correct. Real test-window snapshots are under `/tmp/kinetiq-v033-ui` and `/tmp/kinetiq-v033-destruction`, not sample-window illustrations or distributed artifacts. Normal playback remains memory-only; these disk images require test opt-in.
+
+Final build exit 0 (`/tmp/kinetiq-v033-final-build.log`); app and embedded saver each verified universal x86_64/arm64 with `lipo` and `codesign --verify --deep --strict`. Packaged 0.3.3/build 38 launched from `build/Kinetiq.app` (PID 56054 at verification); Quick Look cache and Finder refreshed. [TODO 19](../TODO.md) is **Done**.
+
+LLVM release **line** coverage (`/tmp/kinetiq-v033-coverage.txt`, not Regions): `DestructionEffectPlayer.swift` **95.95%**, `OriginalEffectPreview.swift` **92.49%**, `LibraryEffect.swift` **98.49%**, `ChaosWorld.swift` **99.20%**, `ChaosRenderer.swift` **88.86%**. This is not 100% coverage or Metal shader branch coverage, nor proof of every native failure path/display configuration. Local-floor preview remains capture-only; only native Close observes actual closure. Window Destruction adds no Studio layer/schema change or screen saver behavior change.
+
+**Historical v0.3.2 / build 37:** **287 release tests: 146 Core + 36 Effects + 105 app; 0 failures, 0 skips**, including real-capture bottom-edge drainage and a completely empty final preview. Actual material remains opaque during partial drainage, and final particles have moved below the complete kernel-support margin. Universal app/saver signatures and launch were verified; Quick Look/Finder refreshed. Log: `/tmp/kinetiq-v032-acceptance-direct.log`; build: `/tmp/kinetiq-v032-final-build.log`. See the [README](../README.md#building) for historical line coverage and the preserved optical/runtime regression coverage.
 
 **Historical v0.2.1 / build 34:** the final release suite passed **277 tests: 144 Core + 36 Effects + 97 app; 0 failures, 0 skips**. The app suite includes **11 Management + 7 OriginalEffectLibrary + 8 OriginalEffectPreview + 10 StudioUI + 61 other existing tests**. All 30 original shaders, six entrances, nine minimize morphs and Liquid passed genuine real-capture tests, including the README Liquid regression. All 65 effect navigation requests are routed and consumed, including repeated navigation, after fixing `@Published` reentrancy with `onChange(initial: true)`. Final log: `/tmp/kinetiq-v021-suite.log`; opt-in UI captures: `/tmp/kinetiq-v021-ui`.
 

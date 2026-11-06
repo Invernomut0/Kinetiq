@@ -263,7 +263,7 @@ final class CloseEffectTrigger {
         let assigned = CatalogStore.shared.assigned(to: .close)
         let choice = settings.closeEffect(forBundleID: app.bundleIdentifier)
         let effect = player.effect(for: choice)
-        guard assigned != nil || choice == .liquid || effect != nil else { return }
+        guard assigned != nil || choice == .liquid || choice == .destruction || effect != nil else { return }
         let windowFrame = watch.lastFrame
         let pointer = CGEvent(source: nil)?.location ?? CGPoint(x: windowFrame.minX + 24, y: windowFrame.minY + 22)
         let speed = settings.closeDuration
@@ -278,6 +278,17 @@ final class CloseEffectTrigger {
                 _ = CatalogRuntime.shared.playCaptured(frame, windowFrame: windowFrame, preset: assigned)
             } else if choice == .liquid {
                 liquid?.play(frame, windowFrame: windowFrame, durationScale: speed)
+            } else if choice == .destruction {
+                Task {
+                    guard generation == token, enabled, !isBusy(),
+                          CatalogStore.shared.assigned(to: .close) == nil,
+                          settings.closeEffect(forBundleID: app.bundleIdentifier) == choice else { return }
+                    await player.destructionPlayer?.play(frame, windowFrame: windowFrame, durationScale: speed) {
+                        generation == token && enabled && !isBusy()
+                            && CatalogStore.shared.assigned(to: .close) == nil
+                            && settings.closeEffect(forBundleID: app.bundleIdentifier) == choice
+                    }
+                }
             } else if let effect {
                 player.play(frame, windowFrame: windowFrame, effect: effect, pointer: pointer, durationScale: speed, nativeFade: fading)
             }

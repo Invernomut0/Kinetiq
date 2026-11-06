@@ -232,7 +232,7 @@ final class Settings {
         set { defaults.set(newValue, forKey: "tiltOnDrag") }
     }
 
-    /// Liquid, a Burn-My-Windows shader, a random shader, or none.
+    /// Liquid, Window Destruction, a Burn-My-Windows shader, a random shader, or none.
     var closeEffect: CloseEffectChoice {
         get { CloseEffectChoice(rawValue: defaults.string(forKey: "closeEffect")) }
         set { defaults.set(newValue.rawValue, forKey: "closeEffect") }

@@ -5,6 +5,22 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] — Build 38
+
+### Added
+
+- **Window Destruction**, a Close-only built-in available in the global Close menu, per-app close rules and the Effects library with **Use when a window closes**. `LibraryEffect.destruction` and `CloseEffectChoice.destruction` use raw ID `destruction`, with Destruction / Fragmentation metadata.
+- A shared **66-entry** manifest: 19 unchanged Studio effects + 47 originals (30 close shaders, 6 entrances, 9 minimize morphs, Liquid and Window Destruction). Combined category totals are **5 / 31 / 15 / 10 / 2 / 3**. Off and the 30-shader close Random pool are unchanged; Fire remains the default. Studio schema 1 and its layer model are unchanged.
+- Captured-window destruction through shared `UIObjectExtractor`, `ChaosScene`, `ChaosWorld.destroyWindow()` and transparent `ChaosRenderer` `oneShot` rendering, without wallpaper or a restoring/rebuilding scene loop. Glyphs/icons release over 0.02–0.22 normalized seconds, shards over 0.4–1.15; gravity, bounce and piling end in a fade with a three-normalized-second lifetime. The complete preview timeline is six seconds at 1×, scaled by the shared 0.25×–3× duration multiplier.
+- Per-display desktop floors behind the Dock and click-through overlays; at most two source captures including pending work, each at most 32 megapixels / 16384 per dimension, with 1200 glyphs, 160 other objects and 256 target tiles per display. Sample/real-window previews use a local floor without AX movement or touching the live window; the expensive-effects gate refuses playback rather than substituting another effect.
+- Memory-only Window Destruction captures: no disk images, screen saver activation or changes to the existing saver behavior/settings. Updated English guides and completed TODO 19 release acceptance.
+
+### Verification
+
+- Final release suite: **304 tests — 122 app + 36 Effects + 146 Core; 0 failures, 0 skips** (`/tmp/kinetiq-v033-acceptance.log`), with both native UI and Destruction opt-in dumps. Real README capture-to-Metal contact sheet visually inspected: text before shards, piling, clear at six seconds at 1× and correct initial border clipping. Real test-window snapshots are under `/tmp/kinetiq-v033-ui` and `/tmp/kinetiq-v033-destruction`, not fabricated sample images or distributed artifacts; normal playback remains memory-only.
+- Final build exit 0 (`/tmp/kinetiq-v033-final-build.log`); app and embedded saver each verified universal x86_64/arm64 with `lipo` and `codesign --verify --deep --strict`. Packaged 0.3.3/build 38 launched from `build/Kinetiq.app` (PID 56054 at verification); Quick Look cache and Finder refreshed.
+- LLVM release **line** coverage (`/tmp/kinetiq-v033-coverage.txt`, not Regions): DestructionEffectPlayer 95.95%, OriginalEffectPreview 92.49%, LibraryEffect 98.49%, ChaosWorld 99.20%, ChaosRenderer Swift 88.86%. Not 100%, not Metal shader branch coverage, and not proof of every native failure path/display configuration. Local-floor previews do not mutate windows; actual Close retains its native lifecycle. Studio schema/layers and screen saver behavior are unchanged. Prior release results below remain historical evidence.
+
 ## [0.3.2] — Build 37
 
 ### Changed
