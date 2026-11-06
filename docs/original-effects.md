@@ -1,6 +1,6 @@
-# Original effects — v0.2.1 (build 34)
+# Original (built-in) effects — v0.3.0 (build 35)
 
-This correction restores direct discovery of every prior effect in the same six permanent categories used by the native NSMenu and Effects library. It does not replace the original engines, migrate preferences or expand Studio's JSON schema.
+Every prior effect is discoverable by the window event it reacts to: the menu bar's **Open**, **Close** and **Minimize** submenus and the matching Effects sections list each built-in next to the compatible Studio presets, with a live preview and a **Use when…** button. The six legacy categories below remain as metadata (they group the **Try an Effect** menu and the Studio's Add Layer menu). Nothing here replaces the original engines, migrates preferences or expands Studio's JSON schema.
 
 `Sources/Kinetiq/LibraryEffect.swift` is the shared discovery and classification source: **65 entries = 19 Studio + 30 original close shaders + 6 original entrances + 9 original minimize morphs + Liquid**. Liquid is one entry supporting two triggers, not two effects. The 19 Studio entries remain unchanged; see the [README catalog table](../README.md#effects-library-65-effects-six-permanent-categories) and [Studio guide](animation-studio.md).
 
@@ -14,7 +14,7 @@ This correction restores direct discovery of every prior effect in the same six 
 | Workspace & Overview | 3 | 0 | 3 |
 | **Total** | **19** | **46** | **65** |
 
-Originals appear directly in those categories, not hidden in the former Legacy Window Triggers disclosure. Its replacement, **Window Trigger Assignments**, retains the global Close/Open/Minimize pickers, **Off**, **Random** and shared duration. Existing spring/mesh, glide, tilt, focus glow, drop ripple, maximize and resize controls remain on **Physics** unchanged.
+**Off** and **Random** live in each event's section header and menu bar submenu; the shared close/minimize duration is under **Adjust** on any built-in's page. Existing spring/mesh, glide, tilt, focus glow, drop ripple, maximize and resize controls remain on **Physics** unchanged.
 
 ## Complete original-effects list
 
@@ -94,35 +94,13 @@ All rows support **Minimize**, using the original deformer. Values are stored in
 
 Liquid is distinct from Studio **Liquid Morph**. Original Morph, Portal, Ripple and Genie also remain distinct from similarly named Studio entries; badges, menu suffixes and discovery IDs identify the actual engine.
 
-## Open, preview and explicitly assign
+## Preview and use a built-in effect
 
-1. Select an Original entry directly in its Effects category, or choose its native menu item. Labels are **Title — Original Close…**, **Title — Original Open…**, **Title — Original Minimize…**, or **Liquid — Original Close / Minimize…**. The action opens that exact library detail, not a Studio namesake, and does not run or silently assign anything.
-2. Choose a real eligible window in **Preview**, scrub progress and use **Recapture** as needed. Screen Recording and an enabled engine are required. The panel reports capture, permission, Metal and budget errors rather than displaying a fabricated demo.
-3. Use **Use for Close**, **Use for Open** or **Use for Minimize** to activate the supported native action. Liquid has independent Close and Minimize buttons; activating one does not assign the other. An already selected action shows **Active for Close/Open/Minimize**.
+1. In **Effects**, open the section for the event (*When a window opens*, *When a window closes*, *When you minimize*) and select the effect, or pick it straight from the matching menu bar submenu (which applies it immediately).
+2. The preview loops at once on the sample window; switch the source menu to a real eligible window to see it on your own content. Screen Recording and an enabled engine are required for real captures. The panel reports capture, permission, Metal and budget errors rather than displaying a fabricated demo.
+3. Press **Use when a window closes**, **Use when a window opens** or **Use when you minimize**. Liquid has independent Close and Minimize buttons; activating one does not assign the other. The active one reads **Active when…** and offers **Turn off**.
 
-Opening the detail, switching its tabs, choosing a capture or scrubbing a preview never changes assignments. The five tabs are:
-
-| Tab | Original behavior |
-|---|---|
-| Preview | Real selected capture, progress scrubber and Recapture; panel-only rendering. |
-| Parameters | Existing shared duration for close/minimize; entrances link to Physics settings. Shader-specific uniforms retain compiled defaults. |
-| Triggers | Supported actions, current selection and any Studio owner that explicit activation will release. |
-| Performance | Actual original rendering path and shared quality/resource diagnostics. |
-| Reset | Reset Shared Duration to 1×; entrances also link to Physics. Does not reset assignments, per-app rules or exclusions. |
-
-### Settings, ownership and per-app rules
-
-Explicit activation writes the existing `Settings.closeEffect`, `Settings.openEffect` or `Settings.minimizeEffect` raw value. `OriginalEffectAssignment` first calls `CatalogStore.releaseAssignment(to:)` for **only that action**. The former Studio owner's trigger becomes Manual; its preset parameters and tracks are preserved, as are every other action's owner and the Studio document. A release failure is surfaced rather than silently replacing preferences.
-
-No duplicate legacy preset store or automatic preference migration is introduced. Existing choices survive merely opening the app or library. The footer's global pickers also release only the corresponding catalog owner when a choice is explicitly selected. **Off** and **Random** remain available: Close Random chooses among the 30 shaders, Open among the six entrances, and Minimize among the nine morphs; Liquid is not silently added to those random pools.
-
-Per-app close choices and exclusions stay in **Rules** and are not cleared by original activation. A per-app close choice, including Off or Liquid, can still override the newly chosen **global original** close effect. A subsequently saved explicit Studio Close owner takes precedence over global/per-app original close choices until released; exclusions still apply.
-
-### Existing controls, not new JSON parameters
-
-Original close and minimize effects share `Settings.closeDuration`: **0.25×–3×, default 1×**. Editing it takes effect immediately across those originals; **Reset Shared Duration to 1×** changes only that shared value. It is not a per-effect preset duration. Original shader-specific material uniforms retain their compiled defaults and existing runtime context; this correction does not expose them as new editable per-effect JSON controls.
-
-Original entrances keep the existing Physics spring, friction, speedup, mass and mesh settings. Existing maximize, resize, shadow, glide/bounce, 3D tilt, focus glow and drop ripple settings remain on Physics unchanged. The **19 Studio IDs, schema-1 preset/document validation and layer model are unchanged**. Originals cannot be inserted as Studio JSON layers, imported as new Studio effect IDs or given Studio parameter tracks by this discovery wrapper.
+Selecting, previewing or scrubbing never changes assignments. Under **Adjust**, close and minimize effects share the 0.25×–3× duration multiplier; entrances link to Physics. **More** links to Rules (per-app overrides, exclusions) and Performance.
 
 ## Real preview engines and safety boundaries
 

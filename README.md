@@ -6,7 +6,7 @@ Kinetiq is a native menu bar app, forked from [Wobbly](https://github.com/jsgrrc
 
 https://github.com/user-attachments/assets/40bc5530-d253-4d47-bc57-3eccdac83d70
 
-**v0.2.1 · build 34** corrects effect discovery: all **65 effects** (19 Studio + 46 originals) appear directly in the same six categories in the native menu and Effects library. Originals retain their existing engines and settings; they are not new Studio layers. See the [original-effects guide](docs/original-effects.md) for the complete restored list and assignment behavior, and the [Studio guide](docs/animation-studio.md) for the unchanged editor and JSON schema. Final verification passed **277 tests with no failures or skips**; the universal app and embedded screen saver passed packaging and strict signature checks.
+**v0.3.0 · build 35** makes Kinetiq understandable at a glance. The menu bar and the Effects library are organized by **what you do** — drag, open, close, minimize — and every one of the **65 effects** plays a live, looping preview on a built-in sample window the moment you select it, with one button to use it for that event. Wobbly previews replay the real spring model under a scripted drag. The Animation Studio explains itself with a short guide, an example document and a “Use It” step. See the [Studio guide](docs/animation-studio.md) and the [original-effects guide](docs/original-effects.md).
 
 ## Installing
 
@@ -19,80 +19,77 @@ Download the DMG from Releases and drag Kinetiq to `/Applications`. The app is n
 - **Drag from the title bar** as usual, or
 - **Hold the shortcut** (⌃⌘ by default) and drag a window from anywhere.
 
-The menu bar provides **Kinetiq Enabled**, **Drag from Title Bar**, the **Shortcut** modifier, six permanent effect categories, **Render Quality**, **Stop & Restore Windows** and **Animation Studio…**. Choosing a **Studio** effect runs its saved preset on an eligible real window of the frontmost app; it does not assign an automatic trigger. Original items use **Title — Original Close…**, **Title — Original Open…**, **Title — Original Minimize…** or **Liquid — Original Close / Minimize…** and open that exact library detail without running or assigning it. The **Setup** management window opens on launch and can be reopened from **Setup…** (⌘,) or by opening the app again. It has a collapsible native sidebar, remembers its window size and follows the macOS light/dark appearance. Closing it leaves the menu bar engine running, but stops active Studio/library playback. Existing original controls apply immediately; catalog edits require **Save & Apply**, and Studio documents require **Save Document**.
+The menu bar is organized by window event. **Drag**, **Open**, **Close** and **Minimize** each show their current choice in the title (for example “Close: Fire”) and open a submenu with **Off**, **Random**, every compatible built-in effect and the compatible **Studio presets**; choosing an item applies it immediately and the checkmark moves. The Drag submenu also holds the wobble preset (Subtle…Extreme) and a **Wobbly (classic)** entry that releases any Studio drag preset. **Try an Effect on the Front Window** plays a Studio effect once on the frontmost app's window and puts it back; **Stop & Restore Windows** cancels any playback. **Render Quality**, **Effects Library…** (⌘E), **Animation Studio…**, **Settings…** (⌘,) and **Quit** complete the menu. Title-bar drag and the shortcut modifier live on the Settings page. The management window opens on launch and can be reopened from the menu or by opening the app again; closing it leaves the engine running but stops active library/Studio playback.
 
 ### Management dashboard
 
-There are **12 pages**: the original eight destinations (App Rules is now **Rules**) plus Animation Studio, Layouts, Workspaces and Performance.
+There are **11 pages**, grouped into everyday pages (Overview, Effects, Animation Studio, Physics, Layouts, Rules, Screen Saver) and a **System** group (Performance, Windows, Diagnostics, Settings).
 
 The dashboard supports a minimum content area of **960 × 700 points**, excluding native window chrome.
 
 | Page | Controls and information |
 |---|---|
-| **Overview** | Actual engine and permission status, enable/pause switch, shortcuts to Effects and Physics, permission requests and refresh. Pausing restores windows involved in active effects. |
-| **Windows** | Read-only snapshot of normal-level on-screen windows: owning app, title when available, and dimensions. Refresh manually for an updated snapshot. This page never moves or captures a window. |
-| **Effects** | All 65 entries in six categories, with Studio/Original badges and Preview, Parameters, Triggers, Performance and Reset tabs. Original details offer explicit Use for Close/Open/Minimize actions. The Window Trigger Assignments footer retains global choices, Off, Random and shared duration. |
-| **Animation Studio** | Captured-window preview, transport, timeline, layers, parameter tracks, keyframes, evaluated curves, undo/redo and preset/document JSON. |
-| **Physics** | Preset, friction, spring, speedup, mass, mesh density, maximize/resize effects, shadow, glide, tilt, focus glow and drop ripple. |
-| **Layouts** | Run Orbit or Exposé 3D captured-window overviews; not permanent native window layouts. |
-| **Workspaces** | Run Cube, Orbit or Exposé 3D on the current Space; no native Space switching. |
-| **Rules** | Per-app legacy close-effect overrides and exclusions. Add running apps or choose installed apps from disk. |
-| **Performance** | Five quality choices, completed Metal GPU timings and actual resource budgets; no inferred GPU utilization. |
-| **Diagnostics** | Actual Metal renderer and event-tap state, permission grants, physics preset, mesh, rule counts, OS and app version. No estimated FPS or simulated telemetry. |
-| **Settings** | Enable state, title-bar drag, shortcut modifier, permissions and confirmed reset of effect settings. Reset preserves the enable state and drag controls. |
+| **Overview** | Engine and permission status, enable/pause switch, a **What plays right now** card listing the current Drag/Open/Close/Minimize choice with a Change button, permission requests and refresh. |
+| **Effects** | Sidebar sections **When you drag a window**, **When a window opens**, **When a window closes**, **When you minimize** and **Overview & layouts**, each listing every compatible effect with a one-line description and a checkmark on the active one; the section header shows the current choice and offers Off/Random. Search covers all 65 effects. The detail page shows a looping preview (sample window or a real one), a **Use when…** button per supported event, a collapsible **Customize** area (Studio parameters with live preview and Save, or the shared duration for built-ins) and **More** (Run on Window, Open in Animation Studio, import/export, reset). |
+| **Animation Studio** | Dismissable how-it-works guide, empty state with **Add Layer** / **Load an Example**, sample-window preview with transport, timeline, inspector tabs **Edit**, **Keyframes**, **Use It** and **Advanced**, undo/redo and document/preset JSON. |
+| **Physics** | Preset, friction, spring, speedup, mass, mesh density, maximize/resize effects, shadow, glide, tilt, focus glow and drop ripple. These springs drive the classic wobble, the entrances and the Wobbly preview. |
+| **Layouts** | Exposé 3D, Orbit and Cube with a preview each; Start arranges the windows of the current Space, Escape or Stop restores them. No native Space switching. |
+| **Rules** | Per-app close-effect overrides and exclusions. Add running apps or choose installed apps from disk. |
 | **Screen Saver** | Install/select Kinetiq as the macOS default, system inactivity delay, actual selection status, event interval, fragment lifetime, speed, intensity and Preview Now (requires Screen Recording). |
+| **Performance** | Five quality choices, completed Metal GPU timings and actual resource budgets; no inferred GPU utilization. |
+| **Windows** | Read-only snapshot of normal-level on-screen windows: owning app, title when available, and dimensions. This page never moves or captures a window. |
+| **Diagnostics** | Actual Metal renderer and event-tap state, permission grants, physics preset, mesh, rule counts, OS and app version. |
+| **Settings** | Enable state, title-bar drag, shortcut modifier, permissions and confirmed reset of effect settings. Reset preserves the enable state and drag controls. |
 
 The **Exclusions** list under Rules holds apps whose windows get no effects. Kinetiq's own management window is excluded by default; remove that exclusion to let it wobble. Catalog targets always exclude Kinetiq itself. Window titles may be unavailable without Screen Recording. Permission checks refresh when the app becomes active or when you press Refresh; macOS may require restarting the app after a grant. The existing launch-time permission prompts are unchanged. Navigation does not start or stop the engine.
 
-### Effects library: 65 effects, six permanent categories
+### Effects library: 65 effects, organized by what you do
 
-Both the native **NSMenu** and Effects library use `LibraryEffect.all`: **19 Studio effects + 30 original close shaders + 6 original entrances + 9 original minimize morphs + Liquid = 65 entries**. Liquid counts once, although it supports Close and Minimize. Originals are directly discoverable in the categories, not hidden under the former Legacy Window Triggers section.
+Both the native menu and the Effects library use `LibraryEffect.all`: **19 Studio effects + 30 original close shaders + 6 original entrances + 9 original minimize morphs + Liquid = 65 entries**. Liquid counts once, although it supports Close and Minimize. Each entry carries a plain-language description (`blurb`), the events it can react to and a kind: **Studio preset** (editable parameters, timeline-capable) or **Built-in** (original engine with compiled defaults). The six legacy categories remain as metadata and group the **Try an Effect** menu and the Studio's Add Layer menu.
 
-| Category | Studio | Originals | Total |
-|---|---:|---:|---:|
-| Window Motion | 2 | 3 | 5 |
-| Transitions | 4 | 27 | 31 |
-| Destruction | 4 | 10 | 14 |
-| Spatial Effects | 4 | 6 | 10 |
-| Physics | 2 | 0 | 2 |
-| Workspace & Overview | 3 | 0 | 3 |
-| **Total** | **19** | **46** | **65** |
+| Event | Effects |
+|---|---|
+| When you drag a window | Wobbly, Float, Ripple, Magnet, Gravity (Studio). The classic spring wobble is always available. |
+| When a window opens | Wobble Pop, Ripple, Stone in Water, Shockwave, Jelly Squash, Quake (built-in) · Genie, Morph, Fold, Flip, Float, Dissolve, Portal, Ripple, Liquid Morph (Studio) |
+| When a window closes | 30 built-in shaders and Liquid · Fold, Flip, Shatter, Explode, Dissolve, Burn, Portal, Liquid Morph (Studio) |
+| When you minimize | Dock Morph, Genie, Jelly Suck, Whirlpool, Tornado, Rubber Band, Pancake, Accordion, Hop and Liquid (built-in) · Genie, Morph (Studio) |
+| Overview & layouts | DOF, Cube, Orbit, Exposé 3D (Studio, started explicitly) |
 
-The [complete original-effects list](docs/original-effects.md#complete-original-effects-list) gives exact category/submenu placement and existing preference IDs for all 46 originals. The following table covers **only the unchanged 19-effect Studio catalog**; its category counts are not the combined library counts. Every Studio effect supports Manual; the last column lists additional supported preset triggers. Raw IDs are stable JSON identifiers, not display names.
+The Studio catalog's raw IDs are stable JSON identifiers, not display names:
 
-| Category | Submenu | Effect | Raw ID | Additional triggers |
-|---|---|---|---|---|
-| Window Motion (2) | Elastic | Wobbly | `wobbly` | Drag |
-| Window Motion | Ambient Motion | Float | `float` | Drag, Open |
-| Transitions (4) | Minimize / Restore | Genie | `genie` | Minimize, Open |
-| Transitions | Transform | Morph | `morph` | Open, Minimize |
-| Transitions | Distortion | Ripple | `ripple` | Drag, Open |
-| Transitions | Distortion | Liquid Morph | `liquid-morph` | Open, Close |
-| Destruction (4) | Fragmentation | Shatter | `shatter` | Close |
-| Destruction | Fragmentation | Explode | `explode` | Close |
-| Destruction | Dissolution | Dissolve | `dissolve` | Close, Open |
-| Destruction | Dissolution | Burn | `burn` | Close |
-| Spatial Effects (4) | 3D Transform | Fold | `fold` | Close, Open |
-| Spatial Effects | 3D Transform | Flip | `flip` | Open, Close |
-| Spatial Effects | Distortion | Portal | `portal` | Open, Close |
-| Spatial Effects | Depth & Lighting | DOF | `depth-of-field` | Overview |
-| Physics (2) | Attraction & Snapping | Magnet | `magnet` | Drag |
-| Physics | Forces & Dynamics | Gravity | `gravity` | Drag |
-| Workspace & Overview (3) | Workspace Navigation | Cube | `workspace-cube` | Overview |
-| Workspace & Overview | Window Arrangement | Orbit | `orbit` | Overview |
-| Workspace & Overview | Window Overview | Exposé 3D | `expose-3d` | Overview |
+| Effect | Raw ID | Events |
+|---|---|---|
+| Wobbly | `wobbly` | Drag |
+| Float | `float` | Drag, Open |
+| Genie | `genie` | Minimize, Open |
+| Morph | `morph` | Open, Minimize |
+| Ripple | `ripple` | Drag, Open |
+| Liquid Morph | `liquid-morph` | Open, Close |
+| Shatter | `shatter` | Close |
+| Explode | `explode` | Close |
+| Dissolve | `dissolve` | Close, Open |
+| Burn | `burn` | Close |
+| Fold | `fold` | Close, Open |
+| Flip | `flip` | Open, Close |
+| Portal | `portal` | Open, Close |
+| DOF | `depth-of-field` | Overview |
+| Magnet | `magnet` | Drag |
+| Gravity | `gravity` | Drag |
+| Cube | `workspace-cube` | Overview |
+| Orbit | `orbit` | Overview |
+| Exposé 3D | `expose-3d` | Overview |
 
-**Studio start:** in Effects, choose a Studio effect and a real target window, scrub Preview, edit Parameters, then use **Run on Window** for a restoring desktop action. Built-in Default, Subtle and Dramatic variants are available. Choose a supported trigger and **Save & Apply** to assign it. Each non-manual action has at most one explicit catalog owner; assigning a new owner makes the previous owner's preset Manual without discarding its tracks. Existing original behavior remains until an assignment is explicitly saved/imported; resetting that effect releases its assignment. A saved catalog Close assignment takes precedence over original per-app close choices. Overview is saved preset metadata: overview adapters are invoked explicitly through Run/menu actions, not automatic Mission Control interception.
+**Previews.** Every effect previews immediately on a drawn **sample window** that is packaged like a real ScreenCaptureKit capture (window plus shadow); the source menu under the preview switches to any eligible real window, which is only captured, never moved. Previews loop automatically, pause when you scrub, and self-pace so slow simulations drop frames instead of queueing. The preview of **Wobbly** replays the actual `KinetiqModel` spring mesh under a scripted title-bar drag and release, using the preset's stiffness, friction and speed; Studio timeline compositions still use the shader membrane. Catalog previews render with their own `CatalogEffectRenderer` into a stage with room below the window, so Genie's funnel and falling fragments are not cropped. Original previews use `CloseEffectRenderer`, `KinetiqModel` entrances, `DockMorphDeformer` or `LiquidWorld`; minimize uses a local destination, not the actual Dock, and Liquid a local floor. Preview targets are capped at **8,000,000 pixels / 8192 per dimension**, source captures at **32,000,000 pixels / 16384 per dimension**, with at most **two in-flight requests**. When the expensive-effects gate is closed, GPU-heavy previews refuse playback rather than substitute an animation.
 
-**Original start:** select an Original entry in its category, choose a real target and scrub **Preview** or **Recapture**. Opening the detail or preview never changes assignments. **Use for Close**, **Use for Open** or **Use for Minimize** writes the corresponding existing `Settings` choice/raw ID and releases only that action's `CatalogStore` owner, preserving its parameters/tracks and all other owners. Liquid has separate Close and Minimize buttons. Per-app close overrides and exclusions remain unchanged in Rules; a per-app choice can still override the newly selected global original close effect. **Window Trigger Assignments** retains global Close/Open/Minimize choices, **Off** and **Random**.
+**Using an effect.** Select it in the section for the event you care about and press **Use when a window closes** (or opens, or when you minimize, or when you drag). Studio presets are saved with that trigger as their owner; built-ins write their existing `Settings` choice and release only that event's Studio owner, preserving its parameters and tracks. Each event has at most one Studio owner; assigning a new one makes the previous owner's preset Manual without discarding its tracks. A Studio Close owner takes precedence over per-app close rules until released; per-app rules then override the global built-in choice again. **Off** and **Random** sit in each section header and in the menu bar. Nothing is assigned by merely selecting or previewing an effect.
 
-Original previews use `CloseEffectRenderer`, `KinetiqModel` entrances, `DockMorphDeformer` or `LiquidWorld` with `LiquidEffectRenderer`, not similarly named Studio substitutes. They are panel-only: no real window movement, close or minimize. Minimize uses a local destination, not the actual Dock; Liquid uses a retained local floor stage without real desktop obstacles. Native playback remains unchanged. Preview targets are capped at **8,000,000 pixels / 8192 per dimension**, source captures at **32,000,000 pixels / 16384 per dimension**, with at most **two in-flight requests**, cancellation checks and capture backing retained through GPU completion. When the expensive-effects gate is closed, original shader and Liquid previews refuse playback rather than substitute an animation.
+**Customizing.** Studio presets expose their bounded parameters, duration and playback curve under **Customize parameters**; edits show in the preview immediately and persist with **Save** (using the effect also saves pending edits). Default, Subtle and Dramatic variants are one click away. Built-in close and minimize effects share the **0.25×–3× duration multiplier**; entrances follow the Physics springs. **More** offers **Run on Window** (restoring, never closes or minimizes), **Open in Animation Studio** (adds the preset as a layer), JSON import/export, parameter copy/paste and a per-effect reset.
 
-**Animation Studio** adds a timeline, enabled layers, start offsets, parameter tracks and editable key times/values with outgoing `linear`, `easeIn`, `easeOut`, `easeInOut` or `spring` curves. Limits: 32 layers/document, 64 tracks/preset, 128 keys/track; normalized key time 0–1, preset duration 0.1–12 seconds and document duration up to 60 seconds. Explicit Undo/Redo buttons retain 100 edit snapshots. Copy/Paste Parameters accepts only a validated preset for the same effect. JSON schema 1 rejects unknown fields, unsupported versions, unknown parameter keys and out-of-range values. See the [guide and API reference](docs/animation-studio.md).
+**Animation Studio** adds a timeline, enabled layers, start offsets, parameter tracks and editable key times/values with outgoing `linear`, `easeIn`, `easeOut`, `easeInOut` or `spring` curves. Limits: 32 layers/document, 64 tracks/preset, 128 keys/track; normalized key time 0–1, preset duration 0.1–12 seconds and document duration up to 60 seconds. Explicit Undo/Redo buttons retain 100 edit snapshots. See the [guide and API reference](docs/animation-studio.md).
 
-These are real runtime adapters, not synthetic demo windows. Preview only renders captures in the panel. Manual Run restores the window rather than closing/minimizing it; actual Close and yellow-button Minimize triggers retain their native lifecycle (⌘M remains native). Magnet and Gravity use real AX movement; drag assignments are snapshotted for the gesture. DOF processes the single captured target, not a global desktop depth buffer or automatic blur of other windows. Cube is a cube-like current-Space projection, not a native Spaces cube or full workspace compositor. Cube, Orbit and Exposé 3D use frozen captures of up to eight eligible windows, within a total 32-megapixel capture budget; Escape dismisses, and clicking a projected window activates it. Orbit does not permanently rearrange AX windows. No private Spaces APIs are used.
+These are real runtime adapters, not synthetic demo windows on the desktop. Manual Run restores the window rather than closing/minimizing it; actual Close and yellow-button Minimize triggers retain their native lifecycle (⌘M remains native). Magnet and Gravity use real AX movement; drag assignments are snapshotted for the gesture. DOF processes the single captured target, not a global desktop depth buffer. Cube is a cube-like current-Space projection, not a native Spaces cube. Cube, Orbit and Exposé 3D use frozen captures of up to eight eligible windows, within a total 32-megapixel capture budget; Escape dismisses, and clicking a projected window activates it. No private Spaces APIs are used.
 
-Desktop compositions cannot mix a Physics adapter or interactive overview with other enabled layers: the runtime reports an error. Panel previews can visually compose those styles, but do not execute native physics. Permission, capture, Metal and budget failures preserve/restore native windows; expensive modes are refused rather than replaced with a misleading cheap animation.
+Desktop compositions cannot mix a Physics adapter or interactive overview with other enabled layers: the runtime reports an error. Permission, capture, Metal and budget failures preserve/restore native windows; expensive modes are refused rather than replaced with a misleading cheap animation.
 
 ### Render quality and real GPU timings
 
@@ -127,11 +124,11 @@ Optional (**Ripple on Drop** in **Setup → Physics**, off by default): a circul
 
 ### Close effects
 
-When a window closes, it is replaced by an animation drawn on the GPU. Select an **Original Close** entry directly in its Effects category and press **Use for Close**, or use **Setup › Effects › Window Trigger Assignments › Close**: **Liquid**, one of the 30 shaders below, **Random** (a different shader every time) or **Off**. The existing **Duration** multiplier is shared by original close and minimize effects: **0.25×–3×, default 1×**. Shader-specific uniforms retain their compiled defaults; they are not new per-effect JSON controls. Fire remains the default. Original entrances continue to use Physics settings, not this duration multiplier.
+When a window closes, it is replaced by an animation drawn on the GPU. Pick one under **Effects › When a window closes** (or in the menu bar's **Close** submenu): **Liquid**, one of the 30 shaders below, **Random** (a different shader every time) or **Off**. The existing **Duration** multiplier is shared by original close and minimize effects: **0.25×–3×, default 1×**. Shader-specific uniforms retain their compiled defaults; they are not new per-effect JSON controls. Fire remains the default. Original entrances continue to use Physics settings, not this duration multiplier.
 
-**Window Trigger Assignments › Open** (off by default), or an original entrance's **Use for Open** button, plays a jelly entrance when a window opens: Wobble Pop, Ripple, Stone in Water, Shockwave, Jelly Squash or Quake (or Random). The window stays visible: once its own pop-in animation is over it is captured as it is and the jelly model shakes it, so there is no flash and no gap. *Stone in Water* drops a stone at a random point and sends rings across the window, *Ripple* spreads a wave from the center, *Shockwave* combines a pop with a fast wave, *Jelly Squash* squeezes it vertically and lets it bounce back, *Quake* shakes it sideways. Dialogs, sheets and popovers are not affected.
+**Effects › When a window opens** (off by default), or an entrance's **Use when a window opens** button, plays a jelly entrance when a window opens: Wobble Pop, Ripple, Stone in Water, Shockwave, Jelly Squash or Quake (or Random). The window stays visible: once its own pop-in animation is over it is captured as it is and the jelly model shakes it, so there is no flash and no gap. *Stone in Water* drops a stone at a random point and sends rings across the window, *Ripple* spreads a wave from the center, *Shockwave* combines a pop with a fast wave, *Jelly Squash* squeezes it vertically and lets it bounce back, *Quake* shakes it sideways. Dialogs, sheets and popovers are not affected.
 
-**Window Trigger Assignments › Minimize** (off by default), or an original's **Use for Minimize** button, offers **Liquid** or nine morphs into the Dock icon when you minimize with the yellow button: *Dock Morph* (straight paths), *Genie* (a narrowing funnel), *Jelly Suck*, *Whirlpool*, *Tornado*, *Rubber Band*, *Pancake*, *Accordion* and *Hop*. **Random** continues to choose among the nine morphs. The click is held briefly for capture; a frozen desktop without the source window hides the native animation, then disappears as soon as the real window is minimized and its original position restored. Failed capture or setup replays the original click. ⌘M and minimizing from the Dock use the system animation. Choosing a Minimize effect sets the Dock's animation to *scale* (restarting the Dock); choosing **Off** restores the original animation.
+Pick a Dock morph or Liquid under **Effects › When you minimize** (off by default). **Random** continues to choose among the nine morphs. The click is held briefly for capture; a frozen desktop without the source window hides the native animation, then disappears as soon as the real window is minimized and its original position restored. Failed capture or setup replays the original click. ⌘M and minimizing from the Dock use the system animation. Choosing a Minimize effect sets the Dock's animation to *scale* (restarting the Dock); choosing **Off** restores the original animation.
 
 The **Per-App Close Effects** list in **Setup › Rules** gives an app its own close effect (Liquid, a shader, Random or Off) in place of the global original choice. Selecting an original does not clear these rules or exclusions; an explicit Studio Close owner takes precedence until released.
 
@@ -146,7 +143,7 @@ Minimizing, hiding, switching Spaces, closing a tab with ⌘W, or a close that t
 
 ### Liquid close and minimize (v0.1.31)
 
-Select **Liquid** in **Effects › Transitions › Fluid**, then use **Use for Close** and/or **Use for Minimize**; the same global choices remain in **Window Trigger Assignments**. This original particle-fluid simulation is separate from the catalog's **Liquid Morph** refractive transition; neither replaces the other. During native playback, the captured window liquefies progressively from the **top-right** towards the bottom-left, retaining its actual colors and content. Gravity pulls the connected, glossy surface down. It lands on exposed upper edges of other real windows, spreads sideways and spills off their ends. Geometry refreshes approximately every 150 ms, so moving or removing a window releases supported liquid. Already-overlapping background windows do not teleport liquid onto their tops. The panel preview instead has a local floor and no desktop obstacles.
+Select **Liquid** under **When a window closes** or **When you minimize**, then press **Use when a window closes** and/or **Use when you minimize**. This original particle-fluid simulation is separate from the catalog's **Liquid Morph** refractive transition; neither replaces the other. During native playback, the captured window liquefies progressively from the **top-right** towards the bottom-left, retaining its actual colors and content. Gravity pulls the connected, glossy surface down. It lands on exposed upper edges of other real windows, spreads sideways and spills off their ends. Geometry refreshes approximately every 150 ms, so moving or removing a window releases supported liquid. Already-overlapping background windows do not teleport liquid onto their tops. The panel preview instead has a local floor and no desktop obstacles.
 
 The liquid collects at the **full display bottom**, not the usable desktop boundary, and stays **behind the Dock** (including a side Dock), before slowly fading. Each display has its own floor; source windows spanning displays are split into per-display fluid domains. Duration scales melting, falling, the roughly three-second linger and three-second fade. This is a bounded visual particle-fluid approximation with viscosity, cohesion and density constraints, not a full hydrodynamics solver: collisions use visible rectangular window tops, not arbitrary content shapes or physical side walls. No real obstacle window is moved or modified.
 

@@ -297,12 +297,20 @@ public final class CatalogEffectRenderer {
             p.xy += center + velocity * t * a;
             p.z += sin(seed * 27) * min(size.x, size.y) * 0.3 * t * a;
         } else if (style == 0) {
-            // Anchored, damped membrane: material UV stays attached to every vertex.
-            float springPhase = phase * sqrt(x / 3.8);
-            float damping = exp(-y * seconds * 0.15);
-            p.x += sin(uv.y * 8 + springPhase) * size.x * 0.055 * e * uv.y * damping;
-            p.y += sin(uv.x * 7 - springPhase * 1.3) * size.y * 0.045 * e * damping;
-            p.z = sin(uv.x * PI) * sin(uv.y * PI) * size.y * 0.10 * e * damping;
+            // A spring mesh let go after a drag: the grabbed title bar is (nearly) still,
+            // the far edge lags behind and overshoots, and the whole sheet swings and
+            // damps like the live Compiz model. Stiffness raises the frequency; friction
+            // shortens the ring-out. Endpoints stay exact through the envelope.
+            float omega = 2 * PI * (0.9 + 0.32 * x);
+            float damping = exp(-seconds * (0.9 + 0.55 * y));
+            float lag = uv.y * uv.y;
+            float swing = sin(phase * omega / (2 * PI)) * damping;
+            float swingLate = sin(phase * omega / (2 * PI) - 1.1 * lag) * damping;
+            p.x += swingLate * size.x * 0.085 * e * (0.15 + 0.85 * lag);
+            p.y += cos(phase * omega / (2 * PI) * 0.8 - lag) * damping * size.y * 0.035 * e * lag;
+            // Width breathes out of phase with the swing, as rows stretch and compress.
+            p.x += (uv.x - 0.5) * size.x * 0.05 * e * damping * cos(phase * omega / (2 * PI) + lag * 2);
+            p.z = sin(uv.x * PI) * lag * size.y * 0.06 * e * swing;
         } else if (style == 1) {
             // Funnel into the bottom-center of this display, not the window's bottom.
             float pull = t * t * (3 - 2 * t);

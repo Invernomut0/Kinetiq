@@ -120,49 +120,63 @@ final class StudioEditorModel: ObservableObject {
     private func publishHistory() { undoCount = past.count; redoCount = future.count }
 }
 
+/// Inspector pages named after what the user wants to do with a layer.
+enum StudioInspectorTab: String, CaseIterable, Identifiable {
+    case edit = "Edit", keyframes = "Keyframes", assign = "Use It", advanced = "Advanced"
+    var id: String { rawValue }
+}
+
 @MainActor
 struct AnimationStudioView: View {
+    @ObservedObject var model: SetupModel
     @ObservedObject private var store = CatalogStore.shared
     @ObservedObject private var runtime = CatalogRuntime.shared
+    @ObservedObject private var sources = PreviewSourceStore.shared
+    @ObservedObject private var launch = StudioLaunchRequest.shared
     @StateObject private var editor: StudioEditorModel
+    @AppStorage("studioIntroDismissed") private var introDismissed = false
     @State private var selectedLayer: UUID?
     @State private var parameter = "amplitude"
-    @State private var tab: EffectDetailTab = .preview
-    @State private var windowID: CGWindowID?
+    @State private var tab: StudioInspectorTab = .edit
     @State private var time = 0.0
     @State private var playing = false
     @State private var error: String?
     @State private var notice: String?
     @State private var runTask: Task<Void, Never>?
 
-    init() {
+    init(model: SetupModel) {
+        self.model = model
         let document = CatalogStore.shared.document
         _editor = StateObject(wrappedValue: StudioEditorModel(document: document))
         _selectedLayer = State(initialValue: document.layers.first?.id)
     }
 
     private var layer: StudioLayer? { editor.document.layers.first { $0.id == selectedLayer } }
+    private var unsaved: Bool { editor.document != store.document }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             toolbar
+            if !introDismissed { intro }
             if let message = error ?? editor.errorMessage ?? runtime.errorMessage {
                 Label(message, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
             if let notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
-            HSplitView {
-                VStack(alignment: .leading, spacing: 10) {
-                    CatalogWindowPicker(selection: $windowID)
-                    CapturedEffectPreview(document: editor.document, time: time, windowID: windowID)
-                    transport
-                    Text("Panel preview only. Run on Window is a separate, restoring desktop action.")
-                        .font(.caption).foregroundStyle(.secondary)
+            if editor.document.layers.isEmpty {
+                emptyState
+            } else {
+                HSplitView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        EffectPreviewPlayer(subject: .document(editor.document), settings: model.settings,
+                                            externalTime: $time, autoplay: false)
+                        transport
+                    }
+                    .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+                    inspector.frame(minWidth: 300, idealWidth: 340, maxWidth: 440, maxHeight: .infinity)
                 }
-                .frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity)
-                inspector.frame(minWidth: 280, idealWidth: 330, maxWidth: 430, maxHeight: .infinity)
+                Divider()
+                timeline.frame(minHeight: 170, idealHeight: 220, maxHeight: 280)
             }
-            Divider()
-            timeline.frame(minHeight: 160, idealHeight: 210, maxHeight: 260)
         }
         .padding(16)
         .task(id: playing) {
@@ -170,9 +184,9 @@ struct AnimationStudioView: View {
             let startTime = time
             let origin = ProcessInfo.processInfo.systemUptime
             do {
-                // One finite structured loop, at most ten preview requests per second.
+                // One finite structured loop, at most twenty playhead updates per second.
                 while !Task.isCancelled && playing {
-                    try await Task.sleep(for: .milliseconds(100))
+                    try await Task.sleep(for: .milliseconds(50))
                     try Task.checkCancellation()
                     time = min(editor.document.duration, startTime + ProcessInfo.processInfo.systemUptime - origin)
                     if time >= editor.document.duration { playing = false; break }
@@ -187,11 +201,71 @@ struct AnimationStudioView: View {
         .onChange(of: selectedLayer) { _, _ in
             parameter = layer?.preset.tracks.first?.parameter ?? "amplitude"
         }
+        .onChange(of: launch.preset, initial: true) { _, preset in
+            guard let preset else { return }
+            launch.preset = nil
+            addLayer(preset)
+            notice = "\(EffectCatalog.descriptor(preset.effect).title) added as a layer."
+        }
         .onDisappear { playing = false; runTask?.cancel(); runtime.stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
             if isManagementWindow(note) { playing = false; runTask?.cancel(); runtime.stop() }
         }
     }
+
+    // MARK: - Guidance
+
+    private var intro: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "lightbulb").font(.title2).foregroundStyle(.yellow)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("How the Studio works").font(.headline)
+                Text("1. **Add Layer** picks an effect and places it on the timeline. Layers play in order on the same window.\n2. Select a layer to **edit its parameters**; **Keyframes** let a value change while the effect plays.\n3. **Save Document** keeps your composition. To make a layer react to a window event, open **Use It** and choose the event.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Button { introDismissed = true } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                .accessibilityLabel("Dismiss introduction")
+        }
+        .padding(14)
+        .background(.yellow.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "square.3.layers.3d").font(.system(size: 44)).foregroundStyle(.secondary)
+            Text("Start with a layer").font(.title2.bold())
+            Text("A layer is one effect with its own parameters and timing. Combine several to build your own transition.")
+                .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
+            HStack {
+                addLayerMenu.buttonStyle(.borderedProminent)
+                Button("Load an Example", systemImage: "wand.and.stars") { loadExample() }
+                Button("Import Document…") { importDocument() }
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func loadExample() {
+        var ripple = store.preset(.ripple)
+        ripple.name = "Ripple in"
+        ripple.duration = 1.2
+        var fold = store.preset(.fold)
+        fold.name = "Fold away"
+        fold.duration = 1.4
+        fold.tracks = [AnimationTrack(parameter: "angle", keyframes: [
+            AnimationKeyframe(time: 0, value: 20, curve: .easeIn), AnimationKeyframe(time: 1, value: 160, curve: .easeOut)])]
+        let document = StudioDocument(name: "Example — Ripple then Fold", duration: 3,
+                                      layers: [StudioLayer(preset: ripple, start: 0), StudioLayer(preset: fold, start: 1.4)])
+        editor.perform { $0 = document }
+        selectedLayer = document.layers.first?.id
+        time = 0
+        notice = "Example loaded. Press Play, then try changing the Fold angle keyframes."
+    }
+
+    // MARK: - Toolbar and transport
 
     private var toolbar: some View {
         HStack(spacing: 8) {
@@ -199,37 +273,27 @@ struct AnimationStudioView: View {
                 editor.perform { $0.name = value }
             }))
             .font(.headline).textFieldStyle(.roundedBorder).frame(maxWidth: 230)
-            Button { playing = false; editor.undo() } label: { Image(systemName: "arrow.uturn.backward") }
+            Button { playing = false; editor.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
                 .disabled(editor.undoCount == 0).help("Undo").accessibilityLabel("Undo studio edit")
-            Button { playing = false; editor.redo() } label: { Image(systemName: "arrow.uturn.forward") }
+            Button { playing = false; editor.redo() } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
                 .disabled(editor.redoCount == 0).help("Redo").accessibilityLabel("Redo studio edit")
+            if !introDismissed { EmptyView() } else {
+                Button { introDismissed = false } label: { Image(systemName: "questionmark.circle") }
+                    .buttonStyle(.borderless).help("Show how the Studio works").accessibilityLabel("Show introduction")
+            }
             Spacer(minLength: 0)
-            Menu("Presets") {
-                if let layer {
-                    ForEach(EffectCatalog.descriptor(layer.preset.effect).presets, id: \.name) { preset in
-                        Button(preset.name) { editor.updateLayer(layer.id) { $0.preset = preset } }
-                    }
-                    Button("Load Saved Effect Preset") { editor.updateLayer(layer.id) { $0.preset = store.preset(layer.preset.effect) } }
-                    Button("Save Layer as Effect Preset") { attempt { try store.save(layer.preset); notice = "Effect preset saved." } }
-                    Button("Export Layer Preset…") {
-                        attempt { try CatalogFilePanels.write(layer.preset.encoded(), name: "\(layer.preset.effect.rawValue).json") }
-                    }
-                    Button("Copy Parameters") { attempt { try PresetClipboard.copy(layer.preset) } }
-                    Button("Paste Parameters") {
-                        attempt {
-                            let preset = try PresetClipboard.paste(into: layer.preset)
-                            editor.updateLayer(layer.id) { $0.preset = preset }
-                        }
-                    }
-                    Divider()
-                }
-                Button("Import Effect Preset…") { importPreset() }
+            Menu("File") {
                 Button("Import Document JSON…") { importDocument() }
                 Button("Export Document JSON…") {
                     attempt { try CatalogFilePanels.write(editor.document.encoded(), name: "animation-studio.json") }
                 }
+                Divider()
+                Button("Import Effect Preset as Layer…") { importPreset() }
+                Divider()
+                Button("New Empty Document") { editor.perform { $0 = StudioDocument() }; time = 0 }
             }
-            Button("Save Document") {
+            .fixedSize()
+            Button(unsaved ? "Save Document" : "Saved") {
                 attempt {
                     let validated = try editor.document.validated()
                     let previous = store.document
@@ -238,7 +302,7 @@ struct AnimationStudioView: View {
                     notice = "Document saved."
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.borderedProminent).disabled(!unsaved)
         }
     }
 
@@ -247,33 +311,37 @@ struct AnimationStudioView: View {
             Button {
                 if time >= editor.document.duration { time = 0 }
                 playing.toggle()
-            } label: { Image(systemName: playing ? "pause.fill" : "play.fill") }
-                .disabled(windowID == nil || editor.document.layers.isEmpty)
-                .help(playing ? "Pause panel preview" : "Play panel preview")
+            } label: { Image(systemName: playing ? "pause.fill" : "play.fill").frame(width: 14) }
+                .disabled(editor.document.layers.isEmpty)
+                .help(playing ? "Pause" : "Play the whole document")
                 .accessibilityLabel(playing ? "Pause panel preview" : "Play panel preview")
             Button { playing = false; time = 0 } label: { Image(systemName: "backward.end.fill") }
-                .help("Seek to start").accessibilityLabel("Seek to start")
-            Text("\(time, specifier: "%.2f") / \(editor.document.duration, specifier: "%.2f") s")
-                .font(.caption.monospacedDigit())
+                .help("Back to start").accessibilityLabel("Seek to start")
             Spacer(minLength: 0)
-            Button("Run on Window") {
+            Button("Run on Window", systemImage: "play.rectangle") {
                 playing = false
                 runTask?.cancel()
-                runTask = Task { await runtime.playDocument(editor.document, windowID: windowID) }
+                runTask = Task { await runtime.playDocument(editor.document, windowID: sources.source.windowID) }
             }
-            .disabled(windowID == nil || runtime.isPlaying || editor.document.layers.isEmpty)
+            .disabled(runtime.isPlaying || editor.document.layers.isEmpty)
+            .help(sources.source == .sample ? "Plays on the frontmost app's window and restores it. Choose a window as preview source to target it." : "Plays on the window chosen as preview source and restores it")
             Button { runTask?.cancel(); runtime.stop() } label: { Image(systemName: "stop.fill") }
                 .disabled(!runtime.isPlaying).help("Stop & restore desktop").accessibilityLabel("Stop and restore desktop")
         }
     }
 
+    // MARK: - Inspector
+
     private var inspector: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(layer.map { EffectCatalog.descriptor($0.preset.effect).title } ?? "Layer Inspector").font(.headline)
-            Picker("Inspector", selection: $tab) {
-                ForEach(EffectDetailTab.allCases) { Text($0.rawValue).tag($0) }
+            HStack {
+                Text(layer.map { $0.name } ?? "Layer").font(.headline).lineLimit(1)
+                if let layer { Text(EffectCatalog.descriptor(layer.preset.effect).title).font(.caption).foregroundStyle(.secondary) }
             }
-            .pickerStyle(.menu)
+            Picker("Inspector", selection: $tab) {
+                ForEach(StudioInspectorTab.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden()
             if let layer {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
@@ -283,7 +351,7 @@ struct AnimationStudioView: View {
                 }
             } else {
                 ContentUnavailableView("No layer selected", systemImage: "square.3.layers.3d",
-                                       description: Text("Add an effect from the timeline menu to start composing."))
+                                       description: Text("Click a layer in the timeline to edit it."))
             }
         }
         .padding(.leading, 14)
@@ -291,51 +359,95 @@ struct AnimationStudioView: View {
 
     @ViewBuilder private func inspectorContent(_ layer: StudioLayer) -> some View {
         switch tab {
-        case .preview:
+        case .edit:
             Text(EffectCatalog.descriptor(layer.preset.effect).summary).font(.callout).foregroundStyle(.secondary)
-            LabeledContent("Starts", value: "\(layer.start.formatted()) s")
-            LabeledContent("Ends", value: "\((layer.start + layer.preset.duration).formatted()) s")
-            Text("The preview at left samples the entire document at the playhead. Disabled layers are excluded.")
-                .font(.caption).foregroundStyle(.secondary)
-            trackPicker(layer)
-            StudioCurveView(preset: layer.preset, parameter: parameter)
-                .frame(height: 130)
-        case .parameters:
-            TextField("Layer name", text: layerBinding(layer.id, \.name))
+            TextField("Layer name", text: layerBinding(layer.id, \.name)).textFieldStyle(.roundedBorder)
             Toggle("Enabled", isOn: layerBinding(layer.id, \.enabled))
             HStack {
-                Text("Start (seconds)")
-                TextField("Start", value: layerBinding(layer.id, \.start), format: .number).frame(width: 80)
+                Text("Starts at (seconds)")
+                TextField("Start", value: layerBinding(layer.id, \.start), format: .number).frame(width: 80).textFieldStyle(.roundedBorder)
+                Spacer()
+                Text("ends \((layer.start + layer.preset.duration).formatted()) s").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("Variants").font(.caption)
+                ForEach(EffectCatalog.descriptor(layer.preset.effect).presets, id: \.name) { preset in
+                    Button(preset.name) { editor.updateLayer(layer.id) { $0.preset = preset } }.controlSize(.small)
+                }
             }
             PresetParameterControls(preset: layerBinding(layer.id, \.preset))
-            Divider()
+            Text("Values here are static for the whole layer. Use Keyframes to animate one of them.")
+                .font(.caption).foregroundStyle(.secondary)
+        case .keyframes:
+            Text("A keyframe track replaces one parameter's static value with a curve over the layer's own time (0 = layer start, 1 = layer end).")
+                .font(.caption).foregroundStyle(.secondary)
             trackPicker(layer)
             trackEditor(layer)
-        case .triggers:
-            Picker("Trigger", selection: Binding(get: { layer.preset.trigger }, set: { value in
-                editor.updateLayer(layer.id) { $0.preset.trigger = value }
-            })) {
-                ForEach(EffectCatalog.descriptor(layer.preset.effect).triggers, id: \.self) { Text($0.title).tag($0) }
-            }
-            Text("Layer playback uses document timing. Save Layer as Effect Preset persists this trigger for the effect; saving the document preserves layer trigger metadata.")
-                .font(.caption).foregroundStyle(.secondary)
-        case .performance:
-            LabeledContent("Rendering", value: EffectCatalog.descriptor(layer.preset.effect).rendering.title)
-            LabeledContent("Shader", value: runtime.shaderStatus)
-            PerformanceView().frame(height: 520)
-        case .reset:
-            Text("Reset only the selected layer’s effect preset. Layer name and start are preserved. This edit can be undone.")
+        case .assign:
+            let effect = LibraryEffect.catalog(layer.preset.effect)
+            let events = effect.automaticTriggers
+            Text("Saving a layer as the effect's preset makes it what Kinetiq plays for that effect, including in the Effects library.")
                 .font(.callout).foregroundStyle(.secondary)
+            Button("Save Layer as \(EffectCatalog.descriptor(layer.preset.effect).title) Preset") {
+                attempt {
+                    var preset = layer.preset
+                    preset.trigger = store.preset(layer.preset.effect).trigger
+                    try store.save(preset); notice = "Preset saved."
+                }
+            }
+            if events.isEmpty {
+                Text("This effect has no automatic window event; run it from the menu bar.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("Play it automatically:").font(.subheadline)
+                ForEach(events, id: \.self) { trigger in
+                    let active = model.isAssigned(effect, to: trigger)
+                    Button(active ? "Active \(trigger.eventTitle.lowercased())" : "Use \(trigger.eventTitle.lowercased())",
+                           systemImage: active ? "checkmark.circle.fill" : trigger.symbol) {
+                        attempt {
+                            var preset = layer.preset
+                            preset.trigger = trigger
+                            try store.save(preset)
+                            if model.assign(effect, to: trigger) { notice = "\(effect.title) now plays \(trigger.eventTitle.lowercased())." }
+                        }
+                    }
+                    .disabled(active)
+                }
+                Text("Saving the document alone does not change any window event.").font(.caption).foregroundStyle(.secondary)
+            }
+            Divider()
+            Menu("Copy / Paste / Export") {
+                Button("Load Saved Effect Preset") { editor.updateLayer(layer.id) { $0.preset = store.preset(layer.preset.effect) } }
+                Button("Export Layer Preset…") {
+                    attempt { try CatalogFilePanels.write(layer.preset.encoded(), name: "\(layer.preset.effect.rawValue).json") }
+                }
+                Button("Copy Parameters") { attempt { try PresetClipboard.copy(layer.preset) } }
+                Button("Paste Parameters") {
+                    attempt {
+                        let preset = try PresetClipboard.paste(into: layer.preset)
+                        editor.updateLayer(layer.id) { $0.preset = preset }
+                    }
+                }
+            }
+            .fixedSize()
+        case .advanced:
+            LabeledContent("Rendering", value: EffectCatalog.descriptor(layer.preset.effect).rendering.title)
+            LabeledContent("Resource class", value: EffectCatalog.descriptor(layer.preset.effect).expensive ? "GPU-heavy" : "Standard")
+            LabeledContent("Shader", value: runtime.shaderStatus)
+            Text("Physics (Magnet, Gravity) and overview effects (Cube, Orbit, Exposé 3D) run on the desktop only as a single enabled layer.")
+                .font(.caption).foregroundStyle(.secondary)
+            Divider()
             Button("Reset Layer Preset", role: .destructive) {
                 editor.updateLayer(layer.id) { $0.preset = EffectPreset(effect: layer.preset.effect) }
             }
+            Text("Restores this layer's defaults. Name and start time are kept; undo is available.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
     private func trackPicker(_ layer: StudioLayer) -> some View {
-        Picker("Parameter Track", selection: $parameter) {
+        Picker("Parameter", selection: $parameter) {
             ForEach(EffectCatalog.descriptor(layer.preset.effect).parameters) { spec in
-                Text(spec.title).tag(spec.id)
+                Text(spec.title + (layer.preset.tracks.contains { $0.parameter == spec.id } ? " ◆" : "")).tag(spec.id)
             }
         }
     }
@@ -352,8 +464,11 @@ struct AnimationStudioView: View {
                     .help("Remove parameter track").accessibilityLabel("Remove parameter track")
             }
             StudioCurveView(preset: layer.preset, parameter: parameter).frame(height: 130)
-            Text("Key time is normalized (0–1). Curve applies to the outgoing segment.")
-                .font(.caption).foregroundStyle(.secondary)
+            Button("Add Keyframe at Playhead", systemImage: "diamond") {
+                let normalized = min(1, max(0, (time - layer.start) / layer.preset.duration))
+                editor.addKeyframe(layer: layer.id, parameter: parameter, time: normalized)
+            }
+            .disabled(track.keyframes.count >= EffectPreset.maximumKeyframes)
             ForEach(track.keyframes) { key in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -370,45 +485,52 @@ struct AnimationStudioView: View {
                         .accessibilityLabel("Move keyframe time")
                     Slider(value: keyBinding(layer.id, key.id, \.value, fallback: key.value), in: spec.minimum...spec.maximum)
                         .accessibilityLabel("Keyframe value")
-                    Picker("Outgoing Curve", selection: keyBinding(layer.id, key.id, \.curve, fallback: key.curve)) {
+                    Picker("Curve to next key", selection: keyBinding(layer.id, key.id, \.curve, fallback: key.curve)) {
                         ForEach(AnimationCurve.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
                 }
                 .textFieldStyle(.roundedBorder)
                 Divider()
             }
-            Button("Add Keyframe at Playhead", systemImage: "diamond") {
-                let normalized = min(1, max(0, (time - layer.start) / layer.preset.duration))
-                editor.addKeyframe(layer: layer.id, parameter: parameter, time: normalized)
-            }
-            .disabled(track.keyframes.count >= EffectPreset.maximumKeyframes)
         } else {
-            Text("This parameter currently uses its static value.").font(.caption).foregroundStyle(.secondary)
-            Button("Add Parameter Track", systemImage: "plus") { editor.addTrack(layer: layer.id, parameter: parameter) }
+            Text("\(EffectCatalog.descriptor(layer.preset.effect).parameters.first { $0.id == parameter }?.title ?? parameter) is static. Add a track to animate it between keyframes.")
+                .font(.caption).foregroundStyle(.secondary)
+            Button("Add Keyframe Track", systemImage: "plus") { editor.addTrack(layer: layer.id, parameter: parameter) }
+            StudioCurveView(preset: layer.preset, parameter: parameter).frame(height: 130)
         }
+    }
+
+    // MARK: - Timeline
+
+    private var addLayerMenu: some View {
+        Menu {
+            ForEach(EffectCategory.allCases, id: \.self) { category in
+                Section(category.title) {
+                    ForEach(EffectCatalog.effects.filter { $0.category == category }) { effect in
+                        Button(effect.title) { addLayer(store.preset(effect.id)) }
+                            .help(effect.summary)
+                    }
+                }
+            }
+        } label: { Label("Add Layer", systemImage: "plus") }
+        .disabled(editor.document.layers.count >= StudioDocument.maximumLayers)
+    }
+
+    private func addLayer(_ preset: EffectPreset) {
+        let start = min(time, max(0, StudioDocument.maximumDuration - preset.duration))
+        selectedLayer = editor.addLayer(preset, at: start)
+        tab = .edit
     }
 
     private var timeline: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Timeline").font(.headline)
-                Menu {
-                    ForEach(EffectCategory.allCases, id: \.self) { category in
-                        Menu(category.title) {
-                            ForEach(EffectCatalog.effects.filter { $0.category == category }) { effect in
-                                Button(effect.title) {
-                                    selectedLayer = editor.addLayer(store.preset(effect.id), at: min(time, StudioDocument.maximumDuration - store.preset(effect.id).duration))
-                                    tab = .parameters
-                                }
-                            }
-                        }
-                    }
-                } label: { Label("Add Layer", systemImage: "plus") }
-                .disabled(editor.document.layers.count >= StudioDocument.maximumLayers)
+                addLayerMenu.fixedSize()
                 Button {
                     if let selectedLayer { editor.removeLayer(selectedLayer) }
                 } label: { Image(systemName: "minus") }
-                .disabled(layer == nil).accessibilityLabel("Remove selected layer")
+                .disabled(layer == nil).accessibilityLabel("Remove selected layer").help("Remove selected layer")
                 Spacer()
                 Text("Duration (s)").font(.caption)
                 TextField("Document duration", value: Binding(get: { editor.document.duration }, set: { value in
@@ -417,21 +539,19 @@ struct AnimationStudioView: View {
                 .frame(width: 65).textFieldStyle(.roundedBorder)
             }
             HStack {
-                Text("Seek").font(.caption).frame(width: 45, alignment: .leading)
+                Text("Playhead").font(.caption).frame(width: 58, alignment: .leading)
                 Slider(value: Binding(get: { time }, set: { playing = false; time = $0 }), in: 0...editor.document.duration)
                     .accessibilityLabel("Scrub document timeline")
+                Text("\(time, specifier: "%.2f") s").font(.caption.monospacedDigit()).frame(width: 52, alignment: .trailing)
             }
-            if editor.document.layers.isEmpty {
-                Text("No layers. Add an effect to create a timeline.").foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    VStack(spacing: 3) {
-                        timelineRuler
-                        ForEach(editor.document.layers) { layer in timelineRow(layer) }
-                    }
+            ScrollView {
+                VStack(spacing: 3) {
+                    timelineRuler
+                    ForEach(editor.document.layers) { layer in timelineRow(layer) }
                 }
             }
+            Text("Click a bar to select a layer. Bars show when each layer plays; diamonds mark keyframes.")
+                .font(.caption2).foregroundStyle(.tertiary)
         }
     }
 
@@ -525,9 +645,7 @@ struct AnimationStudioView: View {
         attempt {
             guard let data = try CatalogFilePanels.read() else { return }
             let preset = try EffectPreset.decode(data)
-            try store.importPreset(data)
-            selectedLayer = editor.addLayer(preset)
-            tab = .parameters
+            addLayer(preset)
         }
     }
 }
