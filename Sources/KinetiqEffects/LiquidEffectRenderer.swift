@@ -39,6 +39,9 @@ public final class LiquidEffectRenderer {
     // Small LRU, capped at 32 MiB (or one maximum-size field). Submitted command
     // buffers retain evicted textures until completion on this same serial queue.
     private var densityTextures: [MTLTexture] = []
+    /// Scales only intermediate geometry, never the source capture or destination.
+    /// Nonfinite input falls back to one; valid values clamp to 0.25...1.
+    public var geometryScale: Double = 1
     /// Internal optical isolation for real-capture regression tests, not UI state.
     var opticalStrength = SIMD2<Float>(1, 1)
 
@@ -111,7 +114,8 @@ public final class LiquidEffectRenderer {
                 // Crop BOTH the field and the final quad; a floor pool no longer shades a
                 // whole display. Float32 moments avoid half-float UV jitter on fine glyphs.
                 let region = particles.isEmpty ? screenRect : fluidBounds.insetBy(dx: -1, dy: -1).intersection(screenRect)
-                let scale = min(1, 1280 / max(region.width, region.height))
+                let qualityScale = geometryScale.isFinite ? min(1, max(0.25, geometryScale)) : 1
+                let scale = min(1, 1280 / max(region.width, region.height)) * qualityScale
         // Bucket dimensions to avoid allocating a new texture for every falling
         // pixel. Two source windows can reuse their own fields rather than thrash.
         let width = max(32, (Int((region.width * scale).rounded(.up)) + 31) / 32 * 32)

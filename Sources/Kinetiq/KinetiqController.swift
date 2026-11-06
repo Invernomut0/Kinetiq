@@ -51,9 +51,26 @@ private final class DragSession {
     /// Shadow of the capture on screen: the native one, which depends on whether the window was active.
     var shadow: ShadowInsets?
 
-    init(window: WindowInfo, cursor: CGPoint) {
+    /// Only beginSession supplies an explicit persisted drag assignment. Legacy
+    /// maximize/resize/open sessions deliberately have no catalog drag policy.
+    let dragPolicy: CatalogDragPolicy?
+    let physics: KinetiqSettings
+    let began = CACurrentMediaTime()
+    var releasedAt: CFTimeInterval?
+    var releaseOffset = SIMD2<Float>.zero
+    var dynamics: CatalogDynamics?
+    var dynamicsTime: CFTimeInterval = 0
+    var bounds: CGRect?
+    var targets: [CGRect] = []
+    var nextTargetRefresh: CFTimeInterval = 0
+    var lastPointerTime = CACurrentMediaTime()
+
+    init(window: WindowInfo, cursor: CGPoint, dragPolicy: CatalogDragPolicy? = nil,
+         physics: KinetiqSettings = .realistic) {
         self.window = window
         self.cursor = cursor
+        self.dragPolicy = dragPolicy
+        self.physics = physics
         origin = window.frame.origin
         grabLocal = CGPoint(x: cursor.x - origin.x, y: cursor.y - origin.y)
     }
@@ -125,13 +142,15 @@ final class KinetiqController: NSObject {
         super.init()
         closeTrigger = closePlayer.map { player in
             CloseEffectTrigger(settings: settings, capture: capture, player: player, liquid: liquidPlayer,
-                               isBusy: { [weak self] in self?.session != nil })
+                               isBusy: { [weak self] in self?.session != nil || CatalogRuntime.shared.isPlaying })
         }
-        openTrigger = OpenEffectTrigger(settings: settings, isBusy: { [weak self] in self?.session != nil })
+        openTrigger = OpenEffectTrigger(settings: settings, isBusy: { [weak self] in
+            self?.session != nil || CatalogRuntime.shared.isPlaying
+        })
         minimizeTrigger = MorphPlayer().map { morph in
             MinimizeEffectTrigger(
                 settings: settings, capture: capture, morph: morph, liquid: liquidPlayer,
-                isBusy: { [weak self] in self?.session != nil },
+                isBusy: { [weak self] in self?.session != nil || CatalogRuntime.shared.isPlaying },
                 replay: { [weak self] down, up in self?.replayClick(down: down, up: up) })
         }
         NotificationCenter.default.addObserver(
@@ -178,6 +197,9 @@ final class KinetiqController: NSObject {
     /// Returns true if the event should be swallowed.
     func handle(_ type: CGEventType, _ event: CGEvent) -> Bool {
         if event.getIntegerValueField(.eventSourceUserData) == Self.replayMarker { return false }
+        // The overview's own input window must receive its click before the
+        // runtime chooses a window. Never stop it unconditionally on mouse-down.
+        if CatalogRuntime.shared.isPlaying { return false }
         switch type {
         case .leftMouseDown:
             let windows = WindowList()
@@ -212,6 +234,8 @@ final class KinetiqController: NSObject {
         resizeWatch = nil
         minimizeTrigger?.cancel()
         closeTrigger?.cancelAll()
+        openTrigger?.cancelAll()
+        CatalogRuntime.shared.stop()
         liquidPlayer?.cancelAll()
         if let session { finishImmediately(session) }
     }
@@ -235,6 +259,9 @@ final class KinetiqController: NSObject {
                     current.mouseDown = true
                     current.cursor = point
                     current.grabLocal = CGPoint(x: point.x - current.origin.x, y: point.y - current.origin.y)
+                    current.releasedAt = nil
+                    current.dynamics = nil
+                    current.lastPointerTime = CACurrentMediaTime()
                     model.grab(at: SIMD2(point))
                     return true
                 }
@@ -276,9 +303,13 @@ final class KinetiqController: NSObject {
         if session.samples.count > 12 { session.samples.removeFirst() }
         guard !session.isAborted else { return true }
 
-        session.origin = CGPoint(x: point.x - session.grabLocal.x, y: point.y - session.grabLocal.y)
+        let now = CACurrentMediaTime()
+        let pointerDT = max(1.0 / 120, min(0.1, now - session.lastPointerTime))
+        session.lastPointerTime = now
+        session.origin = dragOrigin(session, cursor: point, now: now, dt: pointerDT)
         if let model = session.model {
-            model.moveGrab(to: SIMD2(point), origin: SIMD2(session.origin))
+            let grab = CGPoint(x: session.origin.x + session.grabLocal.x, y: session.origin.y + session.grabLocal.y)
+            model.moveGrab(to: SIMD2(grab), origin: SIMD2(session.origin))
         } else if let axWindow = session.axWindow {
             // No capture yet: move the real window rigidly.
             mover.move(axWindow, to: session.origin)
@@ -301,20 +332,44 @@ final class KinetiqController: NSObject {
             return true
         }
 
-        session.cursor = point
         session.origin = finalOrigin(for: session, cursor: point)
+        session.cursor = point
         session.phase = .settling
+        let now = CACurrentMediaTime()
+        session.releasedAt = now
+        session.releaseOffset = session.dragPolicy?.ambientOffset(
+            size: SIMD2(Float(session.window.frame.width), Float(session.window.frame.height)),
+            elapsed: now - session.began) ?? .zero
+        if let policy = session.dragPolicy, policy.preset.effect == .magnet || policy.preset.effect == .gravity {
+            refreshDragGeometry(session, now: now, force: true)
+            if policy.preset.effect == .gravity, let bounds = session.bounds {
+                session.dynamics = CatalogDynamics(frame: CGRect(origin: session.origin, size: session.window.frame.size), bounds: bounds)
+                session.dynamicsTime = now
+            }
+        }
         if let model = session.model {
             model.release(origin: SIMD2(session.origin))
-            if settings.rippleOnDrop {
+            if let policy = session.dragPolicy, policy.preset.effect == .ripple,
+               RenderQualityManager.shared.budget.allowsExpensive {
+                let values = policy.parameters(at: now - session.began)
+                model.ripple(atLocal: SIMD2(Float(session.grabLocal.x), Float(session.grabLocal.y)),
+                             amplitude: Float(values["amplitude"] ?? 1) * 7,
+                             wavelength: Float(values["wavelength"] ?? 150),
+                             speed: Float(values["speed"] ?? 1) * 700,
+                             duration: Float(policy.releaseDuration), decay: Float(values["decay"] ?? 0.45))
+            } else if session.dragPolicy == nil, settings.rippleOnDrop,
+                      RenderQualityManager.shared.budget.allowsExpensive {
                 model.ripple(atLocal: SIMD2(Float(session.grabLocal.x), Float(session.grabLocal.y)))
             }
-            if let velocity = flingVelocity(session) {
+            let effect = session.dragPolicy?.preset.effect
+            if effect != .gravity, effect != .magnet, let velocity = flingVelocity(session) {
                 model.fling(velocity: velocity, bounds: glideBounds(for: session, at: point))
             }
         } else if let axWindow = session.axWindow {
             mover.move(axWindow, to: session.origin)
-            self.session = nil
+            if session.dynamics != nil || session.dragPolicy?.preset.effect == .magnet {
+                startDisplayLink(near: point)
+            } else { self.session = nil }
         }
         // If AX hasn't answered yet, `axResolved` will place the window when it does.
         return true
@@ -376,10 +431,17 @@ final class KinetiqController: NSObject {
 
     private func beginSession(_ info: WindowInfo, at point: CGPoint, titleBarHeight: CGFloat?) {
         if let previous = self.session { finishImmediately(previous, wait: false) }
-        let session = DragSession(window: info, cursor: point)
+        // A pending title-bar drag may have been accepted before manual playback
+        // started. Stop only when committing this eligible gesture, never on a raw click.
+        if CatalogRuntime.shared.isPlaying { CatalogRuntime.shared.stop() }
+        let policy = CatalogDragPolicy(preset: CatalogStore.shared.assigned(to: .drag))
+        let session = DragSession(window: info, cursor: point, dragPolicy: policy, physics: settings.physics)
         session.titleBarHeight = titleBarHeight
         self.session = session
+        refreshDragGeometry(session, now: session.began, force: true)
         resolveAXWindow(for: session, hitPoint: point)
+        // A rigid AX fallback still attracts while the pointer is stationary.
+        if policy?.preset.effect == .magnet { startDisplayLink(near: point) }
 
         guard let precapture, precapture.windowID == info.id, CACurrentMediaTime() - precapture.startedAt < 3 else {
             startCapture(for: session)
@@ -396,12 +458,42 @@ final class KinetiqController: NSObject {
     }
 
     private func finalOrigin(for session: DragSession, cursor: CGPoint) -> CGPoint {
-        var origin = CGPoint(x: (cursor.x - session.grabLocal.x).rounded(), y: (cursor.y - session.grabLocal.y).rounded())
+        let now = CACurrentMediaTime()
+        var origin = dragOrigin(session, cursor: cursor, now: now, dt: 1.0 / 120, snap: true)
+        if let policy = session.dragPolicy, policy.preset.effect == .magnet, let bounds = session.bounds {
+            let shown = CGPoint(x: session.origin.x + cursor.x - session.cursor.x,
+                                y: session.origin.y + cursor.y - session.cursor.y)
+            origin = CatalogDragPolicy.magnetOrigin(frame: CGRect(origin: shown, size: session.window.frame.size),
+                bounds: bounds, targets: session.targets, parameters: policy.parameters(at: now - session.began),
+                dt: 1.0 / 120, snap: true)
+        }
+        origin = CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
         // macOS won't let the title bar end up under the menu bar; mirror that to avoid a jump at the end.
         if let screen = NSScreen.containing(cgPoint: cursor) {
             origin.y = max(origin.y, screen.cgFrame.minY + screen.menuBarHeight)
         }
         return origin
+    }
+
+    /// Query desktop geometry at most every 150 ms, never per mesh vertex/frame.
+    private func refreshDragGeometry(_ session: DragSession, now: CFTimeInterval, force: Bool = false) {
+        guard let effect = session.dragPolicy?.preset.effect, effect == .magnet || effect == .gravity,
+              force || now >= session.nextTargetRefresh else { return }
+        session.nextTargetRefresh = now + 0.15
+        session.bounds = NSScreen.containing(cgPoint: session.cursor)?.cgVisibleFrame
+        if effect == .magnet {
+            session.targets = WindowLocator.liquidObstacles(excluding: [session.window.id])
+        }
+    }
+
+    private func dragOrigin(_ session: DragSession, cursor: CGPoint, now: CFTimeInterval,
+                            dt: Double, snap: Bool = false) -> CGPoint {
+        let origin = CGPoint(x: cursor.x - session.grabLocal.x, y: cursor.y - session.grabLocal.y)
+        guard let policy = session.dragPolicy, policy.preset.effect == .magnet else { return origin }
+        refreshDragGeometry(session, now: now)
+        guard let bounds = session.bounds else { return origin }
+        return CatalogDragPolicy.magnetOrigin(frame: CGRect(origin: origin, size: session.window.frame.size),
+            bounds: bounds, targets: session.targets, parameters: policy.parameters(at: now - session.began), dt: dt, snap: snap)
     }
 
     // MARK: - Maximize and resize effects
@@ -448,12 +540,14 @@ final class KinetiqController: NSObject {
     /// An app was activated or moved the focus to another window: flash a glow around it.
     private func focusChanged(pid: pid_t) {
         guard settings.enabled, settings.focusPulse, session == nil, pid != ProcessInfo.processInfo.processIdentifier,
-              openTrigger?.isActive != true, !AppExclusions.contains(pid: pid) else { return }
+              openTrigger?.isActive != true, !CatalogRuntime.shared.isPlaying,
+              RenderQualityManager.shared.budget.allowsExpensive, !AppExclusions.contains(pid: pid) else { return }
         AXBridge.queue(for: pid).async { [weak self] in
             guard let frame = AXBridge.focusedWindow(pid: pid)?.frame else { return }
             Task { @MainActor in
                 // The focus change can be announced before the new window is, so check again now.
-                guard let self, self.openTrigger?.isActive != true else { return }
+                guard let self, self.openTrigger?.isActive != true, self.session == nil,
+                      !CatalogRuntime.shared.isPlaying, RenderQualityManager.shared.budget.allowsExpensive else { return }
                 self.focusPulse.pulse(around: frame)
             }
         }
@@ -526,14 +620,15 @@ final class KinetiqController: NSObject {
         // The glow around a new window waits for its entrance to be over.
         guard free, let session else { return }
         session.onFinish = { [weak self] in
-            guard let self, self.settings.enabled, self.settings.focusPulse else { return }
+            guard let self, self.settings.enabled, self.settings.focusPulse,
+                  RenderQualityManager.shared.budget.allowsExpensive, !CatalogRuntime.shared.isPlaying else { return }
             self.focusPulse.pulse(around: info.frame)
         }
     }
 
     private func startEffect(_ info: WindowInfo, axWindow: AXUIElement, tiles: (x: Int, y: Int)?,
                              make: @escaping (CGSize) -> WindowDeformer) {
-        guard session == nil else { return }
+        guard session == nil, !CatalogRuntime.shared.isPlaying else { return }
         let session = DragSession(window: info, cursor: CGPoint(x: info.frame.midX, y: info.frame.midY))
         session.mouseDown = false
         session.phase = .settling
@@ -569,7 +664,11 @@ final class KinetiqController: NSObject {
         }
         if session.deformer == nil {
             mover.move(axWindow, to: session.origin)
-            if !session.mouseDown { self.session = nil }
+            if !session.mouseDown {
+                if session.dynamics != nil || session.dragPolicy?.preset.effect == .magnet {
+                    startDisplayLink(near: session.cursor)
+                } else { self.session = nil }
+            }
         }
         if self.session === session { recaptureAfterRaise(session) }
     }
@@ -628,8 +727,10 @@ final class KinetiqController: NSObject {
             let model = KinetiqModel(
                 size: SIMD2(Float(frame.pointSize.width), Float(frame.pointSize.height)),
                 origin: SIMD2(session.origin),
-                settings: settings.physics)
-            model.grab(at: SIMD2(session.cursor))
+                settings: session.dragPolicy?.wobblySettings(base: session.physics, at: CACurrentMediaTime() - session.began)
+                    ?? session.physics)
+            model.grab(at: SIMD2(CGPoint(x: session.origin.x + session.grabLocal.x,
+                                         y: session.origin.y + session.grabLocal.y)))
             deformer = model
         }
         session.deformer = deformer
@@ -637,6 +738,7 @@ final class KinetiqController: NSObject {
 
         // The real window stays underneath with its native shadow until it is parked.
         renderer.shadowOpacity = 0
+        _ = updateCatalogDrag(session, now: CACurrentMediaTime(), dt: 0)
         updateScene(session, deformer)
         if overlays.isEmpty {
             overlays = NSScreen.screens.map { OverlayWindow(screen: $0, renderer: renderer) }
@@ -654,12 +756,18 @@ final class KinetiqController: NSObject {
     // MARK: - Animation
 
     @objc private func tick(_ link: CADisplayLink) {
-        let now = link.timestamp
+        let now = CACurrentMediaTime()
         let dt = lastTick == 0 ? 1.0 / 120.0 : now - lastTick
         lastTick = now
 
-        guard let session, let deformer = session.deformer else {
+        guard let session else {
             stopDisplayLink()
+            return
+        }
+
+        let catalogActive = updateCatalogDrag(session, now: now, dt: dt)
+        guard let deformer = session.deformer else {
+            if !session.mouseDown && !catalogActive { finishImmediately(session, wait: false) }
             return
         }
 
@@ -670,7 +778,10 @@ final class KinetiqController: NSObject {
             if let model = session.model, wasGliding || model.isGliding {
                 session.origin = CGPoint(x: CGFloat(model.origin.x).rounded(), y: CGFloat(model.origin.y).rounded())
             }
-            if case .settling = session.phase, deformer.isSettled {
+            let timedOut = session.dragPolicy.map { policy in
+                session.releasedAt.map { now - $0 >= (policy.preset.effect == .float ? min(0.5, policy.releaseDuration) : policy.releaseDuration) } ?? false
+            } ?? false
+            if case .settling = session.phase, !catalogActive && (deformer.isSettled || timedOut) {
                 deformer.snapToRest()
                 beginRestore(session)
             } else {
@@ -697,9 +808,70 @@ final class KinetiqController: NSObject {
         overlays.forEach { $0.render() }
     }
 
+    /// Drives the same mesh/native session, never CatalogRuntime or a second overlay.
+    /// Returns true only while a bounded release needs to retain ownership.
+    private func updateCatalogDrag(_ session: DragSession, now: CFTimeInterval, dt: Double) -> Bool {
+        if !RenderQualityManager.shared.budget.allowsExpensive {
+            focusPulse.cancel()
+            session.model?.cancelRipples()
+        }
+        renderer.deformationScale = 1
+        renderer.ambientOffset = .zero
+        switch session.phase {
+        case .dragging, .settling: break
+        default: return false
+        }
+        guard let policy = session.dragPolicy else { return false }
+        let elapsed = max(0, now - session.began)
+        let values = policy.parameters(at: elapsed)
+        if policy.preset.effect == .wobbly {
+            session.model?.updateSettings(policy.wobblySettings(base: session.physics, at: elapsed),
+                                          speed: Float(values["speed"] ?? 1))
+            renderer.deformationScale = Float(values["amplitude"] ?? 1)
+        }
+        if policy.preset.effect == .float {
+            if let release = session.releasedAt {
+                renderer.ambientOffset = policy.releaseOffset(session.releaseOffset, elapsed: now - release)
+                return now - release < min(0.5, policy.releaseDuration)
+            }
+            renderer.ambientOffset = policy.ambientOffset(
+                size: SIMD2(Float(session.window.frame.width), Float(session.window.frame.height)), elapsed: elapsed)
+        }
+        if policy.preset.effect == .magnet {
+            refreshDragGeometry(session, now: now)
+            if session.mouseDown, let bounds = session.bounds {
+                let origin = CatalogDragPolicy.magnetOrigin(
+                    frame: CGRect(origin: session.origin, size: session.window.frame.size), bounds: bounds,
+                    targets: session.targets, parameters: values, dt: dt, snap: true)
+                session.origin = origin
+                session.model?.translate(to: SIMD2(origin))
+                if !session.hidden, let axWindow = session.axWindow { mover.move(axWindow, to: origin) }
+            }
+        }
+        guard let release = session.releasedAt,
+              policy.preset.effect == .gravity || policy.preset.effect == .magnet else { return false }
+        let end = release + policy.releaseDuration
+        let step = max(0, min(now, end) - max(release, session.dynamicsTime))
+        session.dynamicsTime = min(now, end)
+        var origin = session.origin
+        if var dynamics = session.dynamics {
+            dynamics.advance(step, effect: .gravity, parameters: values)
+            session.dynamics = dynamics
+            origin = dynamics.body.frame.origin
+        } else if policy.preset.effect == .magnet, let bounds = session.bounds {
+            origin = CatalogDragPolicy.magnetOrigin(frame: CGRect(origin: origin, size: session.window.frame.size),
+                bounds: bounds, targets: session.targets, parameters: values, dt: step, snap: true)
+        }
+        session.origin = origin
+        session.model?.translate(to: SIMD2(origin))
+        // No capture/parking: still perform real AX settling, not a visual stand-in.
+        if !session.hidden, let axWindow = session.axWindow { mover.move(axWindow, to: origin) }
+        return now < end && (session.dynamics != nil || session.bounds != nil)
+    }
+
     /// Leans the window into its movement while it is dragged or glides, and flattens it at rest.
     private func updateTilt(_ session: DragSession, dt: Float) -> SIMD2<Float> {
-        guard settings.tiltOnDrag, let model = session.model else {
+        guard settings.tiltOnDrag, RenderQualityManager.shared.budget.allowsExpensive, let model = session.model else {
             session.tilt = .zero
             return .zero
         }
@@ -819,7 +991,7 @@ final class KinetiqController: NSObject {
     /// `wait` blocks until the window is back: needed when a click is about to land on it or the app is quitting.
     /// Grabbing another window doesn't need it, and waiting there would freeze the event tap.
     private func finishImmediately(_ session: DragSession, wait: Bool = true) {
-        if let axWindow = session.axWindow, session.deformer != nil {
+        if let axWindow = session.axWindow {
             let target = session.origin
             let queue = AXBridge.queue(for: axWindow)
             if wait {

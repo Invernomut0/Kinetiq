@@ -4,15 +4,27 @@ Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (imple
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | Open effects (close shaders reversed when a window appears) | Review | v0.1.9. Window is parked, captured once painted, effect plays, window restored near the end. Not yet verified on screen. |
-| 2 | Inertia and bounce off the screen edges after releasing a drag | Review | v0.1.10. `KinetiqModel.fling`, unit-tested physics; release velocity from the last 0.1 s of cursor samples. Not yet verified on screen. |
-| 3 | 3D tilt while dragging | Review | v0.1.11. `Tilt` in KinetiqCore (unit-tested); mesh vertices are projected on the CPU around the window center. Not yet verified on screen. |
-| 4 | Minimize effect | Review | v0.1.12. Yellow button only (⌘M and Dock clicks can't be intercepted without reading keystrokes): click held back, window parked + minimized, effect plays, position restored. Not yet verified on screen. |
-| 5 | Per-app close effects | Review | v0.1.13. `Settings.appCloseEffects`, picker per app in Setup; overrides the global Close effect (also when that is Off). |
-| 6 | Focus highlight (pulse / glow on the window that gets focus) | Review | v0.1.14. Accent-colored glow (Core Animation overlay, no capture) on app activation and focused-window changes; off by default. Dimming of the other windows not done. |
-| 7 | Ripple at the drop point | Review | v0.1.15. Radial wave in `KinetiqModel` (unit-tested); settling waits for it to finish; off by default. |
+| R1 | v0.2.0 build 33 final release verification | Done | Owner: Copilot. 260 release tests, zero failures/skips; universal app and embedded saver built, strict signatures verified, packaged app launched and visually inspected. Quick Look and Finder refreshed. |
+| 1 | Open effects | Done | Owner: Copilot. The v0.1.9 reversed-shader path was superseded by v0.1.22 jelly entrances; v0.2.0 also supports explicitly assigned captured catalog entrances. Code/test verification is complete; final release acceptance is R1. |
+| 2 | Inertia and bounce off the screen edges after releasing a drag | Done | Owner: Copilot. `KinetiqModel.fling`, bounded real-screen physics and settling covered by the release suite. |
+| 3 | 3D tilt while dragging | Done | Owner: Copilot. Unit-tested `Tilt`, perspective mesh projection and quality safety gating. |
+| 4 | Minimize effect | Done | Owner: Copilot. Yellow-button native minimize, exact-window AX parking/restoration and real capture tests pass. ⌘M and Dock actions remain native. |
+| 5 | Per-app close effects | Done | Owner: Copilot. Legacy overrides persist and are tested; an explicit catalog Close owner takes precedence until removed. |
+| 6 | Focus highlight | Done | Owner: Copilot. Optional accent glow on focus; deferred after entrances and quality-gated. Global dimming of other windows is not implemented or claimed. |
+| 7 | Ripple at the drop point | Done | Owner: Copilot. Bounded radial wave, settling and explicit catalog Drag policy are tested. |
+| 8 | Native screen saver and desktop destruction | Done | Owner: Copilot. Voronoi fragments, letters/buttons, Metal renderer, real archive, native module and selective system selection/restoration tested. Final packaged build verification is R1. |
+| 9 | Nineteen-effect catalog and permanent category mapping | Done | Owner: Copilot. Shared manifest / NSMenu / library: 2 Window Motion, 4 Transitions, 4 Destruction, 4 Spatial, 2 Physics, 3 Workspace; original 30 close shaders and Liquid retained. |
+| 10 | Adaptive quality and truthful performance diagnostics | Done | Owner: Copilot. Five choices, 13-step Auto ladder/recovery, actual completed GPU timings, thermal/power caps and bounded native/intermediate resource handling. |
+| 11 | Animation Studio and validated preset/document storage | Done | Owner: Copilot. Timeline/layers/tracks/keys, five outgoing curves, 100-snapshot undo/redo, guarded copy/paste and strict schema-1 JSON. No tangent editor claimed. |
+| 12 | Twelve-page dashboard and five-tab Effects library | Done | Owner: Copilot. Original eight pages plus Studio, Layouts, Workspaces and Performance; real-window previews and explicit save/run/reset controls. |
+| 13 | Real runtime adapters, trigger ownership and safe fallbacks | Done | Owner: Copilot. Native Close/Minimize/Open routing, snapshotted Drag, real AX physics and bounded interactive current-Space overviews. Unsupported mixed physics/overview compositions fail explicitly. |
+| 14 | v0.2.0 English documentation | Done | Owner: Copilot. README, changelog and Studio guide reflect actual schema, catalog, budgets, runtime limits and final verification evidence. |
 
-| 8 | Screen saver: the desktop falls apart (letters, exploding buttons, triangular window pieces, pile at the bottom) | Review | v0.1.23. `ChaosWorld` in KinetiqCore (unit-tested), Metal renderer, Setup section. Verified on screen through frame dumps (`KINETIQ_CHAOS_DUMP`); the idle start was not waited for. |
+## Verification evidence and scope
+
+- Final `/tmp/kinetiq-v02-final-suite.log`: **260 release tests passed — 144 Core + 36 Effects + 80 app; 0 failures, 0 skips**. Includes 19 management/Studio tests, all compiled catalog effects and real-capture Liquid regressions.
+- Build-33 app and native saver both contain arm64/x86_64 and pass `codesign --verify --deep --strict`; the actual packaged app was launched and visually inspected. Local coverage is recorded in `/tmp/kinetiq-v02-final-coverage.txt`; shader encoding-path coverage is not Metal branch coverage.
+- Product boundaries: no native Spaces switching/private Spaces APIs, no permanent Orbit layout, no global desktop DOF/depth buffer, no Bézier tangent editor, and no desktop mixing of physics/overview with other enabled layers. These are explicit limits, not substitute demos.
 
 ## Done
 

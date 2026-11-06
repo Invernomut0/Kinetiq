@@ -73,8 +73,10 @@ public final class LiquidWorld {
 
     /// Inputs must be finite, positive-area rectangles. Off-screen source portions
     /// are clipped before sampling; even enormous windows allocate at most 1500 samples.
-    /// Unrepresentable desktop coordinates yield an empty, already-finished world.
-    public init(windowFrame: CGRect, screenBounds: CGRect, obstacles: [CGRect], durationScale: Float = 1) {
+    /// `maxParticles` clamps to 1...1500; existing particles retain their UV identity
+    /// for the entire animation. Unrepresentable coordinates yield an empty world.
+    public init(windowFrame: CGRect, screenBounds: CGRect, obstacles: [CGRect], durationScale: Float = 1,
+                maxParticles: Int = 1500) {
         self.windowFrame = windowFrame
         self.screenBounds = screenBounds
         scale = durationScale.isFinite ? min(3, max(0.25, durationScale)) : 1
@@ -88,11 +90,12 @@ public final class LiquidWorld {
         upper = valid ? SIMD2(Float(screenBounds.maxX), Float(screenBounds.maxY)) : .zero
 
         var columns = 0, rows = 0
+        let particleLimit = min(1500, max(1, maxParticles))
         if valid {
-            let target = max(8, (clipped.width * clipped.height / 1300).squareRoot())
-            columns = min(1500, max(1, Int((clipped.width / target).rounded(.up))))
-            rows = min(1500, max(1, Int((clipped.height / target).rounded(.up))))
-            while columns * rows > 1500 {
+            let target = max(8, (clipped.width * clipped.height / CGFloat(min(1300, particleLimit))).squareRoot())
+            columns = min(particleLimit, max(1, Int((clipped.width / target).rounded(.up))))
+            rows = min(particleLimit, max(1, Int((clipped.height / target).rounded(.up))))
+            while columns * rows > particleLimit {
                 if columns > 1 && (rows == 1 || clipped.width / CGFloat(columns) < clipped.height / CGFloat(rows)) {
                     columns -= 1
                 } else {

@@ -10,8 +10,8 @@ import os
 
 /// Plays the open effect when a window is created.
 ///
-/// The new window is never hidden: once its own pop-in animation is over, it is captured as it is and handed to the
-/// jelly model, which plays one of the `WobbleEntrance`s. That way there is no flash and no empty moment.
+/// Legacy entrances retain their original jelly path. An explicitly assigned catalog
+/// preset captures the painted window first, then uses the runtime's reversible AX lease.
 @MainActor
 final class OpenEffectTrigger {
     private static let settleTime: CFTimeInterval = 0.05
@@ -22,6 +22,7 @@ final class OpenEffectTrigger {
     /// True while a wobble animation owns the overlays and the windows.
     private let isBusy: () -> Bool
     private var inProgress = false
+    private var generation = UUID()
     /// A new window is waiting for its pop-in animation to end.
     var isActive: Bool { inProgress }
     /// Called as soon as a new window is going to get an effect.
@@ -42,32 +43,51 @@ final class OpenEffectTrigger {
         }
     }
 
+    func cancelAll() {
+        generation = UUID()
+        inProgress = false
+        CatalogRuntime.shared.stop()
+    }
+
     func windowCreated(_ element: AXUIElement, pid: pid_t) {
-        guard settings.enabled, !inProgress, !isBusy(), pid != ProcessInfo.processInfo.processIdentifier,
-              !AppExclusions.contains(pid: pid), let entrance = entrance() else { return }
+                guard settings.enabled, !inProgress, !isBusy(), !CatalogRuntime.shared.isPlaying, pid != ProcessInfo.processInfo.processIdentifier,
+              !AppExclusions.contains(pid: pid) else { return }
+                let assigned = CatalogStore.shared.assigned(to: .open)
+                guard assigned != nil || entrance() != nil else { return }
+                let token = generation
         inProgress = true
         onStarted?()
         AXBridge.urgentQueue.async { [weak self] in
             AXUIElementSetMessagingTimeout(element, 0.25)
             guard AXBridge.isStandardWindow(element), !AXBridge.isFullScreen(element), let frame = AXBridge.frame(of: element),
                   let id = AXBridge.windowID(of: element), frame.width >= 200, frame.height >= 120 else {
-                Self.log.notice("skipped: not a standard, windowed, big enough window")
-                Task { @MainActor in self?.inProgress = false }
+                Task { @MainActor in
+                    if self?.generation == token {
+                        Self.log.notice("skipped: not a standard, windowed, big enough window")
+                        self?.inProgress = false
+                    }
+                }
                 return
             }
             let info = WindowInfo(id: id, pid: pid, frame: frame)
-            Task { @MainActor in self?.begin(element, info, entrance) }
+            Task { @MainActor in
+                guard let self, self.generation == token else { return }
+                self.begin(element, info)
+            }
         }
     }
 
     /// Waits until the window stops moving and resizing, then hands it over.
-    private func begin(_ element: AXUIElement, _ initial: WindowInfo, _ entrance: WobbleEntrance) {
+    private func begin(_ element: AXUIElement, _ initial: WindowInfo) {
+        let token = generation
         Task {
+            defer { if generation == token { inProgress = false } }
             var frame = initial.frame
             var stableSince = CACurrentMediaTime()
             let deadline = stableSince + Self.settleTimeout
             while CACurrentMediaTime() < deadline {
                 try? await Task.sleep(for: .milliseconds(16))
+                guard generation == token, settings.enabled else { return }
                 let current: CGRect? = await withCheckedContinuation { continuation in
                     AXBridge.urgentQueue.async { continuation.resume(returning: AXBridge.frame(of: element)) }
                 }
@@ -81,8 +101,15 @@ final class OpenEffectTrigger {
                     break
                 }
             }
+            guard generation == token else { return }
             inProgress = false
-            guard settings.enabled, !isBusy() else { return }
+            guard settings.enabled, !isBusy(), !CatalogRuntime.shared.isPlaying, !AppExclusions.contains(pid: initial.pid) else { return }
+            if let assigned = CatalogStore.shared.assigned(to: .open) {
+                // Runtime captures the painted, on-screen window BEFORE it parks it.
+                await CatalogRuntime.shared.play(assigned, windowID: initial.id)
+                return
+            }
+            guard let entrance = entrance() else { return }
             Self.log.notice("\(entrance.title, privacy: .public) at \(frame.minX), \(frame.minY) \(frame.width)x\(frame.height)")
             startWobbleEntrance?(element, WindowInfo(id: initial.id, pid: initial.pid, frame: frame), entrance)
         }

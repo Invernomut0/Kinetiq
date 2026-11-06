@@ -37,7 +37,7 @@ final class MorphPlayer {
         self.completion = completion
         renderer.alpha = 1
         renderer.shadowOpacity = 1
-        renderer.update(from: deformer, tilesX: 24, tilesY: 20)
+        updateMesh(deformer)
 
         if overlays.isEmpty { overlays = NSScreen.screens.map { OverlayWindow(screen: $0, renderer: renderer) } }
         overlays.forEach { $0.render() }
@@ -48,10 +48,10 @@ final class MorphPlayer {
             finish()
             return true
         }
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        updateFrameRate(link)
         link.add(to: .main, forMode: .common)
         displayLink = link
-        lastTimestamp = 0
+        lastTimestamp = CACurrentMediaTime()
         return true
     }
 
@@ -61,13 +61,26 @@ final class MorphPlayer {
 
     @objc private func tick(_ link: CADisplayLink) {
         guard let deformer else { return }
-        let dt = lastTimestamp == 0 ? 1.0 / 120.0 : link.timestamp - lastTimestamp
+        updateFrameRate(link)
+        let dt = max(0, link.timestamp - lastTimestamp)
         lastTimestamp = link.timestamp
         deformer.step(Float(dt))
         renderer.alpha = deformer.alpha
-        renderer.update(from: deformer, tilesX: 24, tilesY: 20)
+        updateMesh(deformer)
         overlays.forEach { $0.render() }
         if deformer.isSettled { finish() }
+    }
+
+    private func updateFrameRate(_ link: CADisplayLink) {
+        let fps = Float(min(120, max(15, RenderQualityManager.shared.budget.secondaryFPS)))
+        if link.preferredFrameRateRange.preferred != fps {
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: min(30, fps), maximum: fps, preferred: fps)
+        }
+    }
+
+    private func updateMesh(_ deformer: DockMorphDeformer) {
+        let limit = RenderQualityManager.shared.budget.meshLimit
+        renderer.update(from: deformer, tilesX: min(24, limit), tilesY: min(20, limit))
     }
 
     private func finish() {

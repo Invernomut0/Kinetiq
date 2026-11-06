@@ -90,9 +90,9 @@ public final class KinetiqModel: WindowDeformer {
     private var immobile: [Bool]
     private let springs: [Spring]
     private var friction: Float
-    private let springK: Float
-    private let mass: Float
-    private let stepsPerSecond: Float
+    private var springK: Float
+    private var mass: Float
+    private var stepsPerSecond: Float
     private var accumulator: Float = 0
     private var anchor: Int?
     private var lastGrabPoint = SIMD2<Float>.zero
@@ -155,6 +155,25 @@ public final class KinetiqModel: WindowDeformer {
     }
 
     // MARK: - Interaction
+
+    /// Resample a drag's spring controls without replacing its mesh or grab anchor.
+    /// Speed changes the fixed simulation-step rate, not the display/input cadence.
+    public func updateSettings(_ settings: KinetiqSettings, speed: Float = 1) {
+        friction = settings.friction
+        springK = settings.spring * 0.5
+        mass = 100 - settings.mass
+        stepsPerSecond = settings.stepsPerSecond * (speed.isFinite ? min(4, max(0.1, speed)) : 1)
+    }
+
+    /// Moves the rigid frame and every node together, preserving deformation and
+    /// velocity. External bounded dynamics must never leave the mesh at its old origin.
+    public func translate(to newOrigin: SIMD2<Float>) {
+        guard newOrigin.x.isFinite, newOrigin.y.isFinite else { return }
+        let delta = newOrigin - origin
+        for index in positions.indices { positions[index] += delta }
+        lastGrabPoint += delta
+        origin = newOrigin
+    }
 
     /// Manhattan distance, iterating from last to first like the original (this decides ties).
     private func nearestObject(_ point: SIMD2<Float>) -> Int {
@@ -251,6 +270,11 @@ public final class KinetiqModel: WindowDeformer {
         ripples.removeAll { !$0.isActive }
         ripples.append(Ripple(center: local, time: -delay, amplitude: amplitude, wavelength: wavelength, speed: speed,
                               duration: duration, decay: decay))
+    }
+
+    /// Budget degradation removes optional waves without changing grab, glide or springs.
+    public func cancelRipples() {
+        ripples.removeAll()
     }
 
     private func rippleOffset(u: Float, v: Float) -> SIMD2<Float> {

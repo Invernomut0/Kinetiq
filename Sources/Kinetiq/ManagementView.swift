@@ -3,11 +3,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import AppKit
+import KinetiqCore
 import SwiftUI
 
 /// Only destinations backed by real engine capabilities appear in the sidebar.
 enum ManagementPage: String, CaseIterable, Identifiable {
-    case overview, windows, effects, physics, screenSaver, rules, diagnostics, settings
+    case overview, windows, effects, animationStudio, physics, layouts, workspaces, rules, performance, diagnostics, settings, screenSaver
 
     var id: String { rawValue }
 
@@ -16,9 +17,13 @@ enum ManagementPage: String, CaseIterable, Identifiable {
         case .overview: return "Overview"
         case .windows: return "Windows"
         case .effects: return "Effects"
+        case .animationStudio: return "Animation Studio"
         case .physics: return "Physics"
+        case .layouts: return "Layouts"
+        case .workspaces: return "Workspaces"
         case .screenSaver: return "Screen Saver"
-        case .rules: return "App Rules"
+        case .rules: return "Rules"
+        case .performance: return "Performance"
         case .diagnostics: return "Diagnostics"
         case .settings: return "Settings"
         }
@@ -29,7 +34,11 @@ enum ManagementPage: String, CaseIterable, Identifiable {
         case .overview: return "square.grid.2x2"
         case .windows: return "macwindow.on.rectangle"
         case .effects: return "sparkles"
+        case .animationStudio: return "timeline.selection"
         case .physics: return "atom"
+        case .layouts: return "rectangle.3.group"
+        case .workspaces: return "cube"
+        case .performance: return "gauge.with.dots.needle.67percent"
         case .screenSaver: return "display"
         case .rules: return "line.3.horizontal.decrease.circle"
         case .diagnostics: return "stethoscope"
@@ -42,7 +51,11 @@ enum ManagementPage: String, CaseIterable, Identifiable {
         case .overview: return "Your desktop, with a little more life."
         case .windows: return "A read-only snapshot of visible desktop windows."
         case .effects: return "Give every arrival, exit and minimize its own character."
+        case .animationStudio: return "Compose captured-window motion with layers, tracks and keyframes."
         case .physics: return "Tune the spring model behind every movement."
+        case .layouts: return "Arrange captured windows with Orbit and Exposé 3D."
+        case .workspaces: return "Current Space only, no native Space switching."
+        case .performance: return "Actual GPU completion timings and active resource budgets."
         case .screenSaver: return "Let your desktop fall apart. Bring it back with a gesture."
         case .rules: return "Choose which apps join in, and which stay untouched."
         case .diagnostics: return "Live system checks. No simulated telemetry."
@@ -85,6 +98,7 @@ struct SetupView: View {
     @ObservedObject var model: SetupModel
     @State private var selection: ManagementPage? = .overview
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var libraryCategory: EffectCategory? = nil
 
     private var page: ManagementPage { selection ?? .overview }
 
@@ -128,15 +142,35 @@ struct SetupView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(32)
                     }
+                } else if page == .effects {
+                    EffectsLibraryView(model: model, initialCategory: libraryCategory)
+                } else if page == .animationStudio {
+                    AnimationStudioView()
+                } else if page == .performance {
+                    PerformanceView()
+                } else if page == .layouts || page == .workspaces {
+                    CatalogArrangementView(workspaces: page == .workspaces)
+                } else if page == .physics {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Button("Explore Physics in Effects Library", systemImage: "atom") {
+                            libraryCategory = .physics
+                            selection = .effects
+                        }
+                        .padding(.horizontal, 32).padding(.top, 12)
+                        SetupControlsView(model: model, page: page)
+                    }
                 } else {
                     SetupControlsView(model: model, page: page).id(page)
                 }
             }
             .background(Color(nsColor: .windowBackgroundColor))
-            .navigationTitle("Kinetiq")
+            .navigationTitle("Kinetiq — \(page.title)")
         }
         .tint(.blue)
-        .frame(minWidth: 820, minHeight: 560)
+        .onReceive(model.$requestedPage) { requested in
+            if let requested { selection = requested }
+        }
+        .frame(minWidth: 960, minHeight: 700)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshWindows() }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didLaunchApplicationNotification)) { _ in model.refreshWindows() }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didTerminateApplicationNotification)) { _ in model.refreshWindows() }
@@ -156,7 +190,7 @@ struct SetupView: View {
                 .buttonStyle(.borderless)
                 .help("Show or hide sidebar")
                 .accessibilityLabel("Toggle sidebar")
-                Text(page.title).font(.system(size: 30, weight: .bold))
+                Text(page.title).font(.title2.bold())
                 Spacer()
                 Button { model.refreshWindows() } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless)
@@ -166,7 +200,7 @@ struct SetupView: View {
             Text(page.subtitle).font(.system(size: 13)).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 32)
-        .padding(.top, 28)
+        .padding(.top, 18)
         .padding(.bottom, 8)
     }
 

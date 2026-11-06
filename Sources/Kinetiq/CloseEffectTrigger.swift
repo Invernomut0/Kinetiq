@@ -5,6 +5,7 @@
 import AppKit
 import QuartzCore
 import KinetiqEffects
+import KinetiqCore
 
 /// Decides when a window is being closed, and plays the close effect as it goes away.
 ///
@@ -62,7 +63,7 @@ final class CloseEffectTrigger {
     private var timer: DispatchSourceTimer?
     private var generation = UUID()
 
-        init(settings: Settings, capture: WindowCapture, player: CloseEffectPlayer, liquid: LiquidEffectPlayer?,
+    init(settings: Settings, capture: WindowCapture, player: CloseEffectPlayer, liquid: LiquidEffectPlayer?,
             isBusy: @escaping () -> Bool) {
         self.settings = settings
         self.capture = capture
@@ -71,13 +72,17 @@ final class CloseEffectTrigger {
         self.isBusy = isBusy
     }
 
-    private var enabled: Bool { settings.enabled && (settings.closeEffect != .off || !settings.appCloseEffects.isEmpty) }
+    private var enabled: Bool {
+        settings.enabled && (CatalogStore.shared.assigned(to: .close) != nil
+            || settings.closeEffect != .off || !settings.appCloseEffects.isEmpty)
+    }
 
     // MARK: - Events
 
     /// A mouse click that was passed on to the app.
     func mouseDown(at point: CGPoint, windows: WindowList) {
         guard enabled, !isBusy(), let info = WindowLocator.window(at: point, in: windows) else { return }
+        guard info.pid != ProcessInfo.processInfo.processIdentifier else { return }
         let local = CGPoint(x: point.x - info.frame.minX, y: point.y - info.frame.minY)
         guard local.x >= 0, local.y >= 0, local.x <= Self.closeButtonArea.width, local.y <= Self.closeButtonArea.height else { return }
         // The capture takes longer than the app takes to close the window, so it starts with the click.
@@ -92,8 +97,9 @@ final class CloseEffectTrigger {
         let window = candidate.window
         start(window, deadline: CACurrentMediaTime() + Self.clickGrace)
         watches[window.id]?.pending = candidate.task
+        let token = generation
         Task {
-            guard let frame = await candidate.task.value else { return }
+            guard let frame = await candidate.task.value, generation == token, enabled else { return }
             self.watches[window.id]?.capture = frame
             self.watches[window.id]?.capturedAt = CACurrentMediaTime()
         }
@@ -111,6 +117,9 @@ final class CloseEffectTrigger {
 
     func cancelAll() {
         generation = UUID()
+        CatalogRuntime.shared.stop()
+        clickCandidate?.task.cancel()
+        for watch in watches.values { watch.pending?.cancel() }
         clickCandidate = nil
         commandHeld = false
         watches.removeAll()
@@ -125,11 +134,12 @@ final class CloseEffectTrigger {
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
               !AppExclusions.contains(pid: app.processIdentifier) else { return }
         let pid = app.processIdentifier
+        let token = generation
         // Accessibility calls go through the app's own queue: a slow app must not freeze the event tap.
         AXBridge.queue(for: pid).async { [weak self] in
             let focused = AXBridge.focusedWindow(pid: pid)
             Task { @MainActor in
-                guard let self, self.commandHeld, let focused,
+                guard let self, self.generation == token, self.commandHeld, let focused,
                       focused.frame.width >= 80, focused.frame.height >= 40 else { return }
                 self.start(focused, deadline: .infinity)
             }
@@ -160,8 +170,10 @@ final class CloseEffectTrigger {
         guard let watch = watches[id], !watch.capturing, CACurrentMediaTime() - watch.capturedAt > Self.refreshAge else { return }
         watches[id]?.capturing = true
         let info = WindowInfo(id: id, pid: watch.window.pid, frame: watch.lastFrame)
+        let token = generation
         Task {
             let frame = try? await capture.capture(info)
+            guard generation == token, enabled else { return }
             self.watches[id]?.capturing = false
             if let frame {
                 self.watches[id]?.capture = frame
@@ -192,6 +204,7 @@ final class CloseEffectTrigger {
     }
 
     private func poll() {
+        guard enabled else { cancelAll(); return }
         let now = CACurrentMediaTime()
         // If a ⌘ release was missed (the event tap was off for a moment), don't watch forever.
         if commandHeld, !NSEvent.modifierFlags.contains(.command) { releaseCommand() }
@@ -231,9 +244,10 @@ final class CloseEffectTrigger {
     /// With ⌘ still held, the next window to take focus (when closing several in a row) is captured too.
     private func rearmWhileCommandHeld() {
         guard commandHeld else { return }
+        let token = generation
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             MainActor.assumeIsolated {
-                if let self, self.commandHeld { self.captureFocusedWindow() }
+                if let self, self.generation == token, self.commandHeld { self.captureFocusedWindow() }
             }
         }
     }
@@ -242,11 +256,14 @@ final class CloseEffectTrigger {
     /// `fading` is true while macOS' own fade-out is still running underneath the effect.
     private func closed(_ watch: Watch, fading: Bool) {
         guard enabled, !isBusy(),
+              watch.window.pid != ProcessInfo.processInfo.processIdentifier,
+              !AppExclusions.contains(pid: watch.window.pid),
               // Hiding the app fades its windows out too, but they come back.
               let app = NSRunningApplication(processIdentifier: watch.window.pid), !app.isHidden else { return }
-          let choice = settings.closeEffect(forBundleID: app.bundleIdentifier)
-          let effect = player.effect(for: choice)
-          guard choice == .liquid || effect != nil else { return }
+        let assigned = CatalogStore.shared.assigned(to: .close)
+        let choice = settings.closeEffect(forBundleID: app.bundleIdentifier)
+        let effect = player.effect(for: choice)
+        guard assigned != nil || choice == .liquid || effect != nil else { return }
         let windowFrame = watch.lastFrame
         let pointer = CGEvent(source: nil)?.location ?? CGPoint(x: windowFrame.minX + 24, y: windowFrame.minY + 22)
         let speed = settings.closeDuration
@@ -254,8 +271,12 @@ final class CloseEffectTrigger {
 
         func play(_ frame: CapturedFrame) {
             // A capture of another size means the window was resized after it: it would be drawn distorted.
-            guard generation == token, enabled, !isBusy(), frame.pointSize == windowFrame.size else { return }
-            if choice == .liquid {
+            guard generation == token, enabled, !isBusy(), frame.pointSize == windowFrame.size,
+                CatalogStore.shared.assigned(to: .close) == assigned,
+                settings.closeEffect(forBundleID: app.bundleIdentifier) == choice else { return }
+            if let assigned {
+                _ = CatalogRuntime.shared.playCaptured(frame, windowFrame: windowFrame, preset: assigned)
+            } else if choice == .liquid {
                 liquid?.play(frame, windowFrame: windowFrame, durationScale: speed)
             } else if let effect {
                 player.play(frame, windowFrame: windowFrame, effect: effect, pointer: pointer, durationScale: speed, nativeFade: fading)

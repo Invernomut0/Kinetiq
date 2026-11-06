@@ -44,8 +44,12 @@ final class MinimizeEffectTrigger {
     private static let log = Logger(subsystem: "io.github.invernomut0.Kinetiq", category: "minimize")
     private let replay: (CGEvent, CGEvent) -> Void
     private var pending: Pending?
+    private var preparing = false
     /// Invalidates an async capture/AX lookup if the controller cancels meanwhile.
     private var generation = UUID()
+    private var parked: CatalogWindowLease?
+    private var parkedShield: ScreenShield?
+    private var restoreTimer: DispatchSourceTimer?
 
     init(settings: Settings, capture: WindowCapture, morph: MorphPlayer, liquid: LiquidEffectPlayer?, isBusy: @escaping () -> Bool,
          replay: @escaping (CGEvent, CGEvent) -> Void) {
@@ -58,19 +62,26 @@ final class MinimizeEffectTrigger {
     }
 
     /// A click on the button is being held back.
-    var isPending: Bool { pending != nil }
+    var isPending: Bool { pending != nil || preparing }
 
     func cancel() {
         generation = UUID()
+        CatalogRuntime.shared.stop()
+        restoreTimer?.cancel(); restoreTimer = nil
+        pending?.capture.cancel(); pending?.shield.cancel(); pending?.icon.cancel()
         pending = nil
+        preparing = false
         morph.cancel()
+        liquid?.cancelAll()
     }
 
     /// Returns true if the click is held back.
     func mouseDown(_ event: CGEvent, windows: WindowList) -> Bool {
         let point = event.location
-        guard settings.enabled, settings.minimizeEffect != .off, pending == nil, !isBusy(),
+        guard settings.enabled, (settings.minimizeEffect != .off || CatalogStore.shared.assigned(to: .minimize) != nil),
+              !isPending, parked == nil, !isBusy(), !CatalogRuntime.shared.isPlaying,
               let info = WindowLocator.window(at: point, in: windows) else { return false }
+        guard info.pid != ProcessInfo.processInfo.processIdentifier, !AppExclusions.contains(pid: info.pid) else { return false }
         let local = CGPoint(x: point.x - info.frame.minX, y: point.y - info.frame.minY)
         guard local.x >= 0, local.y >= 0, local.x <= Self.buttonArea.width, local.y <= Self.buttonArea.height,
               let button = AXBridge.minimizeButtonFrame(pid: info.pid, at: point), let down = event.copy() else { return false }
@@ -97,7 +108,11 @@ final class MinimizeEffectTrigger {
             return true
         }
         let token = generation
-        Task { await minimize(click, up: up, token: token) }
+        preparing = true
+        Task {
+            defer { if generation == token { preparing = false } }
+            await minimize(click, up: up, token: token)
+        }
         return true
     }
 
@@ -106,19 +121,27 @@ final class MinimizeEffectTrigger {
         let frame = await click.capture.value
         let shield = await click.shield.value
         let icon = await click.icon.value
-          guard generation == token, settings.enabled, let frame, frame.isPainted, frame.pointSize == info.frame.size,
+        let assigned = CatalogStore.shared.assigned(to: .minimize)
+        guard generation == token else { shield?.hide(); return }
+        guard settings.enabled, let frame, frame.isPainted, frame.pointSize == info.frame.size,
               CACurrentMediaTime() - click.startedAt < Self.captureTimeout, !isBusy(), !morph.isPlaying,
-              let choice = resolvedChoice() else {
+              assigned != nil || resolvedChoice() != nil else {
             shield?.hide()
             replay(click.down, up)
             return
         }
         let element: AXUIElement? = await withCheckedContinuation { continuation in
             AXBridge.queue(for: info.pid).async {
-                continuation.resume(returning: AXBridge.findWindow(info, hitPoint: click.buttonFrame.origin))
+                let element = AXBridge.findWindow(info, hitPoint: click.buttonFrame.origin)
+                guard let element, AXBridge.windowID(of: element) == info.id,
+                      AXBridge.isStandardWindow(element), !AXBridge.isFullScreen(element),
+                      AXBridge.frame(of: element) == info.frame else { continuation.resume(returning: nil); return }
+                continuation.resume(returning: element)
             }
         }
-        guard generation == token, settings.enabled, !isBusy(), let element else {
+            guard generation == token else { shield?.hide(); return }
+            guard settings.enabled, !isBusy(), !CatalogRuntime.shared.isPlaying, let element,
+              CatalogStore.shared.assigned(to: .minimize) == assigned else {
             shield?.hide()
             replay(click.down, up)
             return
@@ -128,16 +151,20 @@ final class MinimizeEffectTrigger {
         shield?.show()
         let target = icon ?? fallbackIcon(near: info.frame)
         let started: Bool
-        switch choice {
-        case .liquid:
-            Self.log.notice("Liquid minimize: window \(info.id)")
-            started = liquid?.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration) ?? false
-        case .morph(let style):
-            Self.log.notice("\(style.title, privacy: .public) into \(target.minX), \(target.minY) \(target.width)x\(target.height) (dock icon found: \(icon != nil))")
-            started = morph.play(frame, windowFrame: info.frame, icon: target, style: style,
-                                 durationScale: settings.closeDuration) {}
-        case .off, .random:
-            started = false
+        if let assigned {
+            started = CatalogRuntime.shared.playCaptured(frame, windowFrame: info.frame, preset: assigned)
+        } else {
+            switch resolvedChoice() ?? .off {
+            case .liquid:
+                Self.log.notice("Liquid minimize: window \(info.id)")
+                started = liquid?.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration) ?? false
+            case .morph(let style):
+                Self.log.notice("\(style.title, privacy: .public) into \(target.minX), \(target.minY) \(target.width)x\(target.height) (dock icon found: \(icon != nil))")
+                started = morph.play(frame, windowFrame: info.frame, icon: target, style: style,
+                                     durationScale: settings.closeDuration) {}
+            case .off, .random:
+                started = false
+            }
         }
         guard started else {
             shield?.hide()
@@ -146,18 +173,29 @@ final class MinimizeEffectTrigger {
         }
 
         // Parked and minimized in one go, so the system animation starts from a window that is not on screen.
-        let park = NSScreen.parkingPoint
+        let lease = CatalogWindowLease(element: element, info: info)
+        parked = lease; parkedShield = shield
+        CatalogRuntime.shared.ownMinimizeLease(lease) { [weak self] in
+            shield?.hide()
+            guard let self, self.parked === lease else { return }
+            self.parked = nil; self.parkedShield = nil
+            self.restoreTimer?.cancel(); self.restoreTimer = nil
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.parkDelay) { [weak self] in
             guard let self, self.generation == token, self.settings.enabled else {
-                shield?.hide()
-                self?.replay(click.down, up)
+                CatalogRuntime.shared.releaseMinimizeLease(lease)
                 return
             }
-            AXBridge.urgentQueue.async {
-                AXBridge.setPosition(element, park)
-                AXBridge.setMinimized(element, true)
+            Task { @MainActor in
+                let didPark = await lease.park()
+                guard self.generation == token else { return }
+                guard self.settings.enabled, didPark else {
+                    self.finish(lease, click: click, up: up, token: token, replayClick: true)
+                    return
+                }
+                lease.minimize()
+                self.finishWhenMinimized(lease, click: click, up: up, token: token)
             }
-            self.finishWhenGone(info.id, element: element, origin: info.frame.origin, shield: shield)
         }
     }
 
@@ -177,20 +215,59 @@ final class MinimizeEffectTrigger {
         return CGRect(x: bounds.midX - 28, y: bounds.maxY - 70, width: 56, height: 56)
     }
 
-    /// Once the system animation has taken the window off screen, puts it back at its position (it stays minimized,
-    /// so it comes back where it was) and drops the shield.
-    private func finishWhenGone(_ id: CGWindowID, element: AXUIElement, origin: CGPoint, shield: ScreenShield?) {
+    /// Parking already removes the window from the on-screen list; only AX proves
+    /// the native action completed. Keep ownership and the shield until restoration.
+    private func finishWhenMinimized(_ lease: CatalogWindowLease, click: Pending, up: CGEvent, token: UUID) {
         let began = CACurrentMediaTime()
+        var checking = false
         let timer = DispatchSource.makeTimerSource(flags: .strict, queue: .main)
-        timer.schedule(deadline: .now() + 0.05, repeating: .milliseconds(16), leeway: .nanoseconds(0))
-        timer.setEventHandler {
+        timer.schedule(deadline: .now() + 0.05, repeating: .milliseconds(50), leeway: .milliseconds(5))
+        timer.setEventHandler { [weak self] in
             MainActor.assumeIsolated {
-                guard WindowLocator.snapshot(of: id) == nil || CACurrentMediaTime() - began > Self.animationTimeout else { return }
-                timer.cancel()
-                AXBridge.urgentQueue.async { AXBridge.setPosition(element, origin) }
-                shield?.hide()
+                guard let self else { timer.cancel(); CatalogRuntime.shared.releaseMinimizeLease(lease); return }
+                if self.generation != token || !self.settings.enabled {
+                    timer.cancel(); CatalogRuntime.shared.releaseMinimizeLease(lease); return
+                }
+                if checking, CACurrentMediaTime() - began >= Self.animationTimeout {
+                    timer.cancel()
+                    self.finish(lease, click: click, up: up, token: token, replayClick: false)
+                    return
+                }
+                guard !checking else { return }
+                checking = true
+                Task { @MainActor in
+                    let minimized = await lease.isMinimized()
+                    checking = false
+                    guard self.generation == token, self.parked === lease else { timer.cancel(); return }
+                    guard minimized == true || CACurrentMediaTime() - began >= Self.animationTimeout else { return }
+                    timer.cancel()
+                    // Retry the original click only after a definite native rejection,
+                    // origin restoration and a final exact-window safety check.
+                    self.finish(lease, click: click, up: up, token: token, replayClick: minimized == false)
+                }
             }
         }
+        restoreTimer = timer
         timer.resume()
+    }
+
+    private func finish(_ lease: CatalogWindowLease, click: Pending, up: CGEvent, token: UUID, replayClick: Bool) {
+        guard generation == token else { return }
+        restoreTimer?.cancel(); restoreTimer = nil
+        if replayClick {
+            morph.cancel(); liquid?.cancelAll()
+        }
+        CatalogRuntime.shared.releaseMinimizeLease(lease) { [weak self] in
+            guard let self, replayClick else { return }
+            Task { @MainActor in
+                let minimized = await lease.isMinimized()
+                guard minimized == false, self.generation == token, self.settings.enabled,
+                      NSWorkspace.shared.frontmostApplication?.processIdentifier == click.info.pid,
+                      WindowLocator.window(at: up.location)?.id == click.info.id,
+                      WindowLocator.snapshot(of: click.info.id)?.frame == click.info.frame else { return }
+                self.replay(click.down, up)
+            }
+        }
+        if replayClick { CatalogRuntime.shared.stop() }
     }
 }

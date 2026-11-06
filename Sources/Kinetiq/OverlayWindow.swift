@@ -12,7 +12,20 @@ protocol OverlayContent: AnyObject {
     var hasScene: Bool { get }
     /// Bounding box of the scene, in global CG coordinates.
     var sceneBounds: CGRect { get }
+    /// Explicit destination opt-in only. Quality budgets normally scale an
+    /// intermediate field instead, keeping captures and final text native.
+    var preferredRenderingScale: Double { get }
     func draw(in view: MTKView, screenRect: CGRect)
+}
+
+extension OverlayContent {
+    var preferredRenderingScale: Double { 1 }
+
+    /// Invoke on the actual rendering command buffer before committing it.
+    /// Also available to MeshRenderer without exposing its private queue.
+    func trackGPUCompletion(_ command: MTLCommandBuffer) {
+        RenderQualityManager.trackGPUCompletion(command)
+    }
 }
 
 /// Transparent, full-screen, click-through window where the "jelly" window is drawn.
@@ -33,6 +46,7 @@ final class OverlayWindow: NSObject, MTKViewDelegate {
         view.colorspace = WindowCapture.colorSpace
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         view.isPaused = true
+        view.autoResizeDrawable = false
         view.enableSetNeedsDisplay = false
         view.framebufferOnly = true
         view.layer?.isOpaque = false
@@ -91,6 +105,12 @@ final class OverlayWindow: NSObject, MTKViewDelegate {
     }
 
     func draw(in view: MTKView) {
+        let preferred = renderer.preferredRenderingScale
+        let scale = preferred.isFinite ? min(1, max(0.25, preferred)) : 1
+        let backing = window.backingScaleFactor
+        let size = CGSize(width: max(1, (view.bounds.width * backing * scale).rounded()),
+                          height: max(1, (view.bounds.height * backing * scale).rounded()))
+        if view.drawableSize != size { view.drawableSize = size }
         renderer.draw(in: view, screenRect: screenRect)
     }
 

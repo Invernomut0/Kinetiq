@@ -17,6 +17,7 @@ final class SetupModel: ObservableObject {
     private let enabledChanged: () -> Void
     let runtimeStatus: () -> ManagementRuntimeStatus
     let systemSaver: SystemScreenSaver?
+    @Published var requestedPage: ManagementPage?
     private(set) var visibleWindows: [ManagedWindow] = []
 
     init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void,
@@ -99,6 +100,9 @@ final class SetupModel: ObservableObject {
 
     private func resetEffects() {
         settings.resetToDefaults()
+        CatalogRuntime.shared.stop()
+        CatalogStore.shared.resetAll()
+        RenderQualityManager.shared.reset()
         DockGenie.sync(enabled: settings.minimizeEffect != .off)
         closeEffectChanged()
         refresh()
@@ -463,7 +467,7 @@ final class SetupWindowController {
                            enabledChanged: enabledChanged, runtimeStatus: runtimeStatus, systemSaver: systemSaver)
     }
 
-    func show() {
+    func show(page: ManagementPage? = nil) {
         if window == nil {
             let hosting = NSHostingController(rootView: SetupView(model: model))
             let window = NSWindow(contentViewController: hosting)
@@ -472,13 +476,14 @@ final class SetupWindowController {
             window.titlebarAppearsTransparent = true
             window.toolbarStyle = .unified
             window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 1040, height: 740))
-            window.minSize = NSSize(width: 860, height: 620)
+            window.setContentSize(NSSize(width: 1180, height: 780))
+            window.contentMinSize = NSSize(width: 960, height: 700)
             window.setFrameAutosaveName("KinetiqManagement")
             window.center()
             self.window = window
         }
         model.refreshWindows()
+        if let page { model.requestedPage = page }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
     }

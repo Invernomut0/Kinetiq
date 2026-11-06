@@ -13,13 +13,19 @@ import KinetiqEffects
 /// overlays (one per screen), over whatever is on the desktop now. Several windows can be closing at once.
 @MainActor
 final class CloseEffectPlayer: NSObject, OverlayContent {
+    /// Immutable CoreVideo mapping retained by in-flight commands, not the scene.
+    private final class CaptureBacking: @unchecked Sendable {
+        let texture: CVMetalTexture
+        init(_ texture: CVMetalTexture) { self.texture = texture }
+    }
+
     private struct Playing {
         var scene: EffectScene
         var startedAt: CFTimeInterval?
         /// macOS' own fade-out is still running under the overlay: its shadow fades out as ours fades in.
         let underFade: Bool
         /// Keeps the capture's IOSurface mapped while the GPU may read it.
-        let backing: CVMetalTexture
+        let backing: CaptureBacking
     }
 
     /// How long macOS takes to fade a closing window out.
@@ -132,9 +138,13 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
 
     /// Starts the effect on the capture of a window that is closing. Returns false if it can't be drawn.
     /// `nativeFade`: the real window is still fading out underneath, with its own shadow.
+    /// Quality fallback is opt-in: a caller must user-gate substitution. Once
+    /// accepted, captures always finish even if the quality budget later changes.
     @discardableResult
     func play(_ frame: CapturedFrame, windowFrame: CGRect, effect: CloseEffect, pointer: CGPoint, durationScale: Double,
-              nativeFade: Bool) -> Bool {
+              nativeFade: Bool, allowsQualityFallback: Bool = false) -> Bool {
+        RenderQualityManager.shared.refreshEnvironment()
+        let effect = allowsQualityFallback && !RenderQualityManager.shared.budget.allowsExpensive ? .glide : effect
         guard let textureCache else { return false }
         do {
             try renderer.prepare(effect)
@@ -164,7 +174,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
                 ?? SIMD3(0.04, 0.52, 1),
             durationScale: Float(durationScale))
 
-        playing.append(Playing(scene: scene, startedAt: nil, underFade: nativeFade, backing: backing))
+        playing.append(Playing(scene: scene, startedAt: nil, underFade: nativeFade, backing: CaptureBacking(backing)))
         playing[playing.count - 1].scene.shadowOpacity = nativeFade ? 0 : 1
         refreshBounds()
         ensureOverlays()
@@ -190,12 +200,13 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
         guard displayLink == nil else { return }
         let screen = NSScreen.containing(cgPoint: point) ?? NSScreen.screens.first
         guard let link = screen?.displayLink(target: self, selector: #selector(tick(_:))) else { return }
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        updateFrameRate(link)
         link.add(to: .main, forMode: .common)
         displayLink = link
     }
 
     @objc private func tick(_ link: CADisplayLink) {
+        updateFrameRate(link)
         for index in playing.indices {
             // The first frame is drawn at progress 0, whenever the animation was requested.
             let start = playing[index].startedAt ?? link.timestamp
@@ -210,6 +221,13 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
         refreshBounds()
         overlays.forEach { $0.render() }
         finishIfIdle()
+    }
+
+    private func updateFrameRate(_ link: CADisplayLink) {
+        let fps = Float(min(120, max(15, RenderQualityManager.shared.budget.secondaryFPS)))
+        if link.preferredFrameRateRange.preferred != fps {
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: min(30, fps), maximum: fps, preferred: fps)
+        }
     }
 
     private func finishIfIdle() {
@@ -231,6 +249,9 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
             renderer.encode(item.scene, into: encoder, screenRect: screenRect)
         }
         encoder.endEncoding()
+        let backings = playing.filter { $0.scene.quadRect.intersects(screenRect) }.map(\.backing)
+        commandBuffer.addCompletedHandler { _ in withExtendedLifetime(backings) {} }
+        if !backings.isEmpty { trackGPUCompletion(commandBuffer) }
         commandBuffer.present(drawable)
         commandBuffer.commit()
     }

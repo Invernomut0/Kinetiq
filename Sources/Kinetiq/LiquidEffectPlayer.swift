@@ -65,9 +65,14 @@ final class LiquidEffectPlayer: NSObject, OverlayContent {
     }
 
     /// Returns false without touching the real window if resources are unavailable.
+    /// A forbidden expensive effect also returns false before accepting a capture;
+    /// callers must keep their native minimize/close fallback in that case.
     /// At most two captures (up to 1500 particles/display each) may remain alive.
     @discardableResult
     func play(_ frame: CapturedFrame, windowFrame: CGRect, durationScale: Double) -> Bool {
+        RenderQualityManager.shared.refreshEnvironment()
+        let budget = RenderQualityManager.shared.budget
+        guard budget.allowsExpensive else { return false }
         let sources = Set(playing.map(\.sourceID))
         guard sources.count < 2, !sources.contains(frame.windowID), frame.isPainted,
               frame.pointSize == windowFrame.size, let textureCache else { return false }
@@ -86,7 +91,7 @@ final class LiquidEffectPlayer: NSObject, OverlayContent {
                        Float(frame.windowRect.width) / Float(width), Float(frame.windowRect.height) / Float(height))
         let additions = screens.compactMap { screen -> Playing? in
             let world = LiquidWorld(windowFrame: windowFrame, screenBounds: screen.cgFrame,
-                                    obstacles: obstacles, durationScale: Float(scale))
+                                    obstacles: obstacles, durationScale: Float(scale), maxParticles: budget.maxParticles)
             guard !world.isFinished else { return nil }
             return Playing(world: world, sourceID: frame.windowID, texture: texture, backing: retainedBacking, uvRect: uv,
                            deadline: CACurrentMediaTime() + 15 * scale)
@@ -94,10 +99,10 @@ final class LiquidEffectPlayer: NSObject, OverlayContent {
         guard !additions.isEmpty else { return false }
         if displayLink == nil {
             guard let link = screens.first?.displayLink(target: self, selector: #selector(tick(_:))) else { return false }
-            link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+            updateFrameRate(link)
             link.add(to: .main, forMode: .common)
             displayLink = link
-            lastTimestamp = 0
+            lastTimestamp = CACurrentMediaTime()
         }
         playing += additions
         if overlays.isEmpty {
@@ -124,7 +129,8 @@ final class LiquidEffectPlayer: NSObject, OverlayContent {
     }
 
     @objc private func tick(_ link: CADisplayLink) {
-        let dt = lastTimestamp == 0 ? 1.0 / 60 : link.timestamp - lastTimestamp
+        updateFrameRate(link)
+        let dt = max(0, link.timestamp - lastTimestamp)
         lastTimestamp = link.timestamp
         let now = CACurrentMediaTime()
         if now >= nextObstacleRefresh {
@@ -138,11 +144,19 @@ final class LiquidEffectPlayer: NSObject, OverlayContent {
         if playing.isEmpty { cancelAll() }
     }
 
+    private func updateFrameRate(_ link: CADisplayLink) {
+        let fps = Float(min(120, max(15, RenderQualityManager.shared.budget.secondaryFPS)))
+        if link.preferredFrameRateRange.preferred != fps {
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: min(30, fps), maximum: fps, preferred: fps)
+        }
+    }
+
     func draw(in view: MTKView, screenRect: CGRect) {
         guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
               let command = queue.makeCommandBuffer(),
               let clear = command.makeRenderCommandEncoder(descriptor: pass) else { return }
         clear.endEncoding()
+        renderer.geometryScale = RenderQualityManager.shared.budget.textureScale
         for item in playing where item.world.screenBounds == screenRect {
             renderer.encode(world: item.world, texture: item.texture, uvRect: item.uvRect,
                             into: command, target: drawable.texture, screenRect: screenRect)
@@ -151,6 +165,7 @@ final class LiquidEffectPlayer: NSObject, OverlayContent {
         // outlive GPU use, even if cancellation removes the scene immediately.
         let backings = playing.filter { $0.world.screenBounds == screenRect }.map(\.backing)
         command.addCompletedHandler { _ in withExtendedLifetime(backings) {} }
+        if !backings.isEmpty { trackGPUCompletion(command) }
         command.present(drawable)
         command.commit()
     }

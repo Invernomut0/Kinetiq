@@ -6,6 +6,8 @@ Kinetiq is a native menu bar app, forked from [Wobbly](https://github.com/jsgrrc
 
 https://github.com/user-attachments/assets/40bc5530-d253-4d47-bc57-3eccdac83d70
 
+**v0.2.0 · build 33** adds a 19-effect catalog, adaptive render quality and Animation Studio, a compact functional motion editor for real captured windows. The original 30 close shaders, Liquid simulation and legacy window controls remain available. See the [Studio guide](docs/animation-studio.md) for editing, JSON and runtime limits.
+
 ## Installing
 
 Requires macOS 14 or later, on Apple Silicon or Intel.
@@ -17,22 +19,79 @@ Download the DMG from Releases and drag Kinetiq to `/Applications`. The app is n
 - **Drag from the title bar** as usual, or
 - **Hold the shortcut** (⌃⌘ by default) and drag a window from anywhere.
 
-The menu bar icon keeps only the main controls: **Kinetiq Enabled**, **Drag from Title Bar** and the **Shortcut** modifier. The **Setup** management window opens on launch and can be reopened from **Setup…** (⌘,) or by opening the app again. It has a collapsible native sidebar, remembers its window size and follows the macOS light/dark appearance. Closing it leaves the menu bar engine running. Changes apply immediately and are saved locally.
+The menu bar provides **Kinetiq Enabled**, **Drag from Title Bar**, the **Shortcut** modifier, six permanent effect categories, **Render Quality**, **Stop & Restore Windows** and **Animation Studio…**. Choosing an effect runs its saved preset on an eligible real window of the frontmost app; it does not assign an automatic trigger. The **Setup** management window opens on launch and can be reopened from **Setup…** (⌘,) or by opening the app again. It has a collapsible native sidebar, remembers its window size and follows the macOS light/dark appearance. Closing it leaves the menu bar engine running, but stops active Studio/library playback. Legacy controls apply immediately; catalog edits require **Save & Apply**, and Studio documents require **Save Document**.
 
-### Management dashboard (v0.1.28)
+### Management dashboard (v0.2.0)
+
+There are **12 pages**: the original eight destinations (App Rules is now **Rules**) plus Animation Studio, Layouts, Workspaces and Performance.
+
+The dashboard supports a minimum content area of **960 × 700 points**, excluding native window chrome.
 
 | Page | Controls and information |
 |---|---|
 | **Overview** | Actual engine and permission status, enable/pause switch, shortcuts to Effects and Physics, permission requests and refresh. Pausing restores windows involved in active effects. |
 | **Windows** | Read-only snapshot of normal-level on-screen windows: owning app, title when available, and dimensions. Refresh manually for an updated snapshot. This page never moves or captures a window. |
-| **Effects** | Close shader or Liquid, Open jelly entrance, Minimize Dock morph or Liquid, and animation duration multiplier. |
+| **Effects** | Six-category catalog with Preview, Parameters, Triggers, Performance and Reset tabs; Legacy Window Triggers retains close shaders/Liquid, jelly entrances, Dock morphs and duration multiplier. |
+| **Animation Studio** | Captured-window preview, transport, timeline, layers, parameter tracks, keyframes, evaluated curves, undo/redo and preset/document JSON. |
 | **Physics** | Preset, friction, spring, speedup, mass, mesh density, maximize/resize effects, shadow, glide, tilt, focus glow and drop ripple. |
-| **Screen Saver** | Install/select Kinetiq as the macOS default, system inactivity delay, actual selection status, event interval, fragment lifetime, speed, intensity and Preview Now (requires Screen Recording). |
-| **App Rules** | Per-app close-effect overrides and exclusions. Add running apps or choose installed apps from disk. |
+| **Layouts** | Run Orbit or Exposé 3D captured-window overviews; not permanent native window layouts. |
+| **Workspaces** | Run Cube, Orbit or Exposé 3D on the current Space; no native Space switching. |
+| **Rules** | Per-app legacy close-effect overrides and exclusions. Add running apps or choose installed apps from disk. |
+| **Performance** | Five quality choices, completed Metal GPU timings and actual resource budgets; no inferred GPU utilization. |
 | **Diagnostics** | Actual Metal renderer and event-tap state, permission grants, physics preset, mesh, rule counts, OS and app version. No estimated FPS or simulated telemetry. |
 | **Settings** | Enable state, title-bar drag, shortcut modifier, permissions and confirmed reset of effect settings. Reset preserves the enable state and drag controls. |
+| **Screen Saver** | Install/select Kinetiq as the macOS default, system inactivity delay, actual selection status, event interval, fragment lifetime, speed, intensity and Preview Now (requires Screen Recording). |
 
-The **Exclusions** list under App Rules holds apps whose windows get no effects. Kinetiq's own management window is excluded by default; remove that exclusion to let it wobble. Window titles may be unavailable without Screen Recording. Permission checks refresh when the app becomes active or when you press Refresh; macOS may require restarting the app after a grant. The existing launch-time permission prompts are unchanged. Navigation does not start or stop the engine.
+The **Exclusions** list under Rules holds apps whose windows get no effects. Kinetiq's own management window is excluded by default; remove that exclusion to let it wobble. Catalog targets always exclude Kinetiq itself. Window titles may be unavailable without Screen Recording. Permission checks refresh when the app becomes active or when you press Refresh; macOS may require restarting the app after a grant. The existing launch-time permission prompts are unchanged. Navigation does not start or stop the engine.
+
+### Effect catalog: 19 effects, six permanent categories
+
+Both the native **NSMenu** and Effects library use this exact manifest. Counts are **2 / 4 / 4 / 4 / 2 / 3**. Every effect supports Manual; the last column lists additional supported preset triggers. Raw IDs are stable JSON identifiers, not display names.
+
+| Category | Submenu | Effect | Raw ID | Additional triggers |
+|---|---|---|---|---|
+| Window Motion (2) | Elastic | Wobbly | `wobbly` | Drag |
+| Window Motion | Ambient Motion | Float | `float` | Drag, Open |
+| Transitions (4) | Minimize / Restore | Genie | `genie` | Minimize, Open |
+| Transitions | Transform | Morph | `morph` | Open, Minimize |
+| Transitions | Distortion | Ripple | `ripple` | Drag, Open |
+| Transitions | Distortion | Liquid Morph | `liquid-morph` | Open, Close |
+| Destruction (4) | Fragmentation | Shatter | `shatter` | Close |
+| Destruction | Fragmentation | Explode | `explode` | Close |
+| Destruction | Dissolution | Dissolve | `dissolve` | Close, Open |
+| Destruction | Dissolution | Burn | `burn` | Close |
+| Spatial Effects (4) | 3D Transform | Fold | `fold` | Close, Open |
+| Spatial Effects | 3D Transform | Flip | `flip` | Open, Close |
+| Spatial Effects | Distortion | Portal | `portal` | Open, Close |
+| Spatial Effects | Depth & Lighting | DOF | `depth-of-field` | Overview |
+| Physics (2) | Attraction & Snapping | Magnet | `magnet` | Drag |
+| Physics | Forces & Dynamics | Gravity | `gravity` | Drag |
+| Workspace & Overview (3) | Workspace Navigation | Cube | `workspace-cube` | Overview |
+| Workspace & Overview | Window Arrangement | Orbit | `orbit` | Overview |
+| Workspace & Overview | Window Overview | Exposé 3D | `expose-3d` | Overview |
+
+**Start here:** in Effects, choose an effect and a real target window, scrub Preview, edit Parameters, then use **Run on Window** for a restoring desktop action. Built-in Default, Subtle and Dramatic variants are available. Choose a supported trigger and **Save & Apply** to assign it. Each non-manual action has at most one explicit catalog owner; assigning a new owner makes the previous owner's preset Manual without discarding its tracks. Existing legacy behavior remains until an assignment is explicitly saved/imported; resetting that effect releases its assignment. A saved catalog Close assignment takes precedence over legacy per-app close choices. Overview is saved preset metadata: overview adapters are invoked explicitly through Run/menu actions, not automatic Mission Control interception.
+
+**Animation Studio** adds a timeline, enabled layers, start offsets, parameter tracks and editable key times/values with outgoing `linear`, `easeIn`, `easeOut`, `easeInOut` or `spring` curves. Limits: 32 layers/document, 64 tracks/preset, 128 keys/track; normalized key time 0–1, preset duration 0.1–12 seconds and document duration up to 60 seconds. Explicit Undo/Redo buttons retain 100 edit snapshots. Copy/Paste Parameters accepts only a validated preset for the same effect. JSON schema 1 rejects unknown fields, unsupported versions, unknown parameter keys and out-of-range values. See the [guide and API reference](docs/animation-studio.md).
+
+These are real runtime adapters, not synthetic demo windows. Preview only renders captures in the panel. Manual Run restores the window rather than closing/minimizing it; actual Close and yellow-button Minimize triggers retain their native lifecycle (⌘M remains native). Magnet and Gravity use real AX movement; drag assignments are snapshotted for the gesture. DOF processes the single captured target, not a global desktop depth buffer or automatic blur of other windows. Cube is a cube-like current-Space projection, not a native Spaces cube or full workspace compositor. Cube, Orbit and Exposé 3D use frozen captures of up to eight eligible windows, within a total 32-megapixel capture budget; Escape dismisses, and clicking a projected window activates it. Orbit does not permanently rearrange AX windows. No private Spaces APIs are used.
+
+Desktop compositions cannot mix a Physics adapter or interactive overview with other enabled layers: the runtime reports an error. Panel previews can visually compose those styles, but do not execute native physics. Permission, capture, Metal and budget failures preserve/restore native windows; expensive modes are refused rather than replaced with a misleading cheap animation.
+
+### Render quality and real GPU timings
+
+Choose **Auto**, **Low**, **Balanced**, **High** or **Ultra** in the menu or Performance page. Only the choice is persisted. These are resource ceilings, not promised frame rates:
+
+| Quality | Intermediate scale | Particle cap | Blur sampling rings | Mesh cap/axis | Secondary rate ceiling | Expensive effects |
+|---|---:|---:|---:|---:|---:|---|
+| Low | 0.50× | 400 | 0 | 16 | 30 Hz | Refused |
+| Balanced | 0.75× | 1000 | 1 | 32 | 60 Hz | Allowed |
+| High / Auto start | 1.00× | 1500 | 2 | 48 | 90 Hz | Allowed |
+| Ultra | 1.00× | 1500 | 3 | 64 | 120 Hz | Allowed |
+
+Auto starts at High and reduces one resource at a time across **13 steps**: texture scale 0.75→0.5; particles 1000→700→400; blur rings 1→0; mesh 32→24→16; secondary rate 60→30; then expensive effects off. Recovery reverses the ladder, at most back to High; Ultra is manual opt-in. Smoothed successful GPU command-buffer durations above 12 ms for at least 0.5 s/8 samples reduce quality (3 s cooldown); below 6 ms for 5 s/30 samples recover it (8 s cooldown). Idle gaps break evidence streaks. These are actual completed GPU timings, **not GPU utilization or inferred FPS**; the last sample remains visible while idle.
+
+Thermal/power safety caps also apply to manual choices: fair thermal pressure or Low Power Mode caps at Balanced, serious/critical at Low, with a 15 Hz secondary ceiling at critical. Budget fields, not the summary quality label, are authoritative. Original captures and desktop output remain native resolution. Studio preview/composition intermediates follow `textureScale`, with at most 8,000,000 pixels and 8192 pixels per dimension per target texture, two ping-pong targets and at most two in-flight compositions. Liquid's separate cropped geometry field is capped at 1280 pixels on its longest edge before quality scaling. Its original particle cap remains 1500 per source/display (Balanced 1000, Low budget 400); Low refuses new expensive Liquid playback. The UI label “Blur passes” means concentric eight-tap shader sampling rings for catalog DOF, **not multiple full-screen render passes**.
 
 ### Glide and bounce
 
@@ -52,7 +111,7 @@ Optional (**Ripple on Drop** in Setup, off by default): a circular wave spreads 
 
 ### Close effects
 
-When a window closes, it is replaced by an animation drawn on the GPU. Pick the effect in **Setup › Effects › Close**: **Liquid**, one of the 30 shaders below, **Random** (a different shader every time) or **Off**. The **Duration** slider scales the animation time (0.25× to 3×). Fire is the default; existing choices are preserved.
+When a window closes, it is replaced by an animation drawn on the GPU. Pick the legacy effect in **Setup › Effects › Legacy Window Triggers › Close**: **Liquid**, one of the 30 shaders below, **Random** (a different shader every time) or **Off**. The **Duration** slider scales the animation time (0.25× to 3×). Fire is the default; existing choices are preserved unless an explicit catalog trigger assignment takes precedence.
 
 **Window Effects › Open** (off by default) plays a jelly entrance when a window opens: Wobble Pop, Ripple, Stone in Water, Shockwave, Jelly Squash or Quake (or Random). The window stays visible: once its own pop-in animation is over it is captured as it is and the jelly model shakes it, so there is no flash and no gap. *Stone in Water* drops a stone at a random point and sends rings across the window, *Ripple* spreads a wave from the center, *Shockwave* combines a pop with a fast wave, *Jelly Squash* squeezes it vertically and lets it bounce back, *Quake* shakes it sideways. Dialogs, sheets and popovers are not affected.
 
@@ -71,7 +130,7 @@ Minimizing, hiding, switching Spaces, closing a tab with ⌘W, or a close that t
 
 ### Liquid close and minimize (v0.1.31)
 
-Select **Liquid** in **Setup › Effects › Close** and/or **Minimize**. The captured window liquefies progressively from the **top-right** towards the bottom-left, retaining its actual colors and content. Gravity pulls the connected, glossy surface down. It lands on exposed upper edges of other real windows, spreads sideways and spills off their ends. Geometry refreshes approximately every 150 ms, so moving or removing a window releases supported liquid. Already-overlapping background windows do not teleport liquid onto their tops.
+Select **Liquid** in **Setup › Effects › Legacy Window Triggers › Close** and/or **Minimize**. This original particle-fluid simulation is separate from the catalog's **Liquid Morph** refractive transition; neither replaces the other. The captured window liquefies progressively from the **top-right** towards the bottom-left, retaining its actual colors and content. Gravity pulls the connected, glossy surface down. It lands on exposed upper edges of other real windows, spreads sideways and spills off their ends. Geometry refreshes approximately every 150 ms, so moving or removing a window releases supported liquid. Already-overlapping background windows do not teleport liquid onto their tops.
 
 The liquid collects at the **full display bottom**, not the usable desktop boundary, and stays **behind the Dock** (including a side Dock), before slowly fading. Each display has its own floor; source windows spanning displays are split into per-display fluid domains. Duration scales melting, falling, the roughly three-second linger and three-second fade. This is a bounded visual particle-fluid approximation with viscosity, cohesion and density constraints, not a full hydrodynamics solver: collisions use visible rectangular window tops, not arbitrary content shapes or physical side walls. No real obstacle window is moved or modified.
 
@@ -115,6 +174,7 @@ Requires macOS 14 or later and Xcode 26 or later (Swift 6 for PaperSaverKit). Sw
 ```sh
 swift build                # build
 swift test                 # physics, effects, management and native screen saver tests
+swift test -c release      # complete release test suite
 scripts/build-app.sh       # universal signed app, including its signed native .saver
 
 # Render the close effects headlessly: checks every shader, texture and seed,
@@ -125,11 +185,25 @@ swift run kinetiq-effects-preview --effect fire --out /tmp/wobbly-effects
 
 `build-app.sh` signs with your "Apple Development" identity if you have one, or with `SIGN_IDENTITY` if set. Otherwise it uses ad-hoc signing with stable bundle-identifier requirements to preserve permission grants across rebuilds. Both the app and embedded screen saver are signed.
 
+**v0.2.0 verification:** the final release suite passed **260 tests: 144 Core + 36 Effects + 80 app**, with **0 failures and 0 skips**, including the updated README's real-capture Liquid regression and 19 management/Studio tests. Build 33's app and embedded saver were built for arm64/x86_64, passed strict signature verification, and the app was launched and inspected. Local evidence: `/tmp/kinetiq-v02-final-suite.log`; temporary logs are not distributed artifacts. See [TODO.md](TODO.md).
+
+Merged release coverage reports 98.97% lines for preset/document validation, 98.74% for the quality policy, 100% for catalog storage, 79.33% for the native runtime and 99.26% for the catalog renderer's Swift encoding path. These figures do not measure Metal shader branch coverage or promise coverage of every native failure. Optional `KINETIQ_UI_TEST_DUMP` under `/tmp` saves only the tests' own real Effects/Studio/Performance window screenshots, requiring Screen Recording.
+
 The `KinetiqSaverSupport` target shares the Metal renderer and private scene archive between the app and `KinetiqScreenSaver`. Packaging embeds the universal `.saver` in `Kinetiq.app/Contents/Resources`; running a bare `swift run Kinetiq` cannot install the module. Native integration tests read the real wallpaper store and write only temporary copies. Desktop capture tests use real windows and skip when Screen Recording or a graphical session is unavailable; they never change the user's default screen saver. Run `swift test --enable-code-coverage` for coverage. Future macOS changes to the undocumented selection store may require a PaperSaver update; failures are surfaced in the Screen Saver page, with a shortcut to System Settings.
 
 Liquid physics lives in `Sources/KinetiqCore/LiquidWorld.swift`; `KinetiqEffects/LiquidEffectRenderer.swift` implements the density/surface Metal passes, and `Kinetiq/LiquidEffectPlayer.swift` owns desktop overlays and live geometry. `swift test -c release --filter Liquid` exercises real display geometry, capture-to-Metal output, native picker selection, close detection and actual AX minimization/restoration of disposable README document windows. Graphical/permission-dependent tests skip only when those capabilities are absent; no user document is closed or moved. To inspect an opt-in contact sheet of the captured test document, set `KINETIQ_LIQUID_TEST_DUMP` to a directory under `/tmp` when running these tests; without it no image is persisted. The tests do not alter Dock preferences.
 
 Native-resolution optical tests compare transported text edges against the actual captured pixels, isolate refraction/reflection without changing coverage, and compare the manual float32 filter to hardware filtering when supported. Set `KINETIQ_LIQUID_BENCHMARK=1` to print GPU timings for 40 warmed frames at three fluid states (simulation and readback excluded). With the temporary dump directory above, `KINETIQ_LIQUID_TEST_DUMP_FRAMES=1` also saves individual native-resolution test-document PNGs. Timings depend on GPU, display and current load; they are diagnostics, not fixed CI performance thresholds.
+
+The graphical Liquid test displays this actual README in a disposable native text window; it requires more than 32 coherent edge samples at 1.5 s, a contrast ratio above 0.65 and material RGB error below 0.18. Text/layout changes can affect this real-capture regression and should be rechecked, not worked around with a fabricated image.
+
+### Source map and API reference
+
+- `KinetiqCore`: catalog descriptors, strict schema-1 presets/documents, keyframe sampling, drag/dynamics policy and quality budgets.
+- `KinetiqEffects`: original close shaders, Liquid renderer and `CatalogEffectRenderer.encode`, whose optional evaluated `parameters: [String: Float] = [:]` preserves existing callers. Missing custom values use descriptor defaults; finite values clamp to bounds, nonfinite values use defaults and unknown renderer dictionary keys are ignored. Strict preset JSON, unlike this low-level renderer dictionary, rejects unknown keys.
+- `Kinetiq`: `CatalogStore` persistence/trigger ownership, `CatalogRuntime` capture/AX restoration/composition, SwiftUI library/Studio and performance UI.
+- `KinetiqSaverSupport` / `KinetiqScreenSaver`: shared scene archive/renderer and native saver host integration.
+- `Tests`: Core validation/physics, actual Metal asset rendering and real capture/AX/native UI integration. [Studio guide](docs/animation-studio.md) covers editing, schema and adapter contracts.
 
 ## Credits
 

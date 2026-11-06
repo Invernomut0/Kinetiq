@@ -5,6 +5,33 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — Build 33
+
+### Added
+
+- Shared 19-effect catalog with stable raw IDs, bounded parameters and Default/Subtle/Dramatic presets. Six permanent categories in the native menu and Effects library: Window Motion (2), Transitions (4), Destruction (4), Spatial Effects (4), Physics (2), Workspace & Overview (3).
+- Effects library with Preview, Parameters, Triggers, Performance and Reset tabs; real-window selection, captured previews, saved presets, strict JSON import/export and same-effect parameter copy/paste.
+- Functional Animation Studio motion editor: transport/scrubbing, layer timeline, parameter tracks, editable keyframes, evaluated curve display and explicit Undo/Redo buttons with 100 snapshots. Outgoing segment curves are linear, easeIn, easeOut, easeInOut and spring; no cubic-Bézier tangent editor is claimed.
+- Strict schema-1 preset/document serialization: unknown fields/versions/parameters fail validation; bounded values, unique IDs, ordered key times and layer containment are enforced. Limits: 32 layers/document, 64 tracks/preset, 128 keys/track, 0.1–12-second presets and up to 60-second documents.
+- Auto/Low/Balanced/High/Ultra quality selection, actual completed Metal GPU timings and independent texture, particle, blur-sampling, mesh and secondary-rate budgets. Auto starts at High, degrades one resource at a time across 13 steps and recovers with hysteresis; thermal/Low Power safety caps apply to manual settings too.
+- Twelve-page management dashboard: Animation Studio, Layouts, Workspaces and Performance join the previous eight destinations; App Rules is now Rules.
+- Real desktop catalog adapters: restoring manual playback, explicit single-owner native trigger routing, snapshotted drag policies and AX Magnet/Gravity. Cube, Orbit and Exposé 3D compose frozen current-Space captures (up to eight windows / 32 megapixels), with Escape dismissal and projected-window activation.
+- Budget-scaled Studio ping-pong intermediates, bounded to 8 megapixels / 8192 pixels per dimension per texture and two in-flight compositions. Captures and desktop destinations remain native resolution.
+- English Studio usage/schema/API guide and documented runtime boundaries, resource budgets and native fallback behavior.
+
+### Changed
+
+- Menu effect actions run the saved preset on an eligible frontmost-app window; they do not assign triggers. Explicitly saving/importing an automatic assignment replaces only that action's previous catalog owner. Legacy preferences remain until assigned and resume when the assignment is removed.
+- The original 30 close shaders, Liquid simulation, jelly entrances, Dock morphs, permissions and native screen saver remain available; Liquid Morph is a separate catalog transition.
+- Unavailable or budget-refused effects report errors/refuse playback and preserve native behavior instead of showing substitute demos. Physics/interactive overview desktop playback requires one enabled layer; panel composition does not imply native physics composition.
+- Workspace names describe captured current-Space overviews, not private-API native Space switching, permanent layouts or a full workspace compositor. DOF affects the captured target only, not a global desktop depth buffer. “Blur passes” denotes shader sampling rings, not full-screen multipass blur.
+
+### Verification
+
+- Final release suite: 260 passed (144 Core, 36 Effects, 80 app), zero failures and zero skips, including real-capture Liquid regressions, compiled catalog shaders and 19 management/Studio tests.
+- Build 33 app and embedded native saver: universal arm64/x86_64, strict signatures verified; packaged app launched and inspected. Quick Look/Finder refreshed.
+- Dashboard titles identify the current page; supported minimum content area is 960 × 700 points. UI tests mount a production-equivalent hosting controller and respect native toolbar sizing.
+
 ## [0.1.31]
 
 ### Changed

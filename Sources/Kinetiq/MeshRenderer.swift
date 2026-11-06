@@ -60,6 +60,16 @@ private struct Uniforms {
 /// ring of the mesh, so it deforms along with the window. All overlays (one per screen) share the same scene.
 @MainActor
 final class MeshRenderer: OverlayContent {
+    /// CoreVideo's mapping, not just its Metal view, must outlive GPU reads.
+    private final class CaptureBacking: @unchecked Sendable {
+        let texture: CVMetalTexture
+        let pixels: CVPixelBuffer
+        init(texture: CVMetalTexture, pixels: CVPixelBuffer) {
+            self.texture = texture
+            self.pixels = pixels
+        }
+    }
+
     let device: MTLDevice
     /// 0 while the real window (with its own shadow) is still underneath, so the two don't add up;
     /// in between while handing over to or from it.
@@ -68,6 +78,9 @@ final class MeshRenderer: OverlayContent {
     var alpha: Float = 1
     /// Perspective lean `(pitch, yaw)` in radians around the window's center; zero draws the window flat.
     var tilt = SIMD2<Float>.zero
+    /// Scales displacement from the rigid UV frame before perspective projection.
+    var deformationScale: Float = 1
+    var ambientOffset = SIMD2<Float>.zero
     private(set) var hasScene = false
     /// Bounding box of the scene (shadow included), in global CG coordinates.
     private(set) var sceneBounds = CGRect.null
@@ -79,7 +92,7 @@ final class MeshRenderer: OverlayContent {
     private var tiles = (x: 0, y: 0)
     private var textureCache: CVMetalTextureCache?
     private var texture: MTLTexture?
-    private var cvTexture: CVMetalTexture?
+    private var captureBacking: CaptureBacking?
     private var uvScale = SIMD2<Float>(repeating: 1)
     private var uvOffset = SIMD2<Float>.zero
     private var shadowInsets = ShadowInsets()
@@ -142,7 +155,7 @@ final class MeshRenderer: OverlayContent {
             nil, textureCache, pixelBuffer, nil, .bgra8Unorm,
             CVPixelBufferGetWidth(pixelBuffer), CVPixelBufferGetHeight(pixelBuffer), 0, &cvTexture)
         guard status == kCVReturnSuccess, let cvTexture, let texture = CVMetalTextureGetTexture(cvTexture) else { return false }
-        self.cvTexture = cvTexture
+        captureBacking = CaptureBacking(texture: cvTexture, pixels: pixelBuffer)
         self.texture = texture
         let bufferSize = SIMD2(Float(CVPixelBufferGetWidth(pixelBuffer)), Float(CVPixelBufferGetHeight(pixelBuffer)))
         uvScale = SIMD2(Float(frame.windowRect.width), Float(frame.windowRect.height)) / bufferSize
@@ -152,12 +165,22 @@ final class MeshRenderer: OverlayContent {
     }
 
     func update(from deformer: WindowDeformer, tilesX: Int, tilesY: Int) {
+        let limit = RenderQualityManager.shared.budget.meshLimit
+        let tilesX = CatalogDragPolicy.meshTiles(requested: tilesX, meshLimit: limit)
+        let tilesY = CatalogDragPolicy.meshTiles(requested: tilesY, meshLimit: limit)
         // The shadow ring adds a row and a column of tiles on each side.
         prepareIndices(tilesX: tilesX + 2, tilesY: tilesY + 2)
         let outset = (Float(shadowInsets.left), Float(shadowInsets.top), Float(shadowInsets.right), Float(shadowInsets.bottom))
         deformer.fillVertices(tilesX: tilesX, tilesY: tilesY, outset: outset, into: &vertices)
+        for index in vertices.indices {
+            let vertex = vertices[index]
+            let rest = deformer.origin + SIMD2(vertex.z, vertex.w) * deformer.size
+            let displaced = rest + (SIMD2(vertex.x, vertex.y) - rest) * deformationScale + ambientOffset
+            vertices[index].x = displaced.x
+            vertices[index].y = displaced.y
+        }
         if tilt != .zero {
-            let pivot = deformer.origin + deformer.size / 2
+            let pivot = deformer.origin + deformer.size / 2 + ambientOffset
             for index in vertices.indices {
                 let projected = Tilt.project(SIMD2(vertices[index].x, vertices[index].y), pivot: pivot, angles: tilt)
                 vertices[index].x = projected.x
@@ -182,8 +205,10 @@ final class MeshRenderer: OverlayContent {
         hasScene = false
         sceneBounds = .null
         texture = nil
-        cvTexture = nil
+        captureBacking = nil
         vertexBuffer = nil
+        deformationScale = 1
+        ambientOffset = .zero
     }
 
     func draw(in view: MTKView, screenRect: CGRect) {
@@ -209,6 +234,9 @@ final class MeshRenderer: OverlayContent {
         }
 
         encoder.endEncoding()
+        let backing = captureBacking
+        commandBuffer.addCompletedHandler { _ in withExtendedLifetime(backing) {} }
+        RenderQualityManager.trackGPUCompletion(commandBuffer)
         commandBuffer.present(drawable)
         commandBuffer.commit()
     }
