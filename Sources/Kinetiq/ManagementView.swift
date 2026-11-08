@@ -163,6 +163,7 @@ struct SetupView: View {
                     Spacer()
                 }
                 Text("Made to move.").font(.caption).foregroundStyle(.secondary)
+                SupportCoffeeView()
             }
             .padding(18)
         }

@@ -1,0 +1,55 @@
+name: Telemetry host gates
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  host:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: Kinetiq
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: Kinetiq
+      - name: Read reviewed core SDK pin
+        id: telemetry-sdk-pin
+        run: |
+          PIN="$(cat Documentation/telemetry-sdk-revision.txt)"
+          [[ "$PIN" =~ ^[a-f0-9]{40}$ ]] || { echo 'Invalid TelemetrySDK pin.'; exit 1; }
+          echo "revision=$PIN" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
+        with:
+          repository: Invernomut0/TelemetrySDK
+          ref: ${{ steps.telemetry-sdk-pin.outputs.revision }}
+          path: TelemetrySDK
+          persist-credentials: false
+      - name: Verify sibling core SDK checkout
+        run: bash scripts/verify-telemetry-sdk.sh
+      - name: Core SDK tests
+        run: swift test --package-path ../TelemetrySDK --enable-code-coverage
+      - name: Safe configuration parser tests
+        run: |
+          python3 -m unittest discover -s scripts -p test_telemetry_config.py -v
+          python3 -m unittest discover -s scripts -p test_firebase_signing.py -v
+      - name: Host Debug and Release tests
+        run: |
+          swift test --enable-code-coverage
+          swift test -c release --enable-code-coverage
+      - name: Signed universal disabled smoke
+        run: |
+          bash scripts/build-app.sh
+          codesign --verify --deep --strict build/Kinetiq.app
+          codesign --verify --deep --strict build/Kinetiq.app/Contents/Resources/Kinetiq.saver
+          lipo -archs build/Kinetiq.app/Contents/MacOS/Kinetiq
+          lipo -archs build/Kinetiq.app/Contents/Resources/Kinetiq.saver/Contents/MacOS/KinetiqScreenSaver
+          python3 scripts/verify-telemetry-bundle.py
+          build/Kinetiq.app/Contents/MacOS/Kinetiq --telemetry-smoke-test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: telemetry-coverage
+          include-hidden-files: true
+          path: |
+            Kinetiq/.build/**/codecov/**
+            TelemetrySDK/.build/**/codecov/**

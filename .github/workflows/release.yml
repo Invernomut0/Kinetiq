@@ -20,8 +20,34 @@ jobs:
       SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          path: Kinetiq
+
+      - name: Read reviewed core SDK pin
+        id: telemetry-sdk-pin
+        working-directory: Kinetiq
+        run: |
+          PIN="$(cat Documentation/telemetry-sdk-revision.txt)"
+          [[ "$PIN" =~ ^[a-f0-9]{40}$ ]] || { echo 'Invalid TelemetrySDK pin.'; exit 1; }
+          echo "revision=$PIN" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          repository: Invernomut0/TelemetrySDK
+          ref: ${{ steps.telemetry-sdk-pin.outputs.revision }}
+          path: TelemetrySDK
+          persist-credentials: false
+
+      - name: Verify sibling core SDK and offline parser gates
+        working-directory: Kinetiq
+        run: |
+          bash scripts/verify-telemetry-sdk.sh
+          python3 -m unittest discover -s scripts -p test_telemetry_config.py -v
+          python3 -m unittest discover -s scripts -p test_firebase_signing.py -v
+          swift test --package-path ../TelemetrySDK
 
       - name: Test
+        working-directory: Kinetiq
         run: swift test
 
       - name: Import signing certificate
@@ -39,6 +65,7 @@ jobs:
           rm "$RUNNER_TEMP/cert.p12"
 
       - name: Set version from tag
+        working-directory: Kinetiq
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
@@ -46,6 +73,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GITHUB_RUN_NUMBER" Resources/Info.plist
 
       - name: Build app
+        working-directory: Kinetiq
         run: |
           scripts/build-app.sh
           lipo -archs build/Kinetiq.app/Contents/MacOS/Kinetiq
@@ -53,8 +81,12 @@ jobs:
             codesign -dvv build/Kinetiq.app 2>&1 | grep -q "Authority=Apple Development" \
               || { echo "::error::App was not signed with the Apple Development identity"; exit 1; }
           fi
+            codesign --verify --deep --strict build/Kinetiq.app
+            codesign --verify --deep --strict build/Kinetiq.app/Contents/Resources/Kinetiq.saver
+            python3 scripts/verify-telemetry-bundle.py
 
       - name: Create DMG
+        working-directory: Kinetiq
         run: |
           STAGING="$RUNNER_TEMP/dmg"
           mkdir -p "$STAGING"
@@ -63,6 +95,7 @@ jobs:
           hdiutil create -volname Kinetiq -srcfolder "$STAGING" -ov -format UDZO "build/Kinetiq-$VERSION.dmg"
 
       - name: Publish release
+        working-directory: Kinetiq
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

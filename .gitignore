@@ -2,3 +2,15 @@
 .build/
 .swiftpm/
 build/
+.env
+.env.*
+!.env.example
+*.local.xcconfig
+__pycache__/
+*.profraw
+*.profdata
+GoogleService-Info*.plist
+*service-account*.json
+*service_account*.json
+*serviceaccount*.json
+kinetiq-75593-firebase-adminsdk-*.json

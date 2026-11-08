@@ -12,7 +12,7 @@ https://github.com/user-attachments/assets/40bc5530-d253-4d47-bc57-3eccdac83d70
 
 **v0.3.2 · build 37** replaces Liquid's final fade with slow physical drainage off the bottom edges. The pooled material stays opaque while the outlets open gradually from the lower corners towards the center. The preview now includes the complete ending.
 
-**v0.3.3 · build 38** adds **Window Destruction**, a Close-only built-in with sample/real-window previews, global selection and per-app close rules. The library now contains **66 entries: 19 Studio + 47 originals**. It reuses the screen saver's extraction, fragmentation and physics engines for a transparent one-shot effect, without activating or changing the screen saver. Final release-suite and package verification are complete; see [verification status](#building).
+**v0.3.3 · build 38** adds **Window Destruction**, a Close-only built-in with sample/real-window previews, global selection and per-app close rules. The library now contains **66 entries: 19 Studio + 47 originals**. It reuses the screen saver's extraction, fragmentation and physics engines for a transparent one-shot effect, without activating or changing the screen saver. Its historical release-suite/package verification is retained below; it does not certify the subsequent telemetry worktree. See [verification status](#building).
 
 ## Installing
 
@@ -33,6 +33,13 @@ There are **11 pages**, grouped into everyday pages (Overview, Effects, Animatio
 
 The dashboard supports a minimum content area of **960 × 700 points**, excluding native window chrome.
 
+The sidebar footer includes a yellow **☕ Buy me a coffee** button on every page.
+It opens [Invernomut0's support page](https://buymeacoffee.com/invernomut0) in your
+default browser only when clicked. This native SwiftUI link adapts the supplied web
+button's colors and wording without loading JavaScript, remote fonts, cookies or a
+payment form inside Kinetiq. Supporting the project is optional and does not enable
+analytics or unlock effects.
+
 | Page | Controls and information |
 |---|---|
 | **Overview** | Engine and permission status, enable/pause switch, a **What plays right now** card listing the current Drag/Open/Close/Minimize choice with a Change button, permission requests and refresh. |
@@ -45,7 +52,7 @@ The dashboard supports a minimum content area of **960 × 700 points**, excludin
 | **Performance** | Five quality choices, completed Metal GPU timings and actual resource budgets; no inferred GPU utilization. |
 | **Windows** | Read-only snapshot of normal-level on-screen windows: owning app, title when available, and dimensions. This page never moves or captures a window. |
 | **Diagnostics** | Actual Metal renderer and event-tap state, permission grants, physics preset, mesh, rule counts, OS and app version. |
-| **Settings** | Enable state, title-bar drag, shortcut modifier, permissions and confirmed reset of effect settings. Reset preserves the enable state and drag controls. |
+| **Settings** | Enable state, title-bar drag, shortcut modifier, permissions, default-off Privacy & Analytics and confirmed reset of effect settings. Reset preserves the enable state and drag controls. |
 
 The **Exclusions** list under Rules holds apps whose windows get no effects. Kinetiq's own management window is excluded by default; remove that exclusion to let it wobble. Catalog targets always exclude Kinetiq itself. Window titles may be unavailable without Screen Recording. Permission checks refresh when the app becomes active or when you press Refresh; macOS may require restarting the app after a grant. The existing launch-time permission prompts are unchanged. Navigation does not start or stop the engine.
 
@@ -187,6 +194,38 @@ The objects are found in the pictures of the windows without any extra permissio
 
 ## Permissions
 
+### Optional analytics
+
+Optional analytics now uses **Google Firebase Analytics**, with the pinned generic
+TelemetrySDK core and the existing single AppDelegate-owned client. It is default off.
+The native **Help improve Kinetiq?** sheet discloses Firebase collection;
+**Don't Share** is the default and only **Enable Analytics** grants consent.
+Settings → Privacy & Analytics can change or withdraw that choice. Configuration never
+grants consent. Controls are disabled with categorical status when configuration or
+the exact signed private Keychain scope is unavailable; product features remain usable.
+
+Firebase uses new Boolean preferences `kinetiq.telemetry.firebase.analytics` and
+`kinetiq.telemetry.firebase.analyticsDecision`. Old PostHog consent and UUID preferences
+are untouched but **not carried over**. Firebase configures its official singleton only
+after consented startup. It checks the actual Apple signature's private scope,
+`TeamID.io.github.invernomut0.Kinetiq`, without reading an old Keychain identity,
+aliasing a UUID or setting a user ID. No Keychain password/access-dialog automation
+or broad sharing group is used; ad-hoc builds keep analytics safely `blocked_off`.
+
+The only forwarded custom action is the actual Settings visit: `feature_used`,
+`feature=privacy_settings`. No custom window titles, screenshots, documents or other
+content are sent. Core installation/lifecycle/reserved events are not forwarded and
+TelemetrySDK native lifecycle is disabled to avoid duplicating Firebase automatic events.
+**Firebase may collect device/OS, app-instance and session data.** Connection IP,
+derived/proxy location and network metadata can be processed; this is not network
+anonymity or a promise of no hardware/OS collection. Advertising support is not selected.
+
+Withdrawal persists off before cleanup, disables Firebase collection, denies all consent
+categories and calls `resetAnalyticsData()` best-effort. The separate runtime kill switch
+does not grant consent. There is no forced flush, awaited public delivery acknowledgement,
+recall of in-flight bytes, remote-erasure guarantee or guaranteed secure local erasure.
+Read [current configuration, verified local acceptance and historical evidence](docs/telemetry.md).
+
 | Permission | Why |
 |---|---|
 | **Accessibility** | Watch mouse events and move windows. |
@@ -200,7 +239,124 @@ An app closes its windows by itself, so Kinetiq can't intercept a close: it capt
 
 ## Building
 
-Requires macOS 14 or later and Xcode 26 or later (Swift 6 for PaperSaverKit). SwiftPM resolves the pinned MIT-licensed PaperSaver 0.4.3 dependency; its ArgumentParser dependency is for PaperSaver's CLI, not bundled in Kinetiq.
+Requires macOS 14 or later and Xcode 26 or later (Swift 6 for PaperSaverKit and
+TelemetrySDK; Kinetiq keeps its existing Swift 5 language mode). SwiftPM resolves
+PaperSaver 0.4.3 and official Firebase Apple SDK **12.6.0** (published version verified;
+its official manifest selects GoogleAppMeasurement **12.5.0** binaries). Official
+Analytics supports native macOS starting with SDK 8.9. PaperSaver's ArgumentParser is for its
+CLI, not bundled in Kinetiq. Provision the complete sibling `../TelemetrySDK` checkout
+at `c5e275421fa03c242c9c53b5431d919fdd18547a`; only the generic core is retained,
+unchanged. The PostHog adapter/dependency is removed. FirebaseCore and
+FirebaseAnalyticsCore (without AdSupport/IdentitySupport) link only to the main app;
+no Auth, FCM, Crashlytics or Sentry is selected. The SwiftPM manifest, packaging
+and CI enforce the SHA and clean checkout (including non-ignored untracked files) without rejecting ignored local
+`.env`. `bash scripts/verify-telemetry-sdk.sh` is the standalone provisioning check.
+
+`scripts/build-app.sh` uses Python 3 (standard library only) to parse the owner-supplied
+root `GoogleService-Info.plist` as bounded (65,536 bytes), typed, allowlisted client
+metadata for the main app. The source file is not modified; missing configuration
+leaves analytics unavailable. The supplied project/bundle match is `kinetiq-75593` /
+`io.github.invernomut0.Kinetiq`. **Its `IS_ANALYTICS_ENABLED=false` requires owner review
+of the console Analytics link; a client match is not backend validation.** Client
+metadata is extractable, not an admin credential. No service-account JSON belongs in
+the app; a service-account email is not authentication configuration. Sibling `.env`
+ingestion is removed and old configuration is ignored, not deleted. Do not dump client
+keys, `.env`, preferences, private UUIDs or certificates during troubleshooting.
+
+`scripts/configure-firebase-signing.py` derives only the app's own private Keychain
+group from the real Apple Team signature of the existing selected identity. It invents
+neither a Team ID nor ad-hoc entitlements. Both app and saver are signed; the saver has
+no Firebase products, client configuration or Firebase Keychain entitlement. Packaging
+removes PostHog/PLCrashReporter/libwebp/Sentry symbols, resources and vendor licenses.
+Ten main-plist defaults disable collection/data collection, analytics/ad storage,
+ad user data/personalization, IDFV, ad-network registration, screen reporting and
+delegate proxying. See [the precise scope and license distinctions](docs/telemetry.md).
+
+Parser tests: `python3 -m unittest discover -s scripts -p test_telemetry_config.py -v`.
+Host contracts: `swift test --filter KinetiqTelemetryTests --enable-code-coverage`.
+Safe signed launch: `build/Kinetiq.app/Contents/MacOS/Kinetiq --telemetry-smoke-test`.
+The smoke bypasses all runtime keys, app preferences, permissions, vendor startup and
+Keychain; it initializes the real disabled core, verifies denied/unavailable channels
+and zero accepted events, then shuts down with a fixed success/failure line.
+
+**Firebase migration acceptance: VERIFIED LOCAL — F1 Done for implementation and
+offline/local acceptance only; F2 Review, owner Lorenzo.** Actual complete final
+**Debug and serialized restored-core Release: 339 tests each = 157 app + 36 Effects
++ 146 Core; 0 failures, 0 skips**, including **33 telemetry contracts**. Logs:
+`/tmp/kinetiq-firebase-final-debug.log` and
+`/tmp/kinetiq-firebase-restored-release.log`. Python parser/artifact tests:
+**19 passed, 0 skips** (`/tmp/kinetiq-firebase-final-parser.log`), including the real
+linked Google `ParamsEntry`/`sEntry` substring-collision regression with correct vendor
+symbol boundaries. Signing tests ran **5: 4 passed, 1 skipped**
+(`/tmp/kinetiq-firebase-final-signing.log`): the real-Team positive case skipped because
+the actual ad-hoc app has no valid Apple Team.
+
+Universal build exit **0** (`/tmp/kinetiq-firebase-final-build.log`); actual app and
+embedded saver are **arm64 + x86_64** and pass deep/strict signature verification.
+Actual status is **`KINETIQ_FIREBASE_SIGNING_BLOCKED_OFF`**, **not
+`PRIVATE_GROUP_READY`**: no real Apple signing identity is available; analytics controls
+remain safely unavailable until the actual private `TeamID.bundleID` scope exists.
+Bundle verifier exit **0**, `KINETIQ_TELEMETRY_BUNDLE_CHECK_SUCCESS`: sanitized client
+configuration is present only in the main app, core privacy/MIT resources are intact,
+and old providers are absent from the actual new distribution. The original broad
+Sentry filter falsely matched real Google `ParamsEntry`; it was fixed and regression
+tested, not changed to ignore real vendor symbols. Signed disabled smoke exit **0**,
+`KINETIQ_TELEMETRY_DISABLED_SMOKE_SUCCESS`
+(`/tmp/kinetiq-firebase-signed-smoke.log`), with no Firebase configuration, consent,
+events or Keychain UI.
+
+Actual LLVM **Lines** (`/tmp/kinetiq-firebase-coverage.txt`): owner **96.63%**
+(208 lines/7 missed), Firebase adapter **21.31%** (61/48 missed), privacy UI **96.83%**
+(63/2 missed), local store **100%** (20/0 missed). Matching profile:
+`/tmp/kinetiq-firebase-release.profdata`; binary:
+`.build/out/Products/Release/KinetiqTests.xctest/Contents/MacOS/KinetiqTests`.
+Low adapter coverage is intentional: live startup/lifecycle, offline delivery and reset
+are not tested. This is neither live-provider nor exhaustive coverage evidence.
+An earlier overlapping Release rerun failed helper-frontmost/`windowNotShareable`
+checks; the final serial run passed unchanged assertions. A separate compilation failed
+when the sibling TelemetrySDK disappeared from disk; a clean clone restored the same
+approved `c5e275421fa03c242c9c53b5431d919fdd18547a` pin, without SDK source edits.
+
+Version **0.3.3 / build 38** is preserved. F2 still requires actual Apple identity/private
+scope, console Analytics linking (actual root `IS_ANALYTICS_ENABLED=false`), live/native,
+offline/revocation, terms/retention, notarization and hosted CI verification. The owner
+requires commit/push for completed tasks on `firebase`, then a reviewed PR merge into `main`.
+The local root client plist is ignored/excluded; `.vscode/launch.json` and `.serena/`
+are preserved. The real post-documentation README capture-to-Metal optics regression
+passed: **1 test, 0 failures** (`/tmp/kinetiq-firebase-postdocs.log`). Historical evidence below is unchanged.
+
+**Historical PostHog telemetry acceptance before the coffee CTA:** SDK core 62/PostHog 10 tests, parser 11 and host contracts 24
+pass. Final complete **Debug and Release: 328 tests each, 0 failures, 0 skips**, with
+the native startup consent sheet and optional UI screenshots executed. Universal
+app/saver signatures, configuration-presence checks and disabled signed smoke pass.
+Release line coverage: owner **97.09%**, privacy UI/dialog **96.83%**.
+Consented/live/distribution acceptance requires separate approval; see
+[the detailed evidence](docs/telemetry.md).
+
+**Historical native coffee CTA acceptance (2026-11-08, pre-Firebase):** complete Release **330 tests
+(148 app + 36 Effects + 146 Core), 0 failures, 0 skips**; Debug Management
+**14 tests, 0 failures**, including the real sidebar CTA across three pages, two
+sizes and light/dark appearances. Five owned UI screenshots were saved privately
+under `/tmp/kinetiq-coffee-ui`; Overview and Studio were visually inspected.
+Release log: `/tmp/kinetiq-coffee-release-suite.log`; Debug UI log:
+`/tmp/kinetiq-coffee-management-debug.log`. LLVM **Lines** for `SupportCoffeeView`
+are **97.92%** (`/tmp/kinetiq-coffee-coverage.txt`); hover dispatch is not fully covered.
+Universal app/saver strict signatures, bundle checks and disabled signed smoke pass
+(`/tmp/kinetiq-coffee-build.log`). Version/build remain 0.3.3/38. No automatic browser
+open, checkout, analytics consent change, live event, commit or push was performed.
+
+**Historical PostHog no-Keychain identity acceptance (2026-11-08):** complete Release **334 tests
+(152 app + 36 Effects + 146 Core), 0 failures, 0 skips**, including **28 telemetry
+contracts**; the focused Debug run also passes. Four new contracts use real isolated
+preferences and the real SDK core to check consent-gated creation, relaunch persistence,
+product isolation, malformed UUID fail-closed and identity reset/delete. LLVM Lines:
+local store **100%** (20 lines), owner **97.58%**, privacy UI **96.83%**; these are
+not live-delivery or exhaustive native-lifecycle claims. Logs/report:
+`/tmp/kinetiq-no-keychain-release.log`, `/tmp/kinetiq-no-keychain-coverage.txt`.
+Universal app/saver strict signatures, bundle checks and disabled signed smoke pass
+(`/tmp/kinetiq-no-keychain-build.log`). Reopen **`build/Kinetiq.app`**, not an older
+installed copy, to use the fix. Existing consent, version/build 0.3.3/38 and old
+Keychain item are untouched; no normal consented launch or live probe was automated.
 
 ```sh
 swift build                # build
@@ -214,13 +370,13 @@ swift run kinetiq-effects-preview --check --out /tmp/wobbly-effects
 swift run kinetiq-effects-preview --effect fire --out /tmp/wobbly-effects
 ```
 
-`build-app.sh` signs with your "Apple Development" identity if you have one, or with `SIGN_IDENTITY` if set. Otherwise it uses ad-hoc signing with stable bundle-identifier requirements to preserve permission grants across rebuilds. Both the app and embedded screen saver are signed.
+`build-app.sh` signs with your "Apple Development" identity if you have one, or with `SIGN_IDENTITY` if set. Otherwise it uses ad-hoc signing with stable bundle-identifier requirements to preserve permission grants across rebuilds. Both the app and embedded screen saver are signed. Ad-hoc signing does not authorize Firebase: analytics stays `blocked_off` without the exact real Apple Team private group.
 
-**Current v0.3.3 / build 38 verification:** **304 release tests: 122 app + 36 Effects + 146 Core; 0 failures, 0 skips**, with both native UI and Destruction opt-in dumps enabled (`/tmp/kinetiq-v033-acceptance.log`). The real README capture-to-Metal contact sheet was visually inspected: text releases before shards, pieces pile up, the stage is clear at six seconds at 1×, and initial border clipping is correct. Native UI snapshots are in `/tmp/kinetiq-v033-ui` (Effects, Animation Studio and Performance); six native-resolution destruction frames and their contact sheet are under `/tmp/kinetiq-v033-destruction`. These are real test-window captures, not sample-window illustrations; temporary evidence is not a distributed artifact. Normal Window Destruction playback still writes no images to disk.
+**Historical pre-telemetry v0.3.3 / build 38 verification:** **304 release tests: 122 app + 36 Effects + 146 Core; 0 failures, 0 skips**, with both native UI and Destruction opt-in dumps enabled (`/tmp/kinetiq-v033-acceptance.log`). The real README capture-to-Metal contact sheet was visually inspected: text releases before shards, pieces pile up, the stage is clear at six seconds at 1×, and initial border clipping is correct. Native UI snapshots are in `/tmp/kinetiq-v033-ui` (Effects, Animation Studio and Performance); six native-resolution destruction frames and their contact sheet are under `/tmp/kinetiq-v033-destruction`. These are real test-window captures, not sample-window illustrations; temporary evidence is not a distributed artifact. Normal Window Destruction playback still writes no images to disk. Current telemetry acceptance, including the failed full Debug run and deferred live checks, is recorded in [docs/telemetry.md](docs/telemetry.md).
 
 Final build completed with exit 0 (`/tmp/kinetiq-v033-final-build.log`). App and embedded saver were each verified with `lipo` as universal **x86_64 + arm64** and with `codesign --verify --deep --strict`. Packaged **0.3.3 / build 38** was launched from `build/Kinetiq.app` (PID 56054 at verification); Quick Look cache and Finder were refreshed. [TODO 19](TODO.md) is **Done**.
 
-Current LLVM release **line coverage** (`/tmp/kinetiq-v033-coverage.txt`, **Lines**, not Regions): `DestructionEffectPlayer.swift` **95.95%**, `OriginalEffectPreview.swift` **92.49%**, `LibraryEffect.swift` **98.49%**, `ChaosWorld.swift` **99.20%**, `ChaosRenderer.swift` **88.86%**. Coverage is not 100%; these Swift line figures neither measure Metal shader branch coverage nor establish every native failure path or display configuration. Preview uses a local floor without AX changes; native Close uses per-display floors and observes actual closure. Studio's 19 effects/schema 1 and screen saver behavior remain unchanged.
+Historical pre-telemetry LLVM release **line coverage** (`/tmp/kinetiq-v033-coverage.txt`, **Lines**, not Regions): `DestructionEffectPlayer.swift` **95.95%**, `OriginalEffectPreview.swift` **92.49%**, `LibraryEffect.swift` **98.49%**, `ChaosWorld.swift` **99.20%**, `ChaosRenderer.swift` **88.86%**. Coverage is not 100%; these Swift line figures neither measure Metal shader branch coverage nor establish every native failure path or display configuration. Preview uses a local floor without AX changes; native Close uses per-display floors and observes actual closure. Studio's 19 effects/schema 1 and screen saver behavior remain unchanged.
 
 **Historical v0.3.2 / build 37 verification:** **287 release tests: 146 Core + 36 Effects + 105 app; 0 failures, 0 skips**, including optional native UI capture, real README capture-to-Metal drainage, native close/minimize and complete Liquid previews. Final direct log: `/tmp/kinetiq-v032-acceptance-direct.log`. New tests verify gradual bottom-edge exit without opacity loss, no early leakage for thin bottom-aligned windows, bounded retired particles, negative origins, duration scaling and deterministic stepping. The real rendered contact sheet was visually inspected. Universal arm64/x86_64 app and embedded saver passed strict signature verification; packaged version 0.3.2/build 37 was launched and Quick Look/Finder refreshed. Build: `/tmp/kinetiq-v032-final-build.log`. Merged release **line** coverage: `LiquidWorld.swift` **98.70%**, `LiquidEffectRenderer.swift` **100%**, `LiquidEffectPlayer.swift` **95.89%**, `OriginalEffectPreview.swift` **92.16%** (`/tmp/kinetiq-v032-coverage.txt`); these figures do not measure Metal shader branch coverage.
 
@@ -259,6 +415,7 @@ The graphical Liquid test displays this actual README in a disposable native tex
 - The trick for hiding the real window comes from [AeroSpace](https://github.com/nikitabobko/AeroSpace).
 - The close effects, their settings and their textures come from [Burn-My-Windows](https://github.com/Schneegans/Burn-My-Windows) by Simon Schneegans: the GLSL shaders were ported to Metal. The brush, claws, dust, matrix font and shard textures are licensed CC-BY-4.0.
 - Native screen saver selection uses [PaperSaverKit](https://github.com/AerialScreensaver/PaperSaver) 0.4.3 (MIT); the full notice is included in `NOTICE` and in the packaged app.
+- Optional analytics uses the unchanged TelemetrySDK 0.1.1 generic core (MIT) and official Firebase Apple SDK 12.6.0, FirebaseCore + FirebaseAnalyticsCore. Firebase SDK source is Apache-2.0; prebuilt Analytics/GoogleAppMeasurement binaries are not relabeled as Apache or open source. Source notices and official binary copyright metadata accompany the main app; see `NOTICE`. The selected macOS Analytics ZIP contains no privacy resource bundle or binary terms file. Firebase is not linked to the screen saver or preview executable.
 
 ## License
 

@@ -108,3 +108,73 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------------
+TelemetrySDK core (Invernomut0Telemetry), reviewed pinned sibling checkout
+Used only in: main Kinetiq app, generic explicit-consent telemetry lifecycle
+--------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 Invernomut0
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The core's original license is also copied verbatim as TelemetrySDK-LICENSE.txt;
+its privacy resource bundle is preserved in the main app.
+
+--------------------------------------------------------------------------------
+Official Firebase Apple SDK 12.6.0 (FirebaseCore + FirebaseAnalyticsCore)
+Used only in: main Kinetiq app, optional explicit-consent Analytics
+--------------------------------------------------------------------------------
+
+Firebase Apple SDK source is licensed under Apache License 2.0. The SDK 12.6.0
+official manifest selects GoogleAppMeasurement 12.5.0 binaries. The source license
+does NOT describe the license of prebuilt Firebase Analytics or GoogleAppMeasurement;
+those Analytics binaries are not represented here as Apache-licensed or open source.
+
+The official selected macos-arm64_x86_64 Analytics ZIPs contain no privacy resource
+bundle or binary license/terms file. Packaging must not invent one or claim that
+nonexistent original binary terms were copied. Instead, the official
+FirebaseAnalytics.podspec binary-distribution metadata (Copyright 2022 Google)
+is preserved under Contents/Resources/ThirdPartyLicenses/binary/ in the main app.
+This copyright metadata is not a substitute binary license or distribution approval.
+Review of applicable Google terms remains the owner's responsibility.
+
+Original license and notice files for the resolved Firebase SDK and linked
+GoogleUtilities, nanopb, GoogleDataTransport and Promises dependencies (when
+present in the selected graph) accompany the app under ThirdPartyLicenses/.
+The Firebase SDK source Apache license and the googleappmeasurement source
+LICENSE and README are preserved; the latter source documents do not relicense
+the downloaded Analytics binaries. The existing TelemetrySDK MIT text above and
+its core privacy resource bundle remain unchanged.
+The packaging inventory records the actual packages and native macOS resources;
+it does not relabel proprietary Analytics binary terms as Apache or MIT.
+
+AdSupport/IdentitySupport products, Auth, Crashlytics, Firebase Messaging and Sentry are not
+selected. Automatic collection, IDFV, advertising consent, ad-network registration,
+screen reporting and delegate proxying default off; consented Firebase may still
+collect automatic device/OS, app-instance and session data. The app checks only
+its real Apple Team private Keychain group; ad-hoc builds keep analytics blocked off.
+Client configuration and console Analytics-link review remain owner-gated; client
+metadata is not an admin credential. No service-account file is generated or shipped.
+The screen saver has no Firebase product, client configuration or Firebase entitlement.
+PostHog, its prefixed PLCrashReporter, libwebp and derived Sentry symbols/resources
+and their vendor licenses are removed from the app/saver bundles. This does not
+remove the independent TelemetrySDK core MIT notice or historical integration guide.

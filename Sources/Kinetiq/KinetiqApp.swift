@@ -8,6 +8,11 @@ import AppKit
 struct KinetiqApp {
     @MainActor
     static func main() {
+        // Must precede Settings/AppDelegate construction, AX prompts and normal launch work.
+        if CommandLine.arguments.contains("--telemetry-smoke-test") {
+            TelemetrySmoke.run()
+            return
+        }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
