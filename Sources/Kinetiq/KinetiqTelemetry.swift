@@ -6,19 +6,39 @@ import Foundation
 import Invernomut0Telemetry
 import FirebaseCore
 
-/// Optional main-bundle Firebase client metadata. Never loads administrator credentials.
+/// Optional host metadata. Explicit native loading remains independent of GA4 selection.
 struct TelemetryHostConfiguration {
     let options: FirebaseOptions?
     let environment: TelemetryEnvironment
+    let ga4: GA4MeasurementProtocolConfiguration?
+
+    init(options: FirebaseOptions?, environment: TelemetryEnvironment,
+         ga4: GA4MeasurementProtocolConfiguration? = nil) {
+        self.options = options
+        self.environment = environment
+        self.ga4 = ga4
+    }
 
     enum Invalid: Error { case configuration }
 
-    static func load(file: URL? = Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist")) throws -> Self {
+    /// A present invalid GA4 resource throws; native credentials are never parsed when GA4 is selected.
+    static func load(ga4File: URL? = GA4MeasurementProtocolConfiguration.defaultBundleURL) throws -> Self {
+        if let ga4 = try GA4MeasurementProtocolConfiguration.load(file: ga4File) {
+            return Self(options: nil, environment: buildEnvironment, ga4: ga4)
+        }
+        return try load(file: Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist"))
+    }
+
+    private static var buildEnvironment: TelemetryEnvironment {
         #if DEBUG
-        let environment: TelemetryEnvironment = .development
+        return .development
         #else
-        let environment: TelemetryEnvironment = .production
+        return .production
         #endif
+    }
+
+    static func load(file: URL?) throws -> Self {
+        let environment = buildEnvironment
         guard let file else { return Self(options: nil, environment: environment) }
         do {
             let stream = try FileHandle(forReadingFrom: file)
@@ -65,11 +85,18 @@ struct TelemetryHostConfiguration {
 final class KinetiqTelemetry: ObservableObject {
     nonisolated static let consentKey = "kinetiq.telemetry.firebase.analytics"
     nonisolated static let consentDecisionKey = "kinetiq.telemetry.firebase.analyticsDecision"
+    nonisolated static let ga4ConsentKey = "kinetiq.telemetry.ga4.analytics"
+    nonisolated static let ga4ConsentDecisionKey = "kinetiq.telemetry.ga4.analyticsDecision"
+    enum Mode { case native, ga4 }
+    let mode: Mode
+    private var activeConsentKey: String { mode == .ga4 ? Self.ga4ConsentKey : Self.consentKey }
+    private var activeDecisionKey: String { mode == .ga4 ? Self.ga4ConsentDecisionKey : Self.consentDecisionKey }
     @Published private(set) var ready = false
     @Published private(set) var busy = false
     @Published private(set) var analyticsConsent = false
     @Published private(set) var enabled = true
     @Published private(set) var status = "Analytics not initialized"
+    @Published private(set) var transportStatus = GA4MeasurementProtocolProvider.TransportStatus.stopped.message
 
     private let defaults: UserDefaults
     private let productID: String
@@ -91,7 +118,7 @@ final class KinetiqTelemetry: ObservableObject {
     /// Configuration failures are not a user decision; prompt once when analytics becomes available.
     var shouldRequestConsentAtStartup: Bool {
         guard canChangeConsent, enabled, !analyticsConsent, !startupPromptPresented else { return false }
-        guard let decision = defaults.object(forKey: Self.consentDecisionKey) as? NSNumber,
+        guard let decision = defaults.object(forKey: activeDecisionKey) as? NSNumber,
               CFGetTypeID(decision) == CFBooleanGetTypeID() else { return true }
         return !decision.boolValue
     }
@@ -113,10 +140,17 @@ final class KinetiqTelemetry: ObservableObject {
         self.productID = productID
         self.configuration = configuration
         injectedProvider = provider
-        self.identityStore = identityStore ?? TelemetryPreferenceIdentityStore(defaults: defaults, productID: productID)
+        let usesGA4: Bool
+        switch configuration {
+        case .success(let host): usesGA4 = host.ga4 != nil
+        case .failure(let error): usesGA4 = error is GA4MeasurementProtocolConfiguration.Invalid
+        }
+        mode = usesGA4 ? .ga4 : .native
+        self.identityStore = identityStore ?? TelemetryPreferenceIdentityStore(
+            defaults: defaults, productID: usesGA4 ? productID + ".ga4" : productID)
         self.purgeFailed = purgeFailed
         // UserDefaults.bool accepts strings/numbers. Consent must be an actual plist Boolean.
-        if let stored = defaults.object(forKey: Self.consentKey) as? NSNumber,
+        if let stored = defaults.object(forKey: activeConsentKey) as? NSNumber,
            CFGetTypeID(stored) == CFBooleanGetTypeID() {
             analyticsConsent = stored.boolValue
         }
@@ -137,7 +171,11 @@ final class KinetiqTelemetry: ObservableObject {
         do {
             let host = try configuration.get()
             provider = injectedProvider
-            if provider == nil, let options = host.options {
+            if provider == nil, let ga4 = host.ga4 {
+                provider = GA4MeasurementProtocolProvider(configuration: ga4, statusChanged: { [weak self] status in
+                    self?.transportStatus = status.message
+                })
+            } else if provider == nil, let options = host.options {
                 guard FirebaseAnalyticsProvider.hasPrivateKeychainAccess else {
                     denyConsent()
                     ready = true
@@ -168,7 +206,7 @@ final class KinetiqTelemetry: ObservableObject {
     /// Persist withdrawal before vendor cleanup, grants only after successful provider startup.
     func setAnalyticsConsent(_ granted: Bool) async {
         guard canChangeConsent, !granted || enabled, let client else { return }
-        defaults.set(true, forKey: Self.consentDecisionKey)
+        defaults.set(true, forKey: activeDecisionKey)
         busy = true
         defer { finish() }
         if !granted { denyConsent() }
@@ -178,7 +216,7 @@ final class KinetiqTelemetry: ObservableObject {
             let diagnostics = await client.diagnostics()
             guard !granted || diagnostics.analyticsAvailable else { throw TelemetryHostConfiguration.Invalid.configuration }
             analyticsConsent = granted
-            defaults.set(granted, forKey: Self.consentKey)
+            defaults.set(granted, forKey: activeConsentKey)
             status = granted ? "Analytics consent granted" : "Analytics consent withdrawn"
         } catch { await failClosed() }
     }
@@ -210,7 +248,7 @@ final class KinetiqTelemetry: ObservableObject {
 
     private func denyConsent() {
         analyticsConsent = false
-        defaults.set(false, forKey: Self.consentKey)
+        defaults.set(false, forKey: activeConsentKey)
     }
 
     private func failClosed() async {

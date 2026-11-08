@@ -14,6 +14,8 @@ https://github.com/user-attachments/assets/40bc5530-d253-4d47-bc57-3eccdac83d70
 
 **v0.3.3 · build 38** adds **Window Destruction**, a Close-only built-in with sample/real-window previews, global selection and per-app close rules. The library now contains **66 entries: 19 Studio + 47 originals**. It reuses the screen saver's extraction, fragmentation and physics engines for a transparent one-shot effect, without activating or changing the screen saver. Its historical release-suite/package verification is retained below; it does not certify the subsequent telemetry worktree. See [verification status](#building).
 
+**v0.3.4 · build 39** adds owner-authorized direct **GA4 Web Measurement Protocol** analytics, with a fresh default-off consent choice and separate local identity, without Keychain access. A configured GA4 resource takes precedence over the still-linked native Firebase SDK, which remains dormant in GA4 mode. The actual Privacy & Analytics visit now waits for readiness, enablement and consent; Settings shows sanitized submission/HTTP status, not a promise of report ingestion. Only real consented foreground time accompanies approved actions; startup and Overview send no events. Window effects are unchanged. **G1 Done** for implementation and verified offline/local acceptance only; **G2 Review**, owner Lorenzo, for live ingestion and distribution/privacy acceptance.
+
 ## Installing
 
 Requires macOS 14 or later, on Apple Silicon or Intel.
@@ -196,33 +198,55 @@ The objects are found in the pictures of the windows without any extra permissio
 
 ### Optional analytics
 
-Optional analytics now uses **Google Firebase Analytics**, with the pinned generic
-TelemetrySDK core and the existing single AppDelegate-owned client. It is default off.
-The native **Help improve Kinetiq?** sheet discloses Firebase collection;
+Optional analytics uses **GA4 Web Measurement Protocol** when the owner supplies a
+valid packaged configuration. It retains the pinned generic TelemetrySDK core and
+the existing single AppDelegate-owned `KinetiqTelemetry` client. The official native
+Firebase SDK remains linked but dormant in GA4 mode: no Firebase singleton startup,
+native automatic events or Keychain access. A present invalid GA4 resource fails
+closed instead of falling back to Firebase. With no GA4 resource, the native fallback
+still requires its actual Apple private signing/Keychain scope; this gate is not removed.
+Analytics is default off. The native **Help improve Kinetiq?** sheet discloses the selected transport;
 **Don't Share** is the default and only **Enable Analytics** grants consent.
 Settings → Privacy & Analytics can change or withdraw that choice. Configuration never
-grants consent. Controls are disabled with categorical status when configuration or
-the exact signed private Keychain scope is unavailable; product features remain usable.
+grants consent. Unavailable/invalid configuration leaves categorical status and product
+features usable.
 
-Firebase uses new Boolean preferences `kinetiq.telemetry.firebase.analytics` and
-`kinetiq.telemetry.firebase.analyticsDecision`. Old PostHog consent and UUID preferences
-are untouched but **not carried over**. Firebase configures its official singleton only
-after consented startup. It checks the actual Apple signature's private scope,
-`TeamID.io.github.invernomut0.Kinetiq`, without reading an old Keychain identity,
-aliasing a UUID or setting a user ID. No Keychain password/access-dialog automation
-or broad sharing group is used; ad-hoc builds keep analytics safely `blocked_off`.
+GA4 uses Boolean preferences `kinetiq.telemetry.ga4.analytics` and
+`kinetiq.telemetry.ga4.analyticsDecision`. Previous Firebase/PostHog consent and UUIDs
+are untouched and **not carried over**. The separate pseudonymous UUID is created
+only on consented startup and stored in app-local UserDefaults at
+`kinetiq.ga4.telemetry.installationID`; it persists across launches and withdrawal.
+No legacy Keychain item is read, migrated or deleted; no password or authorization
+dialog is needed. Preference identity is not credential-grade storage or anonymity.
 
 The only forwarded custom action is the actual Settings visit: `feature_used`,
-`feature=privacy_settings`. No custom window titles, screenshots, documents or other
-content are sent. Core installation/lifecycle/reserved events are not forwarded and
-TelemetrySDK native lifecycle is disabled to avoid duplicating Firebase automatic events.
-**Firebase may collect device/OS, app-instance and session data.** Connection IP,
-derived/proxy location and network metadata can be processed; this is not network
-anonymity or a promise of no hardware/OS collection. Advertising support is not selected.
+`feature=privacy_settings`. The former one-shot SwiftUI task could run before consent
+was granted and never submit the visit. It is now keyed by readiness, runtime
+enablement and consent (not busy state), waits 100 ms, and is cancellable when the
+actual section is no longer visible. GA4 sends that action and the separate `client_id`, not
+window titles, screenshots, documents, crash reports, OS/hardware metadata or automatic
+native/core lifecycle events. Google receives connection IP and network metadata and
+may derive location; this is not network anonymity. Advertising user data and
+personalization are explicitly denied. A positive `session_id` uses the actual `Date`
+and refreshes after 30 minutes without approved actions. `ContinuousClock` measures
+actual foreground time only after consent, using NSApp activation notifications;
+`engagement_time_msec` is included only when positive. No fake engagement, separate
+session events or automatic startup/Overview events are sent to fill graphs.
+Usage/session/realtime reports may still be partial, with no realtime promise.
 
-Withdrawal persists off before cleanup, disables Firebase collection, denies all consent
-categories and calls `resetAnalyticsData()` best-effort. The separate runtime kill switch
-does not grant consent. There is no forced flush, awaited public delivery acknowledgement,
+Settings' sanitized `transportStatus` distinguishes readiness, submitted count,
+in-flight requests, HTTP acceptance and categorical failure, without URLs or secrets.
+HTTP acceptance is **not confirmed GA4 ingestion**; filtered core installation events
+are not transport failures. For an owner check, reopen **`build/Kinetiq.app`**, not
+an older installed copy, open **Reports → Realtime**, then
+make an actual **Settings → Privacy & Analytics** visit with explicit consent.
+The reported Home screenshot covers **November 1–7**, excluding Today (November 8).
+See the [GA4 troubleshooting FAQ](docs/telemetry.md#owner-check-and-troubleshooting-faq).
+
+Withdrawal persists off before cleanup, suppresses new submissions, cancels pending
+requests and clears ephemeral transport memory. There is no disk queue or retry, and
+at most four requests are in flight; redirects are rejected. The separate runtime kill
+switch does not grant consent. There is no forced flush, delivery acknowledgement,
 recall of in-flight bytes, remote-erasure guarantee or guaranteed secure local erasure.
 Read [current configuration, verified local acceptance and historical evidence](docs/telemetry.md).
 
@@ -252,12 +276,106 @@ no Auth, FCM, Crashlytics or Sentry is selected. The SwiftPM manifest, packaging
 and CI enforce the SHA and clean checkout (including non-ignored untracked files) without rejecting ignored local
 `.env`. `bash scripts/verify-telemetry-sdk.sh` is the standalone provisioning check.
 
-`scripts/build-app.sh` uses Python 3 (standard library only) to parse the owner-supplied
+For GA4, `scripts/build-app.sh` runs `scripts/configure-ga4.py` (Python 3 standard
+library only). It reads **root `.env` only inside the local build process**, as bounded
+UTF-8 data (65,536 bytes), never sources/evaluates it. The local ignored keys are
+`KINETIQ_GA4_MEASUREMENT_ID` (a Web stream `G-…` ID) and `KINETIQ_GA4_API_SECRET`
+(that Web stream's Measurement Protocol ingestion secret). These are **not** the
+native Firebase app ID/client API key; the Web stream is a different stream, even if
+it belongs to the same Analytics property. Do not put admin/service-account JSON here.
+Only exact `measurement_id` / `api_secret` fields enter
+`Kinetiq.app/Contents/Resources/KinetiqGA4Configuration.plist`, before signing;
+no unrelated dotenv data or `.env` file is copied. Runtime reads this bundle resource,
+**never runtime `.env`**. Absence removes stale GA4 configuration; invalid presence
+rejects packaging. The saver cannot receive this configuration.
+
+The verified local **`build/Kinetiq.app` contains the owner's GA4 configuration**.
+The two root `.env` keys are ignored and local only: credentials have **not been
+uploaded or provisioned in GitHub CI**. A workflow build without the owner's `.env`
+uses the safe native fallback, currently `KINETIQ_FIREBASE_SIGNING_BLOCKED_OFF`; it
+does **not** produce a configured GA4 release app. Hosted CI execution is unverified.
+Local packaging is not publication of a new DMG.
+
+**Deployment risk, explicitly authorized by the owner:** bundling the ingestion
+secret makes it extractable and enables forged/spam events. This direct desktop
+deployment is contrary to the recommended server-only secret placement; it provides
+no secret-authentication boundary. Never bundle administrator credentials. The owner
+confirms console Analytics is active; this is not proof of Web-stream ingestion.
+
+Standalone offline tests: `python3 -m unittest discover -s scripts -p test_ga4_config.py -v`.
+Current verified local run (2026-11-08): **26 passed, 0 failures/errors, 0 skips, exit 0**,
+including the pure validation-only payload contract.
+Positive cases use only actual owner configuration inside the test process and skip
+when absent; failures/statuses never display credentials. No fabricated valid keys,
+network mocks, patches or live requests are used. Optional owner command
+`python3 scripts/configure-ga4.py --validate` calls only Google's **debug** endpoint
+for event-structure validation, not secret authentication or report ingestion proof.
+It is **not an automatic CI test**. The current explicitly requested session-aware
+Google debug probe returned **0 validation messages, exit 0**. It uses a real positive
+Web session ID and optionally measured probe-preparation time, **not app engagement**.
+Ordinary tests and the disabled smoke remain offline.
+
+**Current GA4 acceptance — VERIFIED LOCAL, G1 Done (Copilot), G2 Review (Lorenzo):**
+
+- Complete **Release and Debug each passed 361 tests = 179 app + 36 Effects +
+	146 Core; 0 failures, 0 skips, exit 0**. Logs:
+	`/tmp/kinetiq-ga4-fix-release.log` and `/tmp/kinetiq-ga4-fix-debug.log`
+	(verified `DEBUG_EXIT=0`). The Debug app suite completed in approximately
+	**1928 seconds**; it did not hang.
+- Focused Release: **55 = 21 GA4 Swift + 34 native contracts, 0 failures**,
+	`/tmp/kinetiq-ga4-fix-focused.log`. Actual native Settings mounted while denied,
+	then granted consent **while visible, without navigation**, recorded exactly one
+	approved event and revoked through the retained owner and recording boundary.
+	GA4 disclosure was tested; no normal consented app GUI launch or live collection
+	request was automated. The full suites include the real README capture-to-Metal
+	optics regression. The focused post-documentation rerun using
+	`swift test -c release --filter 'LiquidIntegrationTests/testCapturedREADMEOpticsPreserveNativeTextContrast'`
+	passed the actual Test Case in **2.618 seconds: 1 test, 0 failures, 0 skips, exit 0**
+	(`/tmp/kinetiq-ga4-fix-postdocs.log`). The initial dot-filter attempt selected
+	0 tests and is not a successful regression run.
+- Python GA4: **26 passed, 0 failures/errors/skips**; native parser: **19 passed,
+	0 skips**. Signing: **5 ran, 4 passed, 1 skipped**, because a real Apple Team is
+	unavailable; no Team identity is invented.
+- Universal build: **exit 0** (`BUILD_EXIT=0`, `/tmp/kinetiq-ga4-fix-build.log`).
+	App and embedded saver are each **arm64 + x86_64**; both deep/strict signature
+	checks returned **0**. Direct terminal resource verification returned **0**,
+	`KINETIQ_TELEMETRY_BUNDLE_CHECK_SUCCESS`; signed disabled smoke returned **0**,
+	`KINETIQ_TELEMETRY_DISABLED_SMOKE_SUCCESS`. These direct checks have no claimed
+	saved log. Native fallback status is **`KINETIQ_FIREBASE_SIGNING_BLOCKED_OFF`**,
+	not GA4 unavailability: bundled GA4 is present and works without Keychain after
+	its own fresh default-off consent.
+
+Actual Release LLVM **Lines**, verified against the report header (not Regions):
+
+| Component | Total lines | Missed lines | Line coverage |
+|---|---:|---:|---:|
+| GA4 provider | 275 | 63 | **77.09%** |
+| Telemetry owner | 240 | 7 | **97.08%** |
+| Privacy UI | 97 | 10 | **89.69%** |
+| Preference identity store | 20 | 0 | **100%** |
+| Native Firebase adapter | 61 | 48 | **21.31%** |
+
+Report: `/tmp/kinetiq-ga4-fix-coverage.txt`; profile:
+`/tmp/kinetiq-ga4-fix-release.profdata`; matching binary:
+`.build/out/Products/Release/KinetiqTests.xctest/Contents/MacOS/KinetiqTests`.
+Approved exclusions remain **unexecuted at runtime**: live data tasks, response
+handling, cancellation and the 30-minute session boundary. Native live-provider
+paths are not certified. Coverage is not exhaustive, Metal branch coverage or
+ingestion evidence; the store's 100% does not imply 100% integration coverage.
+
+**Workflow:** Owner-requested publication uses commits/push on firebase, reviewed PR and normal merge into main. Git history and PR are publication evidence; local packaging is not new DMG release.
+
+G2 retains actual Web-stream credentials/console ingestion,
+IP/location/retention/access/erasure/privacy, extractable-secret spam risk, terms,
+notarization and release provisioning review; hosted CI remains unverified.
+
+The still-supported native fallback uses Python 3 to parse the owner-supplied
 root `GoogleService-Info.plist` as bounded (65,536 bytes), typed, allowlisted client
 metadata for the main app. The source file is not modified; missing configuration
 leaves analytics unavailable. The supplied project/bundle match is `kinetiq-75593` /
-`io.github.invernomut0.Kinetiq`. **Its `IS_ANALYTICS_ENABLED=false` requires owner review
-of the console Analytics link; a client match is not backend validation.** Client
+`io.github.invernomut0.Kinetiq`. **The owner confirms console Analytics is active;
+the plist's `IS_ANALYTICS_ENABLED` is not authoritative console state. A client match
+is not backend validation.** Client
 metadata is extractable, not an admin credential. No service-account JSON belongs in
 the app; a service-account email is not authentication configuration. Sibling `.env`
 ingestion is removed and old configuration is ignored, not deleted. Do not dump client
@@ -279,7 +397,7 @@ The smoke bypasses all runtime keys, app preferences, permissions, vendor startu
 Keychain; it initializes the real disabled core, verifies denied/unavailable channels
 and zero accepted events, then shuts down with a fixed success/failure line.
 
-**Firebase migration acceptance: VERIFIED LOCAL — F1 Done for implementation and
+**Historical native Firebase migration acceptance (v0.3.3/build 38): VERIFIED LOCAL — F1 Done for implementation and
 offline/local acceptance only; F2 Review, owner Lorenzo.** Actual complete final
 **Debug and serialized restored-core Release: 339 tests each = 157 app + 36 Effects
 + 146 Core; 0 failures, 0 skips**, including **33 telemetry contracts**. Logs:
@@ -317,8 +435,9 @@ checks; the final serial run passed unchanged assertions. A separate compilation
 when the sibling TelemetrySDK disappeared from disk; a clean clone restored the same
 approved `c5e275421fa03c242c9c53b5431d919fdd18547a` pin, without SDK source edits.
 
-Version **0.3.3 / build 38** is preserved. F2 still requires actual Apple identity/private
-scope, console Analytics linking (actual root `IS_ANALYTICS_ENABLED=false`), live/native,
+Historical version **0.3.3 / build 38** was preserved in that migration; current source
+version is **0.3.4 / build 39**. F2 still requires actual Apple identity/private
+scope, native backend ingestion review (console Analytics active per owner), live/native,
 offline/revocation, terms/retention, notarization and hosted CI verification. The owner
 requires commit/push for completed tasks on `firebase`, then a reviewed PR merge into `main`.
 The local root client plist is ignored/excluded; `.vscode/launch.json` and `.serena/`
@@ -370,9 +489,9 @@ swift run kinetiq-effects-preview --check --out /tmp/wobbly-effects
 swift run kinetiq-effects-preview --effect fire --out /tmp/wobbly-effects
 ```
 
-`build-app.sh` signs with your "Apple Development" identity if you have one, or with `SIGN_IDENTITY` if set. Otherwise it uses ad-hoc signing with stable bundle-identifier requirements to preserve permission grants across rebuilds. Both the app and embedded screen saver are signed. Ad-hoc signing does not authorize Firebase: analytics stays `blocked_off` without the exact real Apple Team private group.
+`build-app.sh` signs with your "Apple Development" identity if you have one, or with `SIGN_IDENTITY` if set. Otherwise it uses ad-hoc signing with stable bundle-identifier requirements to preserve permission grants across rebuilds. Both the app and embedded screen saver are signed. Ad-hoc signing does not authorize native Firebase: that fallback stays `blocked_off` without the exact real Apple Team private group. Configured GA4 does not use this Keychain scope and still requires its own fresh consent.
 
-**Historical pre-telemetry v0.3.3 / build 38 verification:** **304 release tests: 122 app + 36 Effects + 146 Core; 0 failures, 0 skips**, with both native UI and Destruction opt-in dumps enabled (`/tmp/kinetiq-v033-acceptance.log`). The real README capture-to-Metal contact sheet was visually inspected: text releases before shards, pieces pile up, the stage is clear at six seconds at 1×, and initial border clipping is correct. Native UI snapshots are in `/tmp/kinetiq-v033-ui` (Effects, Animation Studio and Performance); six native-resolution destruction frames and their contact sheet are under `/tmp/kinetiq-v033-destruction`. These are real test-window captures, not sample-window illustrations; temporary evidence is not a distributed artifact. Normal Window Destruction playback still writes no images to disk. Current telemetry acceptance, including the failed full Debug run and deferred live checks, is recorded in [docs/telemetry.md](docs/telemetry.md).
+**Historical pre-telemetry v0.3.3 / build 38 verification:** **304 release tests: 122 app + 36 Effects + 146 Core; 0 failures, 0 skips**, with both native UI and Destruction opt-in dumps enabled (`/tmp/kinetiq-v033-acceptance.log`). The real README capture-to-Metal contact sheet was visually inspected: text releases before shards, pieces pile up, the stage is clear at six seconds at 1×, and initial border clipping is correct. Native UI snapshots are in `/tmp/kinetiq-v033-ui` (Effects, Animation Studio and Performance); six native-resolution destruction frames and their contact sheet are under `/tmp/kinetiq-v033-destruction`. These are real test-window captures, not sample-window illustrations; temporary evidence is not a distributed artifact. Normal Window Destruction playback still writes no images to disk. Current GA4 acceptance and deferred owner checks are recorded in [docs/telemetry.md](docs/telemetry.md); earlier failed Debug evidence is retained separately in its historical sections.
 
 Final build completed with exit 0 (`/tmp/kinetiq-v033-final-build.log`). App and embedded saver were each verified with `lipo` as universal **x86_64 + arm64** and with `codesign --verify --deep --strict`. Packaged **0.3.3 / build 38** was launched from `build/Kinetiq.app` (PID 56054 at verification); Quick Look cache and Finder were refreshed. [TODO 19](TODO.md) is **Done**.
 

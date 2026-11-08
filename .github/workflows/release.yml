@@ -43,6 +43,7 @@ jobs:
         run: |
           bash scripts/verify-telemetry-sdk.sh
           python3 -m unittest discover -s scripts -p test_telemetry_config.py -v
+          python3 -m unittest discover -s scripts -p test_ga4_config.py -v
           python3 -m unittest discover -s scripts -p test_firebase_signing.py -v
           swift test --package-path ../TelemetrySDK
 

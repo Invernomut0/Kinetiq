@@ -31,6 +31,7 @@ jobs:
       - name: Safe configuration parser tests
         run: |
           python3 -m unittest discover -s scripts -p test_telemetry_config.py -v
+          python3 -m unittest discover -s scripts -p test_ga4_config.py -v
           python3 -m unittest discover -s scripts -p test_firebase_signing.py -v
       - name: Host Debug and Release tests
         run: |
