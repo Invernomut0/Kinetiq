@@ -5,6 +5,35 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — Build 36
+
+### Added
+
+- **Built-in effects in the Animation Studio.** Add Layer now offers all 30 original close shaders (Incinerate, Fire, Broken Glass…), the 6 spring entrances and the 9 Dock morphs next to the 19 Studio effects. A new `LayerCompositor` plays them in document order on one capture, each layer reading the previous one's output, in a stage with room around the window, for both previews and desktop playback. Built-in layers have timing, speed curve and direction; their look stays the original. Liquid is not a layer (it is a desktop-wide simulation) but can be tried from the menu.
+- **Play in reverse** for any layer: a close shader becomes an entrance (the shaders' own opening direction), a minimize morph becomes a restore.
+- **My Effects.** Studio compositions are saved by name (`CustomEffect`, `customEffects.v1`) and can own Open, Close or Minimize exactly like a preset: one owner per event across presets and custom effects. The Studio toolbar has **My Effects**, **Save** (⌘S) and **Use when…**, plus a status line saying whether and where the effect is used. The Effects library lists My Effects first with a looping preview, **Use when…** buttons, Run, Edit in Studio and Delete; the menu bar's Open, Close and Minimize submenus list them too.
+- **Try an Effect** now covers every effect: My Effects, the 30 close shaders, 6 entrances, 9 minimize morphs, Liquid and the 19 Studio effects, each played once on the front window and put back.
+- **Interactive, animated Layouts.** Windows fly from their real positions into Exposé 3D, Orbit or Cube with a spring and fly back on exit; the dimmed backdrop fades with them. Pointing at a window lifts it (Exposé straightens it to face you) and shows its app and title; click brings it forward with a return animation; arrow keys, Tab and Return navigate; scroll spins the orbit or the cube carousel; Escape or right-click puts everything back. Cube is now a carousel with one window facing you. Geometry lives in the pure `OverviewLayout`, shared by the desktop and the preview so hit-testing matches what is drawn.
+- **⌃⌥↑ anywhere** opens the chosen layout (and closes it again), through Carbon `RegisterEventHotKey`: only that combination reaches Kinetiq, no other keystroke is observed. Toggle and layout choice on the Layouts page; the menu has **Arrange Windows**.
+- The Layouts page shows each layout as a looping demo with five windows (rest, fly in, browse, fly back), sliders that change it live, Start, Use for Shortcut and Defaults.
+
+### Changed
+
+- The Studio preview loops with its own Play button and follows edits while playing; the separate transport is gone. Clicking the ruler moves the playhead. New layers start where the previous ones end. The example document is a Studio Ripple followed by the built-in Incinerate. Inspector tabs are Edit, Keyframes and Advanced.
+- Studio documents are schema 2 (adds `builtin` and `reversed` per layer). Schema 1 documents still import and are upgraded; a schema 1 file cannot contain built-in layers.
+- Manual runs started from Kinetiq's own window (Layouts Start, Run on Window with the sample source) target the topmost eligible window instead of failing; an explicit window ID still never falls back.
+
+### Fixed
+
+- The preview player rendered the subject it started with: parameter edits made while playing did not appear until it was paused.
+- "Stop using" a Studio owner now releases the event so the built-in choice underneath plays again, instead of switching that event off.
+
+### Verification
+
+- `swift test` (debug): **Core 145 passed, Effects 36 passed, app 112 run with 28 skipped and 1 failing test.** The failure is `LiquidIntegrationTests.testLiquidPickersInRealNativeHostingViews`; it fails identically on the unmodified v0.3.0 commit in the same session, because SwiftUI exposed only 1–3 accessibility elements to the test process there (an environment condition, not a regression). The 28 skips need Screen Recording in the test host.
+- New tests: schema-1 upgrade and schema-2 built-in/reversed round trip; My Effects persistence, single ownership with presets, release and invalid input; every one of the 45 built-in layers animating and reversing on the sample window; Ripple feeding Incinerate; overview geometry (home → arranged, highlight on top, carousel and orbit); the five-window overview demo returning every window home; the Try menu covering all 65 effects.
+- `scripts/build-app.sh`: universal arm64/x86_64 app and saver, `codesign --verify --deep --strict` OK, Info.plist 0.4.0 / 36. Preview frames of the three layouts and the Ripple → Incinerate composition were inspected.
+
 ## [0.3.0] — Build 35
 
 ### Changed

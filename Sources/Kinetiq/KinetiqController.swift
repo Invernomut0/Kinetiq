@@ -175,6 +175,26 @@ final class KinetiqController: NSObject {
         }
     }
 
+    /// Plays the original Liquid on the front window without closing it: the window is captured,
+    /// hidden while it melts, then put back exactly where it was.
+    func tryLiquid(windowID: CGWindowID? = nil) {
+        guard let liquidPlayer, settings.enabled, session == nil, !CatalogRuntime.shared.isPlaying else { return }
+        cancelAll()
+        Task {
+            guard let (info, element) = await CatalogRuntime.shared.frontTarget(windowID),
+                  let frame = try? await capture.capture(info), frame.isPainted, frame.pointSize == info.frame.size else { return }
+            let lease = CatalogWindowLease(element: element, info: info)
+            guard liquidPlayer.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration) else { return }
+            guard await lease.park() else { liquidPlayer.cancelAll(); lease.restore(); return }
+            // Back once the fluid has pooled, or after a bounded wait.
+            let deadline = CACurrentMediaTime() + 4 * settings.closeDuration
+            while liquidPlayer.hasScene, CACurrentMediaTime() < deadline, settings.enabled {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            lease.restore()
+        }
+    }
+
     func warmUp() {
         Task { await capture.warmUp() }
         windowObserver.start()

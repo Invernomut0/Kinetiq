@@ -1,8 +1,8 @@
-# Animation Studio and catalog — v0.3.0 (build 35)
+# Animation Studio and catalog — v0.4.0 (build 36)
 
 Kinetiq's compact motion editor composes effects on a window capture. Previews play on a built-in **sample window** (a drawn macOS-style document packaged like a ScreenCaptureKit capture) or on any real window you pick as preview source; real windows are only captured for previews, never moved. The [README library](../README.md#effects-library-65-effects-organized-by-what-you-do) describes the shared **65-entry** `LibraryEffect` manifest (**19 Studio + 46 originals**) that the menu bar and the Effects library organize by window event. The [original-effects guide](original-effects.md) lists every built-in effect.
 
-The **19 Studio effect IDs, schema 1 and layer model are unchanged** since v0.2.0. Originals are not Studio JSON layers and cannot be added as such. Catalog Liquid Morph remains separate from original Liquid; shared titles such as Morph, Portal, Ripple and Genie do not identify interchangeable engines.
+The **19 Studio effect IDs are unchanged** since v0.2.0. Documents are **schema 2** since v0.4.0: a layer may play a built-in engine (`builtin`) and play in reverse (`reversed`). Schema 1 documents still import and are upgraded on save. Originals are not Studio JSON layers and cannot be added as such. Catalog Liquid Morph remains separate from original Liquid; shared titles such as Morph, Portal, Ripple and Genie do not identify interchangeable engines.
 
 ## Quick start
 
@@ -26,17 +26,29 @@ The 11 dashboard pages are Overview, Effects, Animation Studio, Physics, Layouts
 
 Selecting **Wobbly** (or scrubbing a single-layer Wobbly document) replays `KinetiqModel` deterministically at 120 Hz under a scripted drag: the title bar is grabbed at 0 s, swept right and back for 1.8 s, released, and the mesh settles until 3 s. Stiffness, friction and speed come from the preset (or its tracks) and amplitude scales the displacement, exactly like the live drag adapter. Multi-layer compositions keep the shader membrane, which v0.3.0 reshaped to resemble a released spring sheet.
 
+## Make your own effect
+
+1. Open **Animation Studio** (menu bar or dashboard). The guide card explains the three steps; ✕ hides it and ? brings it back. **Load an Example** gives a Studio Ripple followed by the built-in Incinerate.
+2. **Add Layer** offers two groups. *Studio effects* (19) have parameters and keyframes. *Built-in effects* are the original engines: 30 close shaders, 6 spring entrances and 9 Dock morphs. A new layer starts where the last one ends; drag its start in **Edit** to overlap layers. Overlapping layers chain: each one transforms the previous one's result, so a Ripple can feed Incinerate.
+3. Select a layer. **Edit** has name, enabled, **Play in reverse**, start and, for built-ins, duration, speed curve and *Natural duration*. Reverse turns a close shader into an entrance (using the shader's own opening direction) and a Dock morph into a restore. Studio layers also show variants and parameters; **Keyframes** animates one parameter over the layer.
+4. The preview loops on the sample window with its own Play button; it follows every edit while playing. Click the timeline ruler to move the playhead; the source menu switches to a real window, which is only captured. **Run on Window** plays the document once on the preview-source window (or the topmost window) and puts it back.
+5. **Save** (⌘S) stores it in **My Effects** under its name. **Use when… → When a window closes** (or opens, or minimize) makes it the owner of that event; the status line confirms it, and the menu bar title reads e.g. “Close: Burn Out”. **Stop using it automatically** releases the event. **My Effects** in the toolbar opens, creates or deletes saved effects.
+
+Close and Minimize play the composition on the window's last image after it has gone, so end with a layer that makes the window disappear; otherwise the image simply ends. Open plays it on the new window before handing the real window back. Drag cannot be owned by a composition: it is a live physics policy.
+
+Saved effects also appear in **Effects › My Effects** (preview, Use when…, Run, Edit in Studio, Delete), in the menu bar's Open/Close/Minimize submenus and in **Try an Effect**. Each event has one owner across catalog presets and My Effects; assigning one releases the other without deleting it.
+
 ## Edit a motion document
 
-Open **Animation Studio…** from the menu, or its dashboard page. A short guide explains the three steps (add a layer, edit it, use it); dismiss it with ✕ and bring it back with ?. An empty document offers **Add Layer** and **Load an Example** (a Ripple followed by a Fold whose hinge angle is keyframed). Each layer has a name, enabled state, start offset in document seconds and its own effect preset. Layers process the captured image sequentially in document order; this is not a general-purpose video editor. The inspector has four tabs: **Edit** (name, start, variants, static parameters), **Keyframes** (parameter tracks and keys), **Use It** (save as the effect's preset and assign it to a window event) and **Advanced** (rendering class, shader status, reset).
+Each layer has a name, enabled state, direction, start offset in document seconds and either a catalog preset or a built-in engine. Layers process the captured image sequentially in document order; this is not a general-purpose video editor. The inspector has three tabs: **Edit**, **Keyframes** and **Advanced** (rendering class, saving a Studio layer as its effect's library preset, copy/paste, reset).
 
-- Play/Pause runs the **panel preview** on the sample window or the chosen real window, with at most twenty playhead updates per second; frames self-pace behind the renderer. Seek-to-start and the scrub slider move the playhead; playback ends at the document duration rather than looping forever.
+- The preview's Play/Pause loops the document on the sample window or the chosen real window; frames self-pace behind the renderer and hold the last frame briefly before looping. Seek-to-start and the scrub slider move the playhead; playback ends at the document duration rather than looping forever.
 - Select a layer and use **Edit** for its start, duration and static controls. In **Keyframes**, choose a parameter and **Add Keyframe Track** to create endpoint keys. Add another at the playhead, edit time/value, move keys with their sliders, delete keys or mute/remove the track. Timeline diamonds show active keys; the curve plot samples the actual Core evaluator.
 - Key time is normalized within its preset: `0` is its start and `1` its end. Document time equals layer start plus key time × preset duration. Values use the descriptor's units/bounds, not arbitrary normalized values.
 - Each key's **Outgoing Curve** controls the segment leading to the next key. The last key's curve is unused. Choices are `linear`, `easeIn`, `easeOut`, `easeInOut`, `spring`; spring is bounded. There are **no editable cubic-Bézier tangents**. Values hold before the first/after the last key; muted or empty tracks use static values/defaults.
 - **Playback curve** controls effect progress; the pure `EffectPreset.value(_:at:)` evaluator samples local seconds and outgoing segment curves without applying a second preset time warp. The native drag adapter applies its preset clock curve once before sampling tracks.
 - Explicit **Undo/Redo** toolbar buttons maintain up to **100 document snapshots**. Invalid edits are atomic, produce an error and do not enter history; a new edit clears redo. Document import is undoable.
-- **Save Document** persists the document locally; the button reads “Saved” when nothing changed. It does not assign layer triggers to the engine. **Use It → Save Layer as … Preset** saves that effect's preset; **Use when…** saves it and makes it the owner of that window event in one step. Loading a built-in variant replaces the layer's preset, including tracks/trigger.
+- The working document is kept automatically. **Save** adds or updates it in My Effects; **Use when…** saves it and makes it the owner of a window event in one step. **Advanced → Save Layer as … Preset** instead stores a single Studio layer as that effect's library preset. Loading a built-in variant replaces the layer's preset, including tracks/trigger.
 - **Copy/Paste Parameters** validates preset JSON and requires the same effect ID. Paste replaces only static parameters, preserving the destination name, duration, trigger and tracks. It does not copy an entire timeline.
 - **Advanced → Reset Layer Preset** resets the selected layer's preset and is undoable; name/start remain. The library's **Reset to Defaults** instead removes that effect's saved preset/assignment, without resetting other effects.
 
@@ -57,7 +69,7 @@ Even disabled layers must fit entirely inside the document. Studio sorts edited 
 
 ## JSON schema 1
 
-**File → Import Effect Preset as Layer…** and **Use It → Export Layer Preset…** exchange a preset. **File → Import Document JSON… / Export Document JSON…** exchanges the composition. Importing an effect preset also saves its trigger assignment; importing a document changes the editor until Save Document. Exports contain real mathematical animation data, not captured pixels.
+**File → Import Effect Preset as Layer…** and **Advanced → Copy / Paste / Export → Export Layer Preset…** exchange a preset. **File → Import Document JSON… / Export Document JSON…** exchanges the composition. Importing an effect preset also saves its trigger assignment; importing a document changes the editor until Save Document. Exports contain real mathematical animation data, not captured pixels.
 
 All listed fields are required; unknown fields at every model level, unsupported schema versions, unknown enum/raw IDs, unsupported triggers, unknown parameter keys, nonfinite/out-of-bounds values, duplicate IDs/tracks or unordered key times fail explicitly.
 
@@ -67,9 +79,9 @@ All listed fields are required; unknown fields at every model level, unsupported
 | AnimationTrack | `id` (UUID), `parameter`, `keyframes`, `muted` |
 | AnimationKeyframe | `id` (UUID), `time`, `value`, `curve` |
 | StudioDocument | `schemaVersion`, `name`, `duration`, `layers` |
-| StudioLayer | `id` (UUID), `name`, `preset`, `start`, `enabled` |
+| StudioLayer | `id` (UUID), `name`, `preset`, `start`, `enabled`; schema 2 adds optional `builtin` (`close:…`, `open:…` or `minimize:…` discovery ID) and `reversed` |
 
-Both document and nested presets use `schemaVersion: 1`. Raw trigger IDs are `manual`, `drag`, `close`, `minimize`, `open`, `overview`; only the effect's supported subset is accepted. Raw effect IDs are the README table's identifiers, including `depth-of-field`, `liquid-morph`, `workspace-cube` and `expose-3d`. Parameter dictionaries may be sparse: omitted known parameters use descriptor defaults, but unknown keys are errors. Every effect has `amplitude` (0–2, default 1) and `speed` (0.1–4, default 1), plus its effect-specific controls.
+Documents use `schemaVersion: 2` (1 is still read); nested presets use `schemaVersion: 1`. For a built-in layer the nested preset only carries `duration` and `curve`. Raw trigger IDs are `manual`, `drag`, `close`, `minimize`, `open`, `overview`; only the effect's supported subset is accepted. Raw effect IDs are the README table's identifiers, including `depth-of-field`, `liquid-morph`, `workspace-cube` and `expose-3d`. Parameter dictionaries may be sparse: omitted known parameters use descriptor defaults, but unknown keys are errors. Every effect has `amplitude` (0–2, default 1) and `speed` (0.1–4, default 1), plus its effect-specific controls.
 
 This complete, valid default Wobbly preset needs no UUIDs because it has no tracks. It can be imported directly; export from the UI when you need actual layer/track/key UUIDs.
 

@@ -73,7 +73,7 @@ final class CloseEffectTrigger {
     }
 
     private var enabled: Bool {
-        settings.enabled && (CatalogStore.shared.assigned(to: .close) != nil
+        settings.enabled && (CatalogStore.shared.assigned(to: .close) != nil || CatalogStore.shared.assignedCustom(to: .close) != nil
             || settings.closeEffect != .off || !settings.appCloseEffects.isEmpty)
     }
 
@@ -260,10 +260,11 @@ final class CloseEffectTrigger {
               !AppExclusions.contains(pid: watch.window.pid),
               // Hiding the app fades its windows out too, but they come back.
               let app = NSRunningApplication(processIdentifier: watch.window.pid), !app.isHidden else { return }
+        let custom = CatalogStore.shared.assignedCustom(to: .close)
         let assigned = CatalogStore.shared.assigned(to: .close)
         let choice = settings.closeEffect(forBundleID: app.bundleIdentifier)
         let effect = player.effect(for: choice)
-        guard assigned != nil || choice == .liquid || effect != nil else { return }
+        guard custom != nil || assigned != nil || choice == .liquid || effect != nil else { return }
         let windowFrame = watch.lastFrame
         let pointer = CGEvent(source: nil)?.location ?? CGPoint(x: windowFrame.minX + 24, y: windowFrame.minY + 22)
         let speed = settings.closeDuration
@@ -273,8 +274,11 @@ final class CloseEffectTrigger {
             // A capture of another size means the window was resized after it: it would be drawn distorted.
             guard generation == token, enabled, !isBusy(), frame.pointSize == windowFrame.size,
                 CatalogStore.shared.assigned(to: .close) == assigned,
+                CatalogStore.shared.assignedCustom(to: .close) == custom,
                 settings.closeEffect(forBundleID: app.bundleIdentifier) == choice else { return }
-            if let assigned {
+            if let custom {
+                Task { _ = await CatalogRuntime.shared.playCaptured(frame, windowFrame: windowFrame, document: custom.document) }
+            } else if let assigned {
                 _ = CatalogRuntime.shared.playCaptured(frame, windowFrame: windowFrame, preset: assigned)
             } else if choice == .liquid {
                 liquid?.play(frame, windowFrame: windowFrame, durationScale: speed)

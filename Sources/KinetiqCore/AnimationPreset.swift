@@ -240,12 +240,22 @@ public struct EffectPreset: Codable, Equatable, Sendable {
 }
 
 public struct StudioLayer: Identifiable, Codable, Equatable, Sendable {
+    /// Discovery-ID prefixes of the built-in engines a layer may reference. Liquid is a
+    /// desktop-wide simulation and cannot be sampled per frame, so it is not a layer.
+    public static let builtinPrefixes = ["close:", "open:", "minimize:"]
+
     public var id: UUID
     public var name: String
+    /// Catalog effect, parameters and tracks. For a built-in layer only `duration` and `curve`
+    /// are used: they time the original engine, whose own parameters are compiled defaults.
     public var preset: EffectPreset
     /// Offset in document seconds. A layer must fit entirely inside the document, even if disabled.
     public var start: Double
     public var enabled: Bool
+    /// A built-in engine (for example `close:incinerate`) instead of the catalog `preset.effect`.
+    public var builtin: String?
+    /// Plays the layer backwards, e.g. a close shader as an entrance. Schema 2.
+    public var reversed: Bool
 
     public init(preset: EffectPreset, start: Double = 0) {
         id = UUID()
@@ -253,9 +263,33 @@ public struct StudioLayer: Identifiable, Codable, Equatable, Sendable {
         self.preset = preset
         self.start = start
         enabled = true
+        builtin = nil
+        reversed = false
     }
 
-    private enum CodingKeys: String, CodingKey, CaseIterable { case id, name, preset, start, enabled }
+    /// A layer that plays an original engine for `duration` seconds.
+    public init(builtin: String, name: String, duration: Double, start: Double = 0) {
+        var timing = EffectPreset(effect: .dissolve)
+        timing.name = name
+        timing.duration = min(EffectPreset.durationRange.upperBound, max(EffectPreset.durationRange.lowerBound, duration))
+        timing.curve = .linear
+        self.init(preset: timing, start: start)
+        self.name = name
+        self.builtin = builtin
+    }
+
+    public var duration: Double { preset.duration }
+    public var end: Double { start + preset.duration }
+    public var isBuiltin: Bool { builtin != nil }
+
+    /// Normalized playback position at document `time`, after the layer's curve and direction.
+    public func progress(at time: Double) -> Double {
+        let local = (time - start) / max(0.000001, preset.duration)
+        let clock = preset.curve.value(at: local)
+        return reversed ? 1 - clock : clock
+    }
+
+    private enum CodingKeys: String, CodingKey, CaseIterable { case id, name, preset, start, enabled, builtin, reversed }
 
     public init(from decoder: Decoder) throws {
         try strictFields(decoder, allowed: CodingKeys.allCases.map(\.rawValue))
@@ -265,17 +299,42 @@ public struct StudioLayer: Identifiable, Codable, Equatable, Sendable {
         preset = try c.decode(EffectPreset.self, forKey: .preset)
         start = try c.decode(Double.self, forKey: .start)
         enabled = try c.decode(Bool.self, forKey: .enabled)
+        builtin = try c.decodeIfPresent(String.self, forKey: .builtin)
+        reversed = try c.decodeIfPresent(Bool.self, forKey: .reversed) ?? false
         try validName(name, path: "layer.name")
         try bounded(start, in: 0...StudioDocument.maximumDuration, path: "layer.start")
+        try Self.validBuiltin(builtin)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(preset, forKey: .preset)
+        try c.encode(start, forKey: .start)
+        try c.encode(enabled, forKey: .enabled)
+        try c.encodeIfPresent(builtin, forKey: .builtin)
+        try c.encode(reversed, forKey: .reversed)
+    }
+
+    static func validBuiltin(_ builtin: String?) throws {
+        guard let builtin else { return }
+        try limit(builtin.utf8.count, maximum: 128, path: "layer.builtin")
+        guard let prefix = builtinPrefixes.first(where: { builtin.hasPrefix($0) }), builtin.count > prefix.count,
+              builtin.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) || $0 == ":" }) else {
+            throw invalid("layer.builtin", "must be close:, open: or minimize: followed by an effect identifier")
+        }
     }
 }
 
 public struct StudioDocument: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion = 1
+    /// Version 2 adds built-in and reversed layers; version 1 documents still decode.
+    public static let currentSchemaVersion = 2
+    public static let supportedSchemaVersions = 1...2
     public static let maximumDuration = 60.0
     public static let maximumLayers = 32
 
-    public var schemaVersion: Int = 1
+    public var schemaVersion: Int = StudioDocument.currentSchemaVersion
     public var name: String
     public var duration: Double
     public var layers: [StudioLayer]
@@ -287,7 +346,7 @@ public struct StudioDocument: Codable, Equatable, Sendable {
     }
 
     public func validated() throws -> StudioDocument {
-        guard schemaVersion == Self.currentSchemaVersion else {
+        guard Self.supportedSchemaVersions.contains(schemaVersion) else {
             throw AnimationValidationError.unsupportedVersion(schemaVersion)
         }
         try validName(name, path: "document.name")
@@ -298,6 +357,7 @@ public struct StudioDocument: Codable, Equatable, Sendable {
             guard ids.insert(layer.id).inserted else { throw invalid("layer.id", "must be unique") }
             try validName(layer.name, path: "layer.name")
             _ = try layer.preset.validated()
+            try StudioLayer.validBuiltin(layer.builtin)
             try bounded(layer.start, in: 0...duration, path: "layer.start")
             // Permit binary rounding at an exact decimal boundary (for example 0.2 + 0.1 == 0.3).
             guard layer.start + layer.preset.duration <= duration + 4 * duration.ulp else {
@@ -319,20 +379,26 @@ public struct StudioDocument: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         try strictFields(decoder, allowed: CodingKeys.allCases.map(\.rawValue))
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
-        guard schemaVersion == Self.currentSchemaVersion else {
-            throw AnimationValidationError.unsupportedVersion(schemaVersion)
+        let version = try c.decode(Int.self, forKey: .schemaVersion)
+        guard Self.supportedSchemaVersions.contains(version) else {
+            throw AnimationValidationError.unsupportedVersion(version)
         }
         name = try c.decode(String.self, forKey: .name)
         duration = try c.decode(Double.self, forKey: .duration)
         layers = try limitedArray(c, key: .layers, maximum: Self.maximumLayers)
+        // Version 1 had no built-in layers; reject them so an old reader's contract holds.
+        if version == 1, layers.contains(where: { $0.builtin != nil || $0.reversed }) {
+            throw AnimationValidationError.unsupportedVersion(version)
+        }
+        // Upgraded in memory; re-encoding writes the current version.
+        schemaVersion = Self.currentSchemaVersion
         self = try validated()
     }
 
     public func encode(to encoder: Encoder) throws {
         _ = try validated()
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(schemaVersion, forKey: .schemaVersion)
+        try c.encode(Self.currentSchemaVersion, forKey: .schemaVersion)
         try c.encode(name, forKey: .name)
         try c.encode(duration, forKey: .duration)
         try c.encode(layers, forKey: .layers)

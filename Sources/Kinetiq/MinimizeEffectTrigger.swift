@@ -78,7 +78,8 @@ final class MinimizeEffectTrigger {
     /// Returns true if the click is held back.
     func mouseDown(_ event: CGEvent, windows: WindowList) -> Bool {
         let point = event.location
-        guard settings.enabled, (settings.minimizeEffect != .off || CatalogStore.shared.assigned(to: .minimize) != nil),
+        guard settings.enabled, (settings.minimizeEffect != .off || CatalogStore.shared.assigned(to: .minimize) != nil
+                                 || CatalogStore.shared.assignedCustom(to: .minimize) != nil),
               !isPending, parked == nil, !isBusy(), !CatalogRuntime.shared.isPlaying,
               let info = WindowLocator.window(at: point, in: windows) else { return false }
         guard info.pid != ProcessInfo.processInfo.processIdentifier, !AppExclusions.contains(pid: info.pid) else { return false }
@@ -122,10 +123,11 @@ final class MinimizeEffectTrigger {
         let shield = await click.shield.value
         let icon = await click.icon.value
         let assigned = CatalogStore.shared.assigned(to: .minimize)
+        let custom = CatalogStore.shared.assignedCustom(to: .minimize)
         guard generation == token else { shield?.hide(); return }
         guard settings.enabled, let frame, frame.isPainted, frame.pointSize == info.frame.size,
               CACurrentMediaTime() - click.startedAt < Self.captureTimeout, !isBusy(), !morph.isPlaying,
-              assigned != nil || resolvedChoice() != nil else {
+              custom != nil || assigned != nil || resolvedChoice() != nil else {
             shield?.hide()
             replay(click.down, up)
             return
@@ -141,7 +143,8 @@ final class MinimizeEffectTrigger {
         }
             guard generation == token else { shield?.hide(); return }
             guard settings.enabled, !isBusy(), !CatalogRuntime.shared.isPlaying, let element,
-              CatalogStore.shared.assigned(to: .minimize) == assigned else {
+              CatalogStore.shared.assigned(to: .minimize) == assigned,
+              CatalogStore.shared.assignedCustom(to: .minimize) == custom else {
             shield?.hide()
             replay(click.down, up)
             return
@@ -151,7 +154,9 @@ final class MinimizeEffectTrigger {
         shield?.show()
         let target = icon ?? fallbackIcon(near: info.frame)
         let started: Bool
-        if let assigned {
+        if let custom {
+            started = await CatalogRuntime.shared.playCaptured(frame, windowFrame: info.frame, document: custom.document)
+        } else if let assigned {
             started = CatalogRuntime.shared.playCaptured(frame, windowFrame: info.frame, preset: assigned)
         } else {
             switch resolvedChoice() ?? .off {

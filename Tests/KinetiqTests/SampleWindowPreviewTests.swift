@@ -65,7 +65,7 @@ final class SampleWindowPreviewTests: XCTestCase {
             let a = try pixels(start), b = try pixels(middle)
             XCTAssertGreaterThan(try alphaMass(a), 10, effect.id)
             XCTAssertGreaterThan(try alphaMass(b), 10, effect.id)
-            XCTAssertNotEqual(try bytes(a), try bytes(b), "\(effect.id) must change between 0% and 40%")
+            XCTAssertFalse(try bytes(a) == bytes(b), "\(effect.id) must change between 0% and 40%")
             XCTAssertLessThanOrEqual(a.width * a.height, 8_000_000, effect.id)
             try dump(middle, name: effect.id.replacingOccurrences(of: ":", with: "-"))
         }
@@ -84,7 +84,7 @@ final class SampleWindowPreviewTests: XCTestCase {
                        OriginalPreviewRenderer.wobblyPreviewSeconds)
         let a = try await renderer.preview(effect: .catalog(.wobbly), source: .sample, progress: 0.3, settings: preferences)
         let b = try await renderer.preview(effect: .catalog(.wobbly), source: .sample, progress: 0.3, settings: preferences)
-        XCTAssertEqual(try bytes(pixels(a)), try bytes(pixels(b)), "Scrubbing must replay the same frame")
+        XCTAssertTrue(try bytes(pixels(a)) == bytes(pixels(b)), "Scrubbing must replay the same frame")
         // Mid-drag the window has moved right: the rendered stage is wider than the resting window.
         XCTAssertGreaterThan(a.size.width, SampleWindow.pointSize.width * 1.3)
         var stiff = EffectPreset(effect: .wobbly)
@@ -92,12 +92,12 @@ final class SampleWindowPreviewTests: XCTestCase {
         stiff.parameters["friction"] = 1
         let c = try await renderer.preview(effect: .catalog(.wobbly), preset: stiff, source: .sample, progress: 0.75, settings: preferences)
         let d = try await renderer.preview(effect: .catalog(.wobbly), source: .sample, progress: 0.75, settings: preferences)
-        XCTAssertNotEqual(try bytes(pixels(c)), try bytes(pixels(d)), "Preset stiffness/friction must drive the spring replay")
+        XCTAssertFalse(try bytes(pixels(c)) == bytes(pixels(d)), "Preset stiffness/friction must drive the spring replay")
         var still = EffectPreset(effect: .wobbly)
         still.parameters["amplitude"] = 0
         let e = try await renderer.preview(effect: .catalog(.wobbly), preset: still, source: .sample, progress: 0.75, settings: preferences)
         let f = try await renderer.preview(effect: .catalog(.wobbly), preset: still, source: .sample, progress: 1, settings: preferences)
-        XCTAssertEqual(try bytes(pixels(e)), try bytes(pixels(f)), "Zero amplitude shows the undeformed window after release")
+        XCTAssertTrue(try bytes(pixels(e)) == bytes(pixels(f)), "Zero amplitude shows the undeformed window after release")
         try dump(a, name: "wobbly-drag"); try dump(d, name: "wobbly-settle")
     }
 
@@ -117,8 +117,8 @@ final class SampleWindowPreviewTests: XCTestCase {
         XCTAssertGreaterThan(try alphaMass(pixels(idle)), 10)
         XCTAssertGreaterThan(try alphaMass(pixels(single)), 10)
         XCTAssertGreaterThan(try alphaMass(pixels(triple)), 10)
-        XCTAssertNotEqual(try bytes(pixels(single)), try bytes(pixels(triple)))
-        XCTAssertNotEqual(try bytes(pixels(idle)), try bytes(pixels(triple)))
+        XCTAssertFalse(try bytes(pixels(single)) == bytes(pixels(triple)))
+        XCTAssertFalse(try bytes(pixels(idle)) == bytes(pixels(triple)))
         try dump(triple, name: "document-three-layers")
         do {
             _ = try await renderer.preview(document: document, time: .nan, source: .sample, settings: preferences)
@@ -143,5 +143,92 @@ final class SampleWindowPreviewTests: XCTestCase {
             _ = try await low.preview(effect: .catalog(.fold), source: .sample, progress: 0.3, settings: preferences)
             XCTFail("Disabled effects must not preview")
         } catch { XCTAssertTrue(error.localizedDescription.contains("paused")) }
+    }
+}
+
+/// Built-in engines as Studio layers and the overview demo, rendered on the sample window.
+final class CompositionPreviewTests: XCTestCase {
+    private func settings() throws -> Kinetiq.Settings {
+        let suite = "io.github.invernomut0.Kinetiq.composition-tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return Kinetiq.Settings(defaults: defaults)
+    }
+
+    @MainActor private func bytes(_ image: NSImage) throws -> [UInt8] {
+        var proposed = CGRect(origin: .zero, size: image.size)
+        let cg = try XCTUnwrap(image.cgImage(forProposedRect: &proposed, context: nil, hints: nil))
+        return Array(try XCTUnwrap(cg.dataProvider?.data) as Data)
+    }
+
+    private func alpha(_ bytes: [UInt8]) -> Double { stride(from: 3, to: bytes.count, by: 4).reduce(0.0) { $0 + Double(bytes[$1]) / 255 } }
+
+    @MainActor private func dump(_ image: NSImage, _ name: String) throws {
+        guard let path = ProcessInfo.processInfo.environment["KINETIQ_PREVIEW_DUMP"] else { return }
+        var proposed = CGRect(origin: .zero, size: image.size)
+        let cg = try XCTUnwrap(image.cgImage(forProposedRect: &proposed, context: nil, hints: nil))
+        try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        try NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])!
+            .write(to: URL(fileURLWithPath: path).appendingPathComponent("\(name).png"))
+    }
+
+    @MainActor func testEveryBuiltinLayerAnimatesInADocumentAndReverses() async throws {
+        guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("Metal unavailable") }
+        let preferences = try settings()
+        let renderer = OriginalPreviewRenderer(budget: { .forQuality(.high) })
+        for builtin in BuiltinLayer.all {
+            let layer = builtin.makeLayer()
+            let document = StudioDocument(name: builtin.effect.title, duration: layer.end, layers: [layer])
+            let start = try bytes(await renderer.preview(document: document, time: 0, source: .sample, settings: preferences))
+            let middle = try bytes(await renderer.preview(document: document, time: layer.duration * 0.45, source: .sample, settings: preferences))
+            XCTAssertGreaterThan(alpha(start), 10, builtin.effect.id)
+            XCTAssertFalse(start == middle, "\(builtin.effect.id) must animate as a layer")
+            var reversed = document
+            reversed.layers[0].reversed = true
+            let back = try bytes(await renderer.preview(document: reversed, time: layer.duration * 0.45, source: .sample, settings: preferences))
+            XCTAssertFalse(back == middle, "\(builtin.effect.id) must play differently in reverse")
+        }
+        XCTAssertEqual(renderer.inFlight, 0)
+    }
+
+    @MainActor func testOverlappingStudioAndBuiltinLayersCompose() async throws {
+        guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("Metal unavailable") }
+        let preferences = try settings()
+        let renderer = OriginalPreviewRenderer(budget: { .forQuality(.high) })
+        var ripple = EffectPreset(effect: .ripple); ripple.duration = 1.5
+        let incinerate = BuiltinLayer.close(.incinerate).makeLayer(start: 0.5)
+        let both = StudioDocument(duration: incinerate.end, layers: [StudioLayer(preset: ripple), incinerate])
+        let onlyBuiltin = StudioDocument(duration: incinerate.end, layers: [incinerate])
+        let composed = try await renderer.preview(document: both, time: 1.0, source: .sample, settings: preferences)
+        let single = try await renderer.preview(document: onlyBuiltin, time: 1.0, source: .sample, settings: preferences)
+        XCTAssertFalse(try bytes(composed) == bytes(single), "The Ripple layer must feed Incinerate")
+        XCTAssertGreaterThan(alpha(try bytes(composed)), 10)
+        let ended = try await renderer.preview(document: onlyBuiltin, time: incinerate.end, source: .sample, settings: preferences)
+        XCTAssertLessThan(alpha(try bytes(ended)), alpha(try bytes(single)), "A close shader ends with less of the window")
+        try dump(composed, "studio-ripple-incinerate")
+        let low = OriginalPreviewRenderer(budget: { .forQuality(.low) })
+        do {
+            _ = try await low.preview(document: onlyBuiltin, time: 1, source: .sample, settings: preferences)
+            XCTFail("Close shaders are refused when expensive effects are off")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("budget")) }
+    }
+
+    @MainActor func testOverviewDemoFliesInBrowsesAndFliesBack() async throws {
+        guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("Metal unavailable") }
+        let preferences = try settings()
+        let renderer = OriginalPreviewRenderer(budget: { .forQuality(.high) })
+        for effect in Kinetiq.Settings.overviewLayouts {
+            let preset = EffectPreset(effect: effect)
+            let seconds = OriginalPreviewRenderer.overviewPreviewSeconds
+            let rest = try await renderer.previewOverview(preset, progress: 0.2 / seconds, settings: preferences)
+            let arranged = try await renderer.previewOverview(preset, progress: 1.5 / seconds, settings: preferences)
+            let browsing = try await renderer.previewOverview(preset, progress: 3 / seconds, settings: preferences)
+            let back = try await renderer.previewOverview(preset, progress: 4.5 / seconds, settings: preferences)
+            XCTAssertEqual(rest.size, CGSize(width: 1440, height: 900))
+            XCTAssertFalse(try bytes(rest) == bytes(arranged), "\(effect)")
+            XCTAssertFalse(try bytes(arranged) == bytes(browsing), "\(effect) must browse while shown")
+            XCTAssertTrue(try bytes(rest) == bytes(back), "\(effect) must return every window home")
+            try dump(arranged, "overview-\(effect.rawValue)")
+        }
     }
 }

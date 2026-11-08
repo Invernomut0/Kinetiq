@@ -5,6 +5,7 @@
 import AppKit
 import ApplicationServices
 import KinetiqCore
+import KinetiqEffects
 
 enum Permissions {
     static func accessibilityGranted(prompt: Bool) -> Bool {
@@ -31,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var setupWindow: SetupWindowController?
     private var chaosSaver: ChaosSaver?
     private var systemScreenSaver: SystemScreenSaver?
+    private var overviewHotKey: GlobalHotKey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = KinetiqController(settings: settings)
@@ -45,6 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         DockGenie.sync(enabled: settings.minimizeEffect != .off)
         setUpStatusItem()
+        syncOverviewShortcut()
+        NotificationCenter.default.addObserver(self, selector: #selector(preferencesChanged),
+                                               name: UserDefaults.didChangeNotification, object: nil)
         installSignalHandlers()
         showSetup()
 
@@ -138,6 +143,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         stop.isEnabled = CatalogRuntime.shared.isPlaying || controller != nil
         menu.addItem(stop)
 
+        let arrange = NSMenuItem(title: "Arrange Windows (\(EffectCatalog.descriptor(settings.overviewLayout).title))"
+                                 + (settings.overviewShortcut ? "  \(GlobalHotKey.overviewTitle)" : ""),
+                                 action: #selector(showOverview), keyEquivalent: "")
+        arrange.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: nil)
+        menu.addItem(arrange)
+
         menu.addItem(.separator())
         let quality = NSMenuItem(title: "Render Quality: \(RenderQualityManager.shared.title)", action: nil, keyEquivalent: "")
         let qualityMenu = NSMenu()
@@ -222,6 +233,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 menu.addItem(item)
             }
         }
+        if CustomEffect.assignableTriggers.contains(trigger) {
+            menu.addItem(.separator())
+            let header = NSMenuItem(title: "My Effects", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            for custom in CatalogStore.shared.customEffects {
+                let item = NSMenuItem(title: custom.name, action: #selector(assignEffect(_:)), keyEquivalent: "")
+                item.representedObject = "\(LibraryItem.customPrefix)\(custom.id.uuidString)|\(trigger.rawValue)"
+                item.state = assignment.customID == custom.id ? .on : .off
+                item.indentationLevel = 1
+                item.target = self
+                menu.addItem(item)
+            }
+            let create = NSMenuItem(title: CatalogStore.shared.customEffects.isEmpty ? "Create One in Animation Studio…" : "New in Animation Studio…",
+                                    action: #selector(showStudio), keyEquivalent: "")
+            create.indentationLevel = 1
+            create.target = self
+            menu.addItem(create)
+        }
         return menu
     }
 
@@ -234,23 +264,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return item
     }
 
-    /// Studio effects can be played once on the frontmost window; built-ins need a real close/open/minimize.
+    /// Every effect, played once on the frontmost window and put back: nothing is closed or minimized.
     private func tryMenu() -> NSMenu {
         let menu = NSMenu()
-        for category in EffectCategory.allCases {
-            let effects = EffectCatalog.effects.filter { $0.category == category }
-            guard !effects.isEmpty else { continue }
-            let header = NSMenuItem(title: category.title, action: nil, keyEquivalent: "")
-            header.isEnabled = false
-            menu.addItem(header)
-            for descriptor in effects {
-                let item = NSMenuItem(title: descriptor.title, action: #selector(runCatalogEffect(_:)), keyEquivalent: "")
-                item.representedObject = descriptor.id.rawValue
-                item.toolTip = descriptor.summary
+        func header(_ title: String) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+        func submenu(_ title: String, _ items: [NSMenuItem]) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let sub = NSMenu()
+            items.forEach(sub.addItem)
+            item.submenu = sub
+            menu.addItem(item)
+        }
+        func builtinItem(_ effect: LibraryEffect) -> NSMenuItem {
+            let item = NSMenuItem(title: effect.title, action: #selector(runBuiltinEffect(_:)), keyEquivalent: "")
+            item.representedObject = effect.id
+            item.toolTip = effect.blurb
+            item.target = self
+            return item
+        }
+        if !CatalogStore.shared.customEffects.isEmpty {
+            header("My Effects")
+            for custom in CatalogStore.shared.customEffects {
+                let item = NSMenuItem(title: custom.name, action: #selector(runCustomEffect(_:)), keyEquivalent: "")
+                item.representedObject = custom.id.uuidString
                 item.indentationLevel = 1
                 item.target = self
                 menu.addItem(item)
             }
+            menu.addItem(.separator())
+        }
+        header("Built-in effects")
+        submenu("Close Effects", CloseEffect.allCases.map { builtinItem(.close($0)) })
+        submenu("Entrances", WobbleEntrance.allCases.map { builtinItem(.entrance($0)) })
+        submenu("Minimize Morphs", DockMorphStyle.allCases.map { builtinItem(.minimize($0)) })
+        let liquid = NSMenuItem(title: LibraryEffect.liquid.title, action: #selector(runLiquid), keyEquivalent: "")
+        liquid.toolTip = LibraryEffect.liquid.blurb
+        liquid.target = self
+        menu.addItem(liquid)
+        menu.addItem(.separator())
+        header("Studio effects")
+        for category in EffectCategory.allCases {
+            let effects = EffectCatalog.effects.filter { $0.category == category }
+            guard !effects.isEmpty else { continue }
+            submenu(category.title, effects.map { descriptor in
+                let item = NSMenuItem(title: descriptor.title, action: #selector(runCatalogEffect(_:)), keyEquivalent: "")
+                item.representedObject = descriptor.id.rawValue
+                item.toolTip = descriptor.summary
+                item.target = self
+                return item
+            })
         }
         return menu
     }
@@ -274,15 +340,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task { await CatalogRuntime.shared.play(preset) }
     }
 
+    /// A built-in close shader, entrance or Dock morph as a one-layer document on the front window.
+    @objc private func runBuiltinEffect(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String, let builtin = BuiltinLayer(id) else { return }
+        controller?.cancelAll()
+        let layer = builtin.makeLayer()
+        let document = StudioDocument(name: builtin.effect.title, duration: layer.end, layers: [layer])
+        Task { await CatalogRuntime.shared.playDocument(document) }
+    }
+
+    @objc private func runCustomEffect(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let id = UUID(uuidString: raw),
+              let custom = CatalogStore.shared.customEffect(id) else { return }
+        controller?.cancelAll()
+        Task { await CatalogRuntime.shared.playDocument(custom.document) }
+    }
+
+    @objc private func runLiquid() { controller?.tryLiquid() }
+
+    /// Opens the chosen window arrangement on the current Space; also bound to ⌃⌥↑.
+    @objc func showOverview() {
+        guard settings.enabled, !CatalogRuntime.shared.isPlaying else {
+            // The same shortcut puts an open overview away.
+            if CatalogRuntime.shared.isPlaying { CatalogRuntime.shared.dismissOverview() }
+            return
+        }
+        controller?.cancelAll()
+        let preset = CatalogStore.shared.preset(settings.overviewLayout)
+        Task { await CatalogRuntime.shared.play(preset) }
+    }
+
+    @objc nonisolated private func preferencesChanged() {
+        Task { @MainActor [weak self] in self?.syncOverviewShortcut() }
+    }
+
+    private func syncOverviewShortcut() {
+        let wanted = settings.overviewShortcut
+        if wanted, overviewHotKey == nil {
+            overviewHotKey = GlobalHotKey(keyCode: GlobalHotKey.overviewKeyCode, modifiers: GlobalHotKey.overviewModifiers) { [weak self] in
+                self?.showOverview()
+            }
+        } else if !wanted, let hotKey = overviewHotKey {
+            hotKey.unregister()
+            overviewHotKey = nil
+        }
+    }
+
     @objc private func selectQuality(_ sender: NSMenuItem) {
         if let raw = sender.representedObject as? String, let choice = RenderQuality(rawValue: raw) {
             RenderQualityManager.shared.selection = choice
         }
     }
 
-    /// "effectID|trigger": makes that effect what the trigger plays, through the same path as the library.
+    /// "effectID|trigger" or "custom:<uuid>|trigger": makes it what the trigger plays, like the library does.
     @objc private func assignEffect(_ sender: NSMenuItem) {
-        guard let token = sender.representedObject as? String, let (effect, trigger) = Self.parseToken(token) else { return }
+        guard let token = sender.representedObject as? String else { return }
+        if token.hasPrefix(LibraryItem.customPrefix), let bar = token.lastIndex(of: "|"),
+           let id = UUID(uuidString: String(token[token.index(token.startIndex, offsetBy: LibraryItem.customPrefix.count)..<bar])),
+           let trigger = EffectTrigger(rawValue: String(token[token.index(after: bar)...])) {
+            ensureSetupController().model.assignCustom(id, to: trigger)
+            return
+        }
+        guard let (effect, trigger) = Self.parseToken(token) else { return }
         ensureSetupController().model.assign(effect, to: trigger)
     }
 

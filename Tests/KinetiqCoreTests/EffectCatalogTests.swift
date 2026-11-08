@@ -316,8 +316,44 @@ final class EffectCatalogTests: XCTestCase {
         document.layers.append(document.layers[0])
         assertInvalid(document)
         document.layers = []
-        document.schemaVersion = 2
+        document.schemaVersion = 3
         assertInvalid(document)
+        document.schemaVersion = 1
+        _ = try document.validated()
+    }
+
+    func testSchemaOneDocumentsDecodeAndUpgradeWhileBuiltinLayersNeedSchemaTwo() throws {
+        let legacy = StudioDocument(duration: 2, layers: [StudioLayer(preset: EffectPreset(effect: .fold))])
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: legacy.encoded()) as? [String: Any])
+        json["schemaVersion"] = 1
+        var layers = try XCTUnwrap(json["layers"] as? [[String: Any]])
+        layers[0]["builtin"] = nil
+        layers[0]["reversed"] = nil
+        json["layers"] = layers
+        let decoded = try StudioDocument.decode(JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(decoded.schemaVersion, StudioDocument.currentSchemaVersion)
+        XCTAssertEqual(decoded.layers[0].preset, legacy.layers[0].preset)
+        XCTAssertFalse(decoded.layers[0].reversed)
+        XCTAssertNil(decoded.layers[0].builtin)
+
+        var builtin = StudioLayer(builtin: "close:incinerate", name: "Incinerate", duration: 2)
+        builtin.reversed = true
+        let document = StudioDocument(duration: 3, layers: [builtin])
+        let roundTrip = try StudioDocument.decode(document.encoded())
+        XCTAssertEqual(roundTrip.layers[0].builtin, "close:incinerate")
+        XCTAssertTrue(roundTrip.layers[0].reversed)
+        XCTAssertEqual(roundTrip.layers[0].duration, 2)
+        XCTAssertEqual(roundTrip.layers[0].progress(at: 0), 1, accuracy: 1e-9)
+        XCTAssertEqual(roundTrip.layers[0].progress(at: 2), 0, accuracy: 1e-9)
+
+        var downgraded = try XCTUnwrap(JSONSerialization.jsonObject(with: document.encoded()) as? [String: Any])
+        downgraded["schemaVersion"] = 1
+        XCTAssertThrowsError(try StudioDocument.decode(JSONSerialization.data(withJSONObject: downgraded)))
+        for invalid in ["", "close:", "liquid", "catalog:fold", "close:../x", String(repeating: "a", count: 200)] {
+            var bad = document
+            bad.layers[0].builtin = invalid
+            assertInvalid(bad)
+        }
     }
 
     func testStudioDecimalTimelineBoundaryAllowsOnlyRoundingError() throws {
@@ -428,14 +464,15 @@ final class EffectCatalogTests: XCTestCase {
             object.removeValue(forKey: field)
             assertStudioJSONRejected(object)
         }
-        for field in layer.keys {
+        // `reversed` (schema 2) is optional so schema-1 layers still decode; every other field is required.
+        for field in layer.keys where field != "reversed" {
             var missing = layer
             missing.removeValue(forKey: field)
             var object = original
             object["layers"] = [missing]
             assertStudioJSONRejected(object)
         }
-        for (field, value) in [("unknown", 1 as Any), ("schemaVersion", 2), ("duration", 61),
+        for (field, value) in [("unknown", 1 as Any), ("schemaVersion", 3), ("schemaVersion", 0), ("duration", 61),
                                ("layers", Array(repeating: layer, count: 33))] {
             var object = original
             object[field] = value

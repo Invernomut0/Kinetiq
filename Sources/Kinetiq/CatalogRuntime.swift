@@ -189,6 +189,9 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
     private var metal: MTLDevice?
     private var queue: MTLCommandQueue?
     private var renderer: CatalogEffectRenderer?
+    private var compositor: LayerCompositor?
+    /// Set while a document with built-in layers plays: compositions cover this rect, not the window.
+    private var compositeStage: CGRect?
     private var cache: CVMetalTextureCache?
     private var generation = UUID()
     private var previewGeneration = UUID()
@@ -207,6 +210,16 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
     private var lastRendered: Double = 0
     private var overview = false
     private var overviewStage: CGRect?
+    private enum OverviewPhase { case entering(Double), shown, leaving(Double, chosen: Int?) }
+    private var overviewPhase = OverviewPhase.shown
+    private var overviewState = OverviewState()
+    private var overviewOrder: [Int] = []
+    private var overviewSelected: Int?
+    private var overviewFocusTarget = 0.0
+    private var overviewSpinVelocity = 0.0
+    private var overviewTick = 0.0
+    private var overviewTitles: [String] = []
+    private var overviewEffect: EffectPreset?
     private var dynamics: CatalogDynamics?
     private var targets: [CGRect] = []
     private var composed: MTLTexture?
@@ -218,7 +231,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         let source: CatalogCapture
         let info: WindowInfo
         var rect: CGRect
-        let preset: EffectPreset
+        var preset: EffectPreset
     }
 
     /// Isolated Settings/budgets let tests avoid changing standard preferences.
@@ -282,9 +295,17 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
     private func selected(_ id: CGWindowID?) throws -> WindowInfo {
         let windows = eligible()
         if let id { guard let w = windows.first(where: { $0.id == id }) else { throw CatalogFailure.window }; return w }
-        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
-              let w = windows.first(where: { $0.pid == pid }) else { throw CatalogFailure.window }
+        // The frontmost app's window, or, when that is Kinetiq itself (its own windows are never
+        // targets), the topmost eligible window. An explicit ID above never falls back.
+        let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        guard let w = windows.first(where: { $0.pid == pid }) ?? windows.first else { throw CatalogFailure.window }
         return w
+    }
+
+    /// The frontmost app's eligible window and its exact AX element, for one-off desktop actions.
+    func frontTarget(_ id: CGWindowID? = nil) async -> (WindowInfo, AXUIElement)? {
+        guard settings.enabled, let info = try? selected(id), let element = await exactElement(info) else { return nil }
+        return (info, element)
     }
 
     private func exactElement(_ info: WindowInfo) async -> AXUIElement? {
@@ -308,8 +329,19 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             var cache: CVMetalTextureCache?
             guard CVMetalTextureCacheCreate(nil, nil, metal, nil, &cache) == kCVReturnSuccess, let cache else { throw CatalogFailure.texture }
             self.metal = metal; self.queue = queue; self.renderer = renderer; self.cache = cache
+            compositor = LayerCompositor(device: metal)
             shaderStatus = "Metal compiled · BGRA8 Display P3"
         } catch { shaderStatus = error.localizedDescription; throw error }
+    }
+
+    private func check(_ layer: StudioLayer) throws {
+        guard settings.enabled else { throw CatalogFailure.disabled }
+        if layer.isBuiltin {
+            do { try LayerCompositor.check(layer, budget: budgetProvider()) }
+            catch CompositorError.budget { throw CatalogFailure.budget }
+            return
+        }
+        try check(layer.preset)
     }
 
     private func check(_ preset: EffectPreset) throws {
@@ -397,8 +429,9 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             let document = try document.validated()
             let enabled = document.layers.filter(\.enabled)
             guard let primary = enabled.first?.preset else { return }
-            for layer in enabled { try check(layer.preset) }
+            for layer in enabled { try check(layer) }
             let specialized = enabled.contains {
+                guard !$0.isBuiltin else { return false }
                 let kind = EffectCatalog.descriptor($0.preset.effect).rendering
                 return kind == .dynamics || kind == .multiWindow
             }
@@ -406,7 +439,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             isPlaying = true // Includes capture/AX preparation, preventing competing hooks.
             try prepare()
             let primaryInfo = try selected(windowID)
-            let multi = EffectCatalog.descriptor(primary.effect).rendering == .multiWindow
+            let multi = !enabled[0].isBuiltin && EffectCatalog.descriptor(primary.effect).rendering == .multiWindow
             let infos = multi ? Array(([primaryInfo] + eligible().filter { $0.id != primaryInfo.id }).prefix(8)) : [primaryInfo]
             var prepared: [Entry] = []
             var elements: [(AXUIElement, WindowInfo)] = []
@@ -429,21 +462,25 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             }
             guard let first = prepared.first else { throw CatalogFailure.window }
             // Compile, encode, and complete real GPU work BEFORE any live-window mutation.
-            let ready = try await renderImage(source: first.source, rect: first.info.frame, document: document, time: 0)
+            let composite = LayerCompositor.needsCompositor(document)
+            let ready = composite
+                ? try await composeImage(source: first.source, rect: first.info.frame, document: document, time: 0)
+                : try await renderImage(source: first.source, rect: first.info.frame, document: document, time: 0)
             try validPlayback(token)
             guard elements.allSatisfy({ pair in eligible().contains { $0.id == pair.1.id && $0.frame == pair.1.frame } }) else { throw CatalogFailure.window }
             self.document = document
             entries = prepared
             composed = ready
+            compositeStage = composite ? LayerCompositor.stage(windowFrame: first.info.frame, shadow: first.source.frame.shadow) : nil
             began = CACurrentMediaTime()
             if multi {
                 overview = true
-                layoutOverview(primary)
+                beginOverview(primary)
                 showOverviewInput()
             } else {
                 let lease = CatalogWindowLease(element: elements[0].0, info: elements[0].1)
                 leases = [lease]
-                if primary.effect == .magnet || primary.effect == .gravity {
+                if !composite, primary.effect == .magnet || primary.effect == .gravity {
                     let bounds = NSScreen.containing(cgPoint: CGPoint(x: primaryInfo.frame.midX, y: primaryInfo.frame.midY))?.cgVisibleFrame
                     guard let bounds else { throw CatalogFailure.window }
                     dynamics = CatalogDynamics(frame: primaryInfo.frame, bounds: bounds)
@@ -464,6 +501,30 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
 
     private func validPlayback(_ token: UUID) throws {
         guard token == generation, !Task.isCancelled, settings.enabled else { throw CancellationError() }
+    }
+
+    /// A saved Studio composition on a frozen capture (Close/Minimize of a custom effect).
+    /// Returns false, before any overlay appears, if the first frame cannot be rendered.
+    @discardableResult
+    func playCaptured(_ frame: CapturedFrame, windowFrame: CGRect, document: StudioDocument) async -> Bool {
+        guard !isPlaying, frame.isPainted, frame.pointSize == windowFrame.size,
+              let document = try? document.validated(), !document.layers.filter(\.enabled).isEmpty else { return false }
+        do {
+            for layer in document.layers where layer.enabled { try check(layer) }
+            try prepare()
+            let source = try CatalogCapture(frame, cache: cache!)
+            let ready = try await composeImage(source: source, rect: windowFrame, document: document, time: 0)
+            guard !isPlaying, settings.enabled else { return false }
+            stop()
+            entries = [Entry(source: source, info: WindowInfo(id: frame.windowID, pid: 0, frame: windowFrame),
+                             rect: windowFrame, preset: document.layers[0].preset)]
+            self.document = document
+            composed = ready
+            compositeStage = LayerCompositor.stage(windowFrame: windowFrame, shadow: frame.shadow)
+            began = CACurrentMediaTime()
+            showOverlays(); startClock()
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
     }
 
     /// Close/minimize hooks own their native lifecycle; this path NEVER recaptures or moves windows.
@@ -514,8 +575,8 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             dismiss()
         } else if restoring.isEmpty { dismiss() }
         else { group.notify(queue: .main) { MainActor.assumeIsolated { dismiss() } } }
-        entries = []; dynamics = nil; document = nil; overview = false
-        overviewStage = nil
+        entries = []; dynamics = nil; document = nil; overview = false; compositeStage = nil
+        overviewStage = nil; overviewEffect = nil; overviewOrder = []; overviewTitles = []
         composed = nil; composing = false
         resourceFailures = 0
         isPlaying = false
@@ -564,7 +625,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         guard settings.enabled, let document else { stop(); return }
         let now = CACurrentMediaTime(), time = now - began
         let budget = budgetProvider()
-        do { for layer in document.layers where layer.enabled { try check(layer.preset) } }
+        do { for layer in document.layers where layer.enabled { try check(layer) } }
         catch { stop(); errorMessage = error.localizedDescription; return }
         if !overview && time >= document.duration { stop(preservingMinimize: true); return }
         if var dynamics, let layer = document.layers.first(where: { $0.enabled && time >= $0.start && time <= $0.start + $0.preset.duration }) {
@@ -574,14 +635,20 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             leases.first?.move(to: dynamics.body.frame.origin)
         }
         previous = now
+        // The overview's travel and highlight follow the display, not the secondary-rate budget.
+        if overview { advanceOverview(now); overlays.forEach { $0.render() }; return }
         guard now - lastRendered >= 1 / Double(max(1, min(120, budget.secondaryFPS))) else { return }
         lastRendered = now
-        if !overview, dynamics == nil, !composing, document.layers.filter(\.enabled).count > 1, let entry = entries.first {
+        if !overview, dynamics == nil, !composing, compositeStage != nil || document.layers.filter(\.enabled).count > 1,
+           let entry = entries.first {
             composing = true
             let token = generation
+            let composite = compositeStage != nil
             Task {
                 do {
-                    let output = try await renderImage(source: entry.source, rect: entry.rect, document: document, time: time)
+                    let output = composite
+                        ? try await composeImage(source: entry.source, rect: entry.rect, document: document, time: time)
+                        : try await renderImage(source: entry.source, rect: entry.rect, document: document, time: time)
                     guard generation == token, settings.enabled else { return }
                     composed = output; composing = false
                 } catch {
@@ -598,27 +665,88 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         overlays.forEach { $0.show(); $0.render() }
     }
 
-    private func layoutOverview(_ preset: EffectPreset) {
+    // MARK: - Interactive overview
+
+    /// Windows start where they really are and fly into the arrangement.
+    private func beginOverview(_ preset: EffectPreset) {
         guard let screen = NSScreen.containing(cgPoint: CGPoint(x: entries[0].rect.midX, y: entries[0].rect.midY)) ?? NSScreen.screens.first else { return }
-        let stage = screen.cgVisibleFrame.insetBy(dx: 45, dy: 45)
-        overviewStage = stage
-        let columns = min(4, max(1, Int(ceil(sqrt(Double(entries.count))))))
-        let rows = Int(ceil(Double(entries.count) / Double(columns)))
-        for i in entries.indices {
-            let cell = CGRect(x: stage.minX + CGFloat(i % columns) * stage.width / CGFloat(columns),
-                              y: stage.minY + CGFloat(i / columns) * stage.height / CGFloat(rows),
-                              width: stage.width / CGFloat(columns), height: stage.height / CGFloat(rows)).insetBy(dx: 18, dy: 18)
-            let original = entries[i].info.frame
-            let scale = min(cell.width / original.width, cell.height / original.height) * 0.78
-            var center = CGPoint(x: cell.midX, y: cell.midY)
-            if preset.effect == .orbit {
-                let angle = Double(i) / Double(entries.count) * 2 * Double.pi + preset.value("angle", at: 0) * .pi / 180
-                let radius = preset.value("radius", at: 0) * 0.4
-                center = CGPoint(x: stage.midX + cos(angle) * stage.width * radius,
-                                 y: stage.midY + sin(angle) * stage.height * radius)
+        overviewStage = screen.cgVisibleFrame.insetBy(dx: 60, dy: 70)
+        overviewEffect = preset
+        overviewState = OverviewState(amount: 0, focus: 0, spin: 0, hover: Array(repeating: 0, count: entries.count))
+        overviewSelected = 0
+        overviewFocusTarget = 0
+        overviewSpinVelocity = 0
+        overviewPhase = .entering(CACurrentMediaTime())
+        overviewTick = CACurrentMediaTime()
+        let metadata = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        overviewTitles = entries.map { entry in
+            let app = NSRunningApplication(processIdentifier: entry.info.pid)?.localizedName ?? "Window"
+            let title = metadata.first { ($0[kCGWindowNumber as String] as? UInt32) == entry.info.id }?[kCGWindowName as String] as? String ?? ""
+            return title.isEmpty ? app : "\(app) — \(title)"
+        }
+        applyOverviewLayout()
+    }
+
+    private func applyOverviewLayout() {
+        guard let stage = overviewStage, let preset = overviewEffect else { return }
+        let result = OverviewLayout.place(effect: preset.effect, preset: preset, homes: entries.map(\.info.frame),
+                                          stage: stage, state: overviewState)
+        for (index, placement) in result.placements.enumerated() where index < entries.count {
+            entries[index].rect = placement.rect
+            entries[index].preset = placement.preset
+        }
+        overviewOrder = result.order
+        if case .leaving(_, let chosen?) = overviewPhase {
+            overviewOrder.removeAll { $0 == chosen }
+            overviewOrder.append(chosen)
+        }
+    }
+
+    private func advanceOverview(_ now: Double) {
+        let dt = min(0.05, max(0, now - overviewTick))
+        overviewTick = now
+        switch overviewPhase {
+        case .entering(let start):
+            let t = (now - start) / OverviewLayout.enterDuration
+            overviewState.amount = OverviewLayout.enter(t)
+            if t >= 1 { overviewPhase = .shown; overviewState.amount = 1 }
+        case .shown:
+            overviewState.amount = 1
+        case .leaving(let start, let chosen):
+            let t = (now - start) / OverviewLayout.leaveDuration
+            overviewState.amount = 1 - OverviewLayout.leave(t)
+            if t >= 1 { finishOverview(chosen); return }
+        }
+        let leaving: Bool = { if case .leaving = overviewPhase { return true }; return false }()
+        for index in overviewState.hover.indices {
+            let target = !leaving && index == overviewSelected ? 1.0 : 0
+            overviewState.hover[index] += (target - overviewState.hover[index]) * min(1, dt * 14)
+        }
+        overviewState.focus += (overviewFocusTarget - overviewState.focus) * min(1, dt * 10)
+        if overviewEffect?.effect == .orbit, !leaving {
+            overviewState.spin += dt * (0.12 + overviewSpinVelocity)
+            overviewSpinVelocity *= exp(-dt * 3)
+        }
+        applyOverviewLayout()
+        let fade = min(1, max(0, overviewState.amount))
+        shields.forEach { $0.alphaValue = CGFloat(fade) }
+        updateOverviewLabel()
+    }
+
+    private func updateOverviewLabel() {
+        let leaving: Bool = { if case .leaving = overviewPhase { return true }; return false }()
+        for shield in shields {
+            guard let input = shield.contentView as? CatalogOverviewInput else { continue }
+            guard !leaving, let index = overviewSelected, index < entries.count, index < overviewTitles.count else {
+                input.showLabel(nil, below: .zero); continue
             }
-            entries[i].rect = CGRect(x: center.x - original.width * scale / 2, y: center.y - original.height * scale / 2,
-                                     width: original.width * scale, height: original.height * scale)
+            let rect = entries[index].rect
+            let screen = shield.frame
+            let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.height
+            // Global Y-down to this shield's view coordinates.
+            let local = CGRect(x: rect.minX - screen.minX, y: primaryHeight - rect.maxY - screen.minY,
+                               width: rect.width, height: rect.height)
+            input.showLabel(overviewTitles[index], below: local)
         }
     }
 
@@ -627,25 +755,110 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         for screen in NSScreen.screens {
             let panel = CatalogOverviewWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             panel.isReleasedWhenClosed = false; panel.level = .floating
-            panel.backgroundColor = NSColor.black.withAlphaComponent(0.78); panel.isOpaque = false
+            panel.backgroundColor = NSColor.black.withAlphaComponent(0.72); panel.isOpaque = false
+            panel.alphaValue = 0
+            panel.acceptsMouseMovedEvents = true
             panel.collectionBehavior = [.fullScreenAuxiliary, .stationary]
             let input = CatalogOverviewInput(frame: CGRect(origin: .zero, size: screen.frame.size))
-            input.dismiss = { [weak self] in self?.stop() }
+            input.dismiss = { [weak self] in self?.leaveOverview(chosen: nil) }
             input.choose = { [weak self] point in self?.chooseOverview(point) }
+            input.hover = { [weak self] point in self?.hoverOverview(point) }
+            input.scroll = { [weak self] dx, dy in self?.scrollOverview(dx: dx, dy: dy) }
+            input.key = { [weak self] key in self?.overviewKey(key) }
             panel.contentView = input; panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(input)
             shields.append(panel)
         }
         showOverlays()
     }
 
+    /// Index of the frontmost window under `point`, tested against the projected surface.
+    private func overviewHit(_ point: CGPoint) -> Int? {
+        guard let stage = overviewStage else { return nil }
+        let screen = NSScreen.containing(cgPoint: CGPoint(x: stage.midX, y: stage.midY))?.cgFrame ?? stage
+        return overviewOrder.reversed().first { index in
+            index < entries.count && Self.overviewContains(point, rect: entries[index].rect, preset: entries[index].preset,
+                                                           stage: screen, time: 0, screen: screen)
+        }
+    }
+
+    /// Puts an open overview away with its exit animation; stops anything else.
+    func dismissOverview() {
+        if overview { leaveOverview(chosen: nil) } else { stop() }
+    }
+
+    private var overviewInteractive: Bool {
+        if case .leaving = overviewPhase { return false }
+        return overview
+    }
+
+    private func hoverOverview(_ point: CGPoint) {
+        guard overviewInteractive, let index = overviewHit(point) else { return }
+        overviewSelected = index
+    }
+
     private func chooseOverview(_ point: CGPoint) {
-        guard let stage = overviewStage, stage.contains(point),
-              let entry = entries.first(where: {
-                  Self.overviewContains(point, rect: $0.rect, preset: $0.preset, stage: stage,
-                      time: max(0, CACurrentMediaTime() - began),
-                      screen: NSScreen.containing(cgPoint: CGPoint(x: stage.midX, y: stage.midY))?.cgFrame)
-              }) else { stop(); return }
-        let info = entry.info
+        guard overviewInteractive else { return }
+        guard let index = overviewHit(point) else { leaveOverview(chosen: nil); return }
+        // A side card of the carousel comes to the front first; the front one is chosen.
+        if overviewEffect?.effect == .workspaceCube, abs(Double(index) - overviewState.focus) > 0.5 {
+            overviewFocusTarget = Double(index); overviewSelected = index
+            return
+        }
+        leaveOverview(chosen: index)
+    }
+
+    private func scrollOverview(dx: CGFloat, dy: CGFloat) {
+        guard overviewInteractive else { return }
+        let delta = Double(abs(dx) > abs(dy) ? dx : dy)
+        switch overviewEffect?.effect {
+        case .workspaceCube?:
+            overviewFocusTarget = min(Double(entries.count - 1), max(0, overviewFocusTarget - delta / 40))
+            overviewSelected = Int(overviewFocusTarget.rounded())
+        case .orbit?:
+            overviewSpinVelocity += delta * 0.04
+        default: break
+        }
+    }
+
+    enum OverviewKey { case left, right, up, down, choose, next, dismiss }
+
+    private func overviewKey(_ key: OverviewKey) {
+        guard overviewInteractive, !entries.isEmpty else { return }
+        let count = entries.count
+        let current = overviewSelected ?? 0
+        let columns = min(4, max(1, Int(ceil(sqrt(Double(count))))))
+        func select(_ index: Int) {
+            let index = (index % count + count) % count
+            overviewSelected = index
+            if overviewEffect?.effect == .workspaceCube { overviewFocusTarget = Double(index) }
+            if overviewEffect?.effect == .orbit {
+                // Turn the ring so the chosen window comes to the front.
+                let theta = 2 * Double.pi * Double(index) / Double(count) + overviewState.spin
+                    + (overviewEffect?.value("angle", at: 0) ?? 0) * .pi / 180
+                overviewSpinVelocity = remainder(.pi / 2 - theta, 2 * .pi) * 3
+            }
+        }
+        switch key {
+        case .left: select(current - 1)
+        case .right, .next: select(current + 1)
+        case .up: select(overviewEffect?.effect == .expose3D ? current - columns : current - 1)
+        case .down: select(overviewEffect?.effect == .expose3D ? current + columns : current + 1)
+        case .choose: leaveOverview(chosen: current)
+        case .dismiss: leaveOverview(chosen: nil)
+        }
+    }
+
+    /// Every window flies back to its real frame; the chosen one stays on top and is raised.
+    private func leaveOverview(chosen: Int?) {
+        guard overview else { stop(); return }
+        if case .leaving = overviewPhase { return }
+        overviewPhase = .leaving(CACurrentMediaTime(), chosen: chosen)
+        shields.forEach { ($0.contentView as? CatalogOverviewInput)?.showLabel(nil, below: .zero) }
+    }
+
+    private func finishOverview(_ chosen: Int?) {
+        guard let chosen, chosen < entries.count else { stop(); return }
+        let info = entries[chosen].info
         let token = generation
         Task {
             let element = await exactElement(info)
@@ -739,26 +952,21 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         let sources = entries.map(\.source)
         let composition = composed
         let time = max(0, CACurrentMediaTime() - began)
-        for entry in entries.reversed() {
-            if overview {
-                guard let stage = overviewStage else { continue }
-                let clip = stage.intersection(screenRect)
-                guard !clip.isNull, clip.width > 0, clip.height > 0 else { continue }
-                let sx = CGFloat(drawable.texture.width) / screenRect.width
-                let sy = CGFloat(drawable.texture.height) / screenRect.height
-                let x = max(0, Int((clip.minX - screenRect.minX) * sx))
-                let y = max(0, Int((clip.minY - screenRect.minY) * sy))
-                let right = min(drawable.texture.width, Int(ceil((clip.maxX - screenRect.minX) * sx)))
-                let bottom = min(drawable.texture.height, Int(ceil((clip.maxY - screenRect.minY) * sy)))
-                guard right > x, bottom > y else { continue }
-                encoder.setScissorRect(MTLScissorRect(x: x, y: y, width: right - x, height: bottom - y))
-                encode(entry.preset, time: min(time, entry.preset.duration), texture: entry.source.texture, uv: entry.source.uv,
+        if overview {
+            // Back to front; windows travel across the whole screen while entering and leaving.
+            for index in overviewOrder where index < entries.count {
+                let entry = entries[index]
+                guard entry.rect.intersects(screenRect.insetBy(dx: -entry.rect.width, dy: -entry.rect.height)) else { continue }
+                encode(entry.preset, time: 0, texture: entry.source.texture, uv: entry.source.uv,
                        rect: entry.rect, screen: screenRect, encoder: encoder, overview: true)
-            } else if let document {
-                // Multi-layer documents are composed offscreen, not independently overdrawn.
-                if document.layers.filter(\.enabled).count > 1, let composition {
+            }
+        }
+        for entry in entries.reversed() where !overview {
+            if let document {
+                // Multi-layer and built-in documents are composed offscreen, not independently overdrawn.
+                if compositeStage != nil || document.layers.filter(\.enabled).count > 1, let composition {
                     var identity = EffectPreset(effect: .wobbly); identity.parameters["amplitude"] = 0
-                    encode(identity, time: 0, texture: composition, uv: SIMD4(0, 0, 1, 1), rect: entry.rect,
+                    encode(identity, time: 0, texture: composition, uv: SIMD4(0, 0, 1, 1), rect: compositeStage ?? entry.rect,
                            screen: screenRect, encoder: encoder)
                     continue
                 }
@@ -818,6 +1026,41 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         throw CatalogFailure.budget
     }
 
+    /// Built-in and catalog layers through the shared compositor, into a budget-scaled stage texture.
+    private func composeImage(source: CatalogCapture, rect: CGRect, document: StudioDocument, time: Double) async throws -> MTLTexture {
+        guard inFlightCompositions < 2 else { throw CatalogFailure.budget }
+        inFlightCompositions += 1
+        defer { inFlightCompositions -= 1 }
+        guard let metal, let compositor, let command = queue?.makeCommandBuffer() else { throw CatalogFailure.metal }
+        let stage = LayerCompositor.stage(windowFrame: rect, shadow: source.frame.shadow)
+        let nativeScale = Double(source.frame.windowRect.width / max(1, source.frame.pointSize.width))
+        let budget = budgetProvider()
+        let size = try Self.targetSize(CGSize(width: stage.width * nativeScale, height: stage.height * nativeScale),
+                                       scale: budget.textureScale)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm,
+            width: size.width, height: size.height, mipmapped: false)
+        descriptor.storageMode = .shared; descriptor.usage = [.renderTarget, .shaderRead]
+        let layers = LayerCompositor.active(document, at: time).count
+        guard let final = metal.makeTexture(descriptor: descriptor) else { throw CatalogFailure.budget }
+        let scratch = layers > 1 ? metal.makeTexture(descriptor: descriptor) : nil
+        guard layers <= 1 || scratch != nil else { throw CatalogFailure.budget }
+        do {
+            try compositor.encode(document: document, time: time,
+                source: LayerCompositor.Source(texture: source.texture, uv: source.uv, shadow: source.frame.shadow),
+                windowFrame: rect, stage: stage, final: final, scratch: scratch, budget: budget,
+                physics: settings.physics, seed: UInt64(source.frame.windowID), command: command)
+        } catch CompositorError.budget { throw CatalogFailure.budget }
+        trackCompletion(command)
+        let success: Bool = await withCheckedContinuation { continuation in
+            command.addCompletedHandler { [source] completed in
+                withExtendedLifetime(source) { continuation.resume(returning: completed.status == .completed) }
+            }
+            command.commit()
+        }
+        guard success else { throw CatalogFailure.gpu }
+        return final
+    }
+
     /// Sequential budget-scaled ping-pong passes; point size and P3 survive readback.
     private func renderImage(source: CatalogCapture, rect: CGRect, document: StudioDocument, time: Double) async throws -> MTLTexture {
         // Superseded previews still own their GPU resources until completion.
@@ -873,11 +1116,69 @@ private final class CatalogOverviewWindow: NSWindow {
 private final class CatalogOverviewInput: NSView {
     var dismiss: (() -> Void)?
     var choose: ((CGPoint) -> Void)?
-    override var acceptsFirstResponder: Bool { true }
-    override func keyDown(with event: NSEvent) { if event.keyCode == 53 { dismiss?() } }
-    override func mouseDown(with event: NSEvent) {
-        guard let window else { return }
-        let p = window.convertPoint(toScreen: event.locationInWindow)
-        choose?(CGPoint(x: p.x, y: (NSScreen.screens.first?.frame.height ?? 0) - p.y))
+    var hover: ((CGPoint) -> Void)?
+    var scroll: ((CGFloat, CGFloat) -> Void)?
+    var key: ((CatalogRuntime.OverviewKey) -> Void)?
+    private let label = NSTextField(labelWithString: "")
+    private var tracking: NSTrackingArea?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = .white
+        label.alignment = .center
+        label.lineBreakMode = .byTruncatingMiddle
+        label.wantsLayer = true
+        label.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        label.layer?.cornerRadius = 8
+        label.isHidden = true
+        addSubview(label)
     }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseMoved, .activeAlways, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    /// `rect` in this view's coordinates; nil hides the label.
+    func showLabel(_ text: String?, below rect: CGRect) {
+        guard let text, bounds.intersects(rect) else { label.isHidden = true; return }
+        label.stringValue = "  \(text)  "
+        label.sizeToFit()
+        let width = min(max(label.frame.width + 12, 120), max(160, bounds.width * 0.5))
+        let y = max(8, rect.minY - label.frame.height - 14)
+        label.frame = CGRect(x: rect.midX - width / 2, y: y, width: width, height: label.frame.height + 6)
+        label.isHidden = false
+    }
+
+    private func global(_ event: NSEvent) -> CGPoint? {
+        guard let window else { return nil }
+        let p = window.convertPoint(toScreen: event.locationInWindow)
+        return CGPoint(x: p.x, y: (NSScreen.screens.first?.frame.height ?? 0) - p.y)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 53: key?(.dismiss)
+        case 123: key?(.left)
+        case 124: key?(.right)
+        case 125: key?(.down)
+        case 126: key?(.up)
+        case 36, 76, 49: key?(.choose)
+        case 48: key?(.next)
+        default: super.keyDown(with: event)
+        }
+    }
+
+    override func mouseMoved(with event: NSEvent) { if let p = global(event) { hover?(p) } }
+    override func mouseDown(with event: NSEvent) { if let p = global(event) { choose?(p) } }
+    override func rightMouseDown(with event: NSEvent) { dismiss?() }
+    override func scrollWheel(with event: NSEvent) { scroll?(event.scrollingDeltaX, event.scrollingDeltaY) }
 }

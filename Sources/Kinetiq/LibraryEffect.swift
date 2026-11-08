@@ -2,6 +2,7 @@
 // Copyright (C) 2026 José Gurruchaga
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import Foundation
 import KinetiqCore
 import KinetiqEffects
 
@@ -274,11 +275,14 @@ enum TriggerAssignment: Equatable {
     case off
     case random
     case effect(LibraryEffect)
+    /// A saved Studio composition ("My Effects"), by ID and name.
+    case custom(UUID, String)
     /// Drag always wobbles; the classic spring model is the default when no Studio preset owns it.
     case classicWobble
 
     @MainActor
     static func current(_ trigger: EffectTrigger, settings: Settings, store: CatalogStore) -> TriggerAssignment {
+        if let custom = store.assignedCustom(to: trigger) { return .custom(custom.id, custom.name) }
         if let owner = store.assigned(to: trigger) { return .effect(.catalog(owner.effect)) }
         switch trigger {
         case .close:
@@ -311,12 +315,18 @@ enum TriggerAssignment: Equatable {
         case .off: return "Off"
         case .random: return "Random"
         case .effect(let effect): return effect.title
+        case .custom(_, let name): return name
         case .classicWobble: return "Wobbly (classic)"
         }
     }
 
     var effect: LibraryEffect? {
         if case .effect(let value) = self { return value }
+        return nil
+    }
+
+    var customID: UUID? {
+        if case .custom(let id, _) = self { return id }
         return nil
     }
 }

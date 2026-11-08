@@ -250,6 +250,23 @@ final class Settings {
         set { defaults.set(newValue.rawValue, forKey: "minimizeEffect") }
     }
 
+    /// ⌃⌥↑ anywhere opens the window overview.
+    var overviewShortcut: Bool {
+        get { defaults.object(forKey: "overviewShortcut") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "overviewShortcut") }
+    }
+
+    /// Which arrangement the shortcut and the menu open: Exposé 3D, Orbit or Cube.
+    var overviewLayout: EffectID {
+        get {
+            let id = defaults.string(forKey: "overviewLayout").flatMap(EffectID.init(rawValue:)) ?? .expose3D
+            return Self.overviewLayouts.contains(id) ? id : .expose3D
+        }
+        set { defaults.set(newValue.rawValue, forKey: "overviewLayout") }
+    }
+
+    static let overviewLayouts: [EffectID] = [.expose3D, .orbit, .workspaceCube]
+
     /// Animation time of the close effects relative to the default of each effect.
     var closeDuration: Double {
         get { min(max(defaults.object(forKey: "closeDuration") as? Double ?? 1, Self.closeSpeedRange.lowerBound), Self.closeSpeedRange.upperBound) }
@@ -340,6 +357,8 @@ final class Settings {
         minimizeEffect = .off
         appCloseEffects = [:]
         closeDuration = 1
+        overviewShortcut = true
+        overviewLayout = .expose3D
     }
 
     private func float(_ key: String) -> Float? {

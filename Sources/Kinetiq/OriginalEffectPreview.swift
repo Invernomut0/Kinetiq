@@ -118,6 +118,75 @@ final class OriginalPreviewRenderer {
         }
     }
 
+    /// Seconds of the looping overview demo: rest, fly in, browse, fly back, rest.
+    static let overviewPreviewSeconds = 5.0
+
+    /// Five copies of the sample window on a virtual desktop, flying into `preset`'s arrangement,
+    /// browsing it and flying back, with the same geometry as the desktop overview.
+    func previewOverview(_ preset: EffectPreset, progress: Double, settings: Settings) async throws -> NSImage {
+        let token = try begin(progress: progress, settings: settings)
+        defer { inFlight -= 1 }
+        let budget = budgetProvider()
+        guard budget.allowsExpensive, budget.meshLimit > 0 else { throw OriginalPreviewError.budget }
+        if gpu == nil { gpu = try GPU() }
+        guard let gpu else { throw OriginalPreviewError.metal }
+        let frame = try SampleWindow.frame()
+        let source = try source(for: frame, gpu: gpu)
+        if gpu.compositor == nil { gpu.compositor = LayerCompositor(device: gpu.device) }
+        guard let compositor = gpu.compositor else { throw OriginalPreviewError.metal }
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let stage = screen.insetBy(dx: 60, dy: 70)
+        let homes = OverviewLayout.sampleHomes(in: screen, count: 5)
+        let t = progress * Self.overviewPreviewSeconds
+        var state = OverviewState(hover: Array(repeating: 0, count: homes.count))
+        let browse = (t - 0.92) / 0.6
+        switch t {
+        case ..<0.5: state.amount = 0
+        case ..<0.92: state.amount = OverviewLayout.enter((t - 0.5) / OverviewLayout.enterDuration)
+        case ..<3.8: state.amount = 1
+        case ..<4.1: state.amount = 1 - OverviewLayout.leave((t - 3.8) / OverviewLayout.leaveDuration)
+        default: state.amount = 0
+        }
+        if t >= 0.92, t < 3.8 {
+            state.hover = homes.indices.map { max(0, 1 - 2 * abs(browse - Double($0) - 0.5)) }
+        }
+        state.focus = min(Double(homes.count - 1), max(0, browse - 0.5))
+        state.spin = max(0, t - 0.92) * 0.6
+        let result = OverviewLayout.place(effect: preset.effect, preset: preset, homes: homes, stage: stage, state: state)
+        let dimensions = try CatalogRuntime.targetSize(CGSize(width: screen.width, height: screen.height), scale: budget.textureScale)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm,
+            width: dimensions.width, height: dimensions.height, mipmapped: false)
+        descriptor.storageMode = .shared
+        descriptor.usage = [.renderTarget, .shaderRead]
+        guard let target = gpu.device.makeTexture(descriptor: descriptor),
+              let command = gpu.queue.makeCommandBuffer() else { throw OriginalPreviewError.metal }
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = target
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
+        guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { throw OriginalPreviewError.gpu }
+        do {
+            try compositor.encodeShade(screen, alpha: Float(0.55 * min(1, max(0, state.amount))), stage: screen, encoder: encoder)
+            for index in result.order {
+                let placement = result.placements[index]
+                try compositor.encodeSurface(placement.preset, progress: 0.5, input: source.texture, uv: source.uv,
+                                             frame: placement.rect, stage: screen, budget: budget, encoder: encoder)
+            }
+        } catch { encoder.endEncoding(); throw error }
+        encoder.endEncoding()
+        RenderQualityManager.trackGPUCompletion(command)
+        let success: Bool = await withCheckedContinuation { continuation in
+            command.addCompletedHandler { [source] completed in
+                withExtendedLifetime(source) { continuation.resume(returning: completed.status == .completed && completed.error == nil) }
+            }
+            command.commit()
+        }
+        guard success else { throw OriginalPreviewError.gpu }
+        try validate(token, settings: settings)
+        return try Self.image(target, pointSize: screen.size)
+    }
+
     /// Studio composition on the sample window or a real one, at a document time in seconds.
     func preview(document: StudioDocument, time: Double, source: PreviewSource, settings: Settings) async throws -> NSImage {
         let document = try document.validated()
@@ -290,8 +359,8 @@ final class OriginalPreviewRenderer {
             let document = try (document ?? StudioDocument(duration: EffectPreset(effect: id).duration,
                                                            layers: [StudioLayer(preset: EffectPreset(effect: id))])).validated()
             let active = document.layers.filter(\.enabled)
-            for layer in active { try Self.allowed(layer.preset, budget: budget) }
-            if active.count == 1, active[0].preset.effect == .wobbly {
+            for layer in active { try LayerCompositor.check(layer, budget: budget) }
+            if active.count == 1, !active[0].isBuiltin, active[0].preset.effect == .wobbly {
                 // The preview of Wobbly is the real spring mesh under a scripted drag,
                 // not the shader membrane used for timeline compositions.
                 let preset = active[0].preset
@@ -308,8 +377,8 @@ final class OriginalPreviewRenderer {
                 let reach = Self.dragOffset(at: Self.wobblyReleaseSeconds * 0.5, size: size)
                 stage = stage.insetBy(dx: -CGFloat(abs(reach.x)) - 8, dy: -CGFloat(abs(reach.y)) - 8)
             } else {
-                // Room below for Genie's funnel and for fragments that fall.
-                stage.size.height += windowFrame.height * 0.6
+                // Centered stage with room for funnels, falling fragments and flights.
+                stage = LayerCompositor.stage(windowFrame: windowFrame, shadow: frame.shadow)
                 catalog = document
             }
         }
@@ -324,8 +393,14 @@ final class OriginalPreviewRenderer {
         guard let target = gpu.device.makeTexture(descriptor: descriptor),
               let command = gpu.queue.makeCommandBuffer() else { throw OriginalPreviewError.metal }
         if let catalog {
-            try gpu.encodeCatalog(catalog, time: progress * catalog.duration, source: source, windowFrame: windowFrame,
-                                  stage: stage, target: target, descriptor: descriptor, budget: budget, command: command)
+            if gpu.compositor == nil { gpu.compositor = LayerCompositor(device: gpu.device) }
+            let layers = LayerCompositor.active(catalog, at: progress * catalog.duration).count
+            let scratch = layers > 1 ? gpu.device.makeTexture(descriptor: descriptor) : nil
+            guard layers <= 1 || scratch != nil else { throw OriginalPreviewError.metal }
+            try gpu.compositor?.encode(document: catalog, time: progress * catalog.duration,
+                source: LayerCompositor.Source(texture: source.texture, uv: source.uv, shadow: frame.shadow),
+                windowFrame: windowFrame, stage: stage, final: target, scratch: scratch, budget: budget,
+                physics: settings.physics, seed: UInt64(frame.windowID), command: command)
         } else {
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = target
@@ -363,16 +438,6 @@ final class OriginalPreviewRenderer {
         guard success else { throw OriginalPreviewError.gpu }
         try validate(token, settings: settings)
         return try Self.image(target, pointSize: stage.size)
-    }
-
-    /// Mirrors the runtime's safety checks so a preview never shows what playback would refuse.
-    private static func allowed(_ preset: EffectPreset, budget: RenderBudget) throws {
-        let descriptor = EffectCatalog.descriptor(preset.effect)
-        guard !descriptor.expensive || budget.allowsExpensive else { throw OriginalPreviewError.budget }
-        guard budget.meshLimit > 0,
-              (preset.effect != .shatter && preset.effect != .explode) || budget.maxParticles > 0 else {
-            throw OriginalPreviewError.budget
-        }
     }
 
     /// Pointer travel of the scripted Wobbly drag: a wide swing to the right that comes back home.
@@ -457,7 +522,7 @@ final class OriginalPreviewRenderer {
         let cache: CVMetalTextureCache
         var close: CloseEffectRenderer?
         var liquid: LiquidEffectRenderer?
-        private var catalog: CatalogEffectRenderer?
+        var compositor: LayerCompositor?
         private var mesh: MTLRenderPipelineState?
 
         init() throws {
@@ -471,58 +536,6 @@ final class OriginalPreviewRenderer {
                 throw OriginalPreviewError.capture
             }
             self.cache = cache
-        }
-
-        /// Sequential layer composition over the stage, like the runtime's offscreen ping-pong,
-        /// but with room around the window so fragments and funnels are not cropped.
-        func encodeCatalog(_ document: StudioDocument, time: Double, source: OriginalPreviewCapture, windowFrame: CGRect,
-                           stage: CGRect, target: MTLTexture, descriptor: MTLTextureDescriptor, budget: RenderBudget,
-                           command: MTLCommandBuffer) throws {
-            if catalog == nil { catalog = try CatalogEffectRenderer(device: device) }
-            guard let catalog else { throw OriginalPreviewError.metal }
-            var layers = document.layers.filter { $0.enabled && time >= $0.start && time <= $0.start + $0.preset.duration }
-            if layers.isEmpty {
-                var identity = EffectPreset(effect: .wobbly); identity.parameters["amplitude"] = 0
-                layers = [StudioLayer(preset: identity, start: time)]
-            }
-            if layers.count > 1 {
-                guard let scratch = device.makeTexture(descriptor: descriptor) else { throw OriginalPreviewError.metal }
-                try encodeLayers(layers, time: time, catalog: catalog, source: source, windowFrame: windowFrame,
-                                 stage: stage, final: target, scratch: scratch, budget: budget, command: command)
-            } else {
-                try encodeLayers(layers, time: time, catalog: catalog, source: source, windowFrame: windowFrame,
-                                 stage: stage, final: target, scratch: nil, budget: budget, command: command)
-            }
-        }
-
-        private func encodeLayers(_ layers: [StudioLayer], time: Double, catalog: CatalogEffectRenderer,
-                                  source: OriginalPreviewCapture, windowFrame: CGRect, stage: CGRect,
-                                  final: MTLTexture, scratch: MTLTexture?, budget: RenderBudget, command: MTLCommandBuffer) throws {
-            var texture = source.texture, uv = source.uv, frame = windowFrame
-            for (index, layer) in layers.enumerated() {
-                // Count back from the end so the last layer lands in the final target and
-                // consecutive layers always alternate between the two textures.
-                let output = (layers.count - 1 - index).isMultiple(of: 2) ? final : (scratch ?? final)
-                let pass = MTLRenderPassDescriptor()
-                pass.colorAttachments[0].texture = output
-                pass.colorAttachments[0].loadAction = .clear
-                pass.colorAttachments[0].storeAction = .store
-                pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
-                guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { throw OriginalPreviewError.gpu }
-                let preset = layer.preset
-                let local = time - layer.start
-                let values = Dictionary(uniqueKeysWithValues: EffectCatalog.descriptor(preset.effect).parameters.map {
-                    ($0.id, Float(preset.value($0.id, at: local)))
-                })
-                let clock = preset.curve.value(at: local / preset.duration)
-                let progress = preset.trigger == .open ? 1 - clock : clock
-                catalog.encode(effect: preset.effect, texture: texture, uvRect: uv, frame: frame, screenRect: stage,
-                               progress: Float(progress), amplitude: values["amplitude"] ?? 1, speed: values["speed"] ?? 1,
-                               meshLimit: budget.meshLimit, particleLimit: budget.maxParticles,
-                               blurPasses: budget.blurPasses, parameters: values, into: encoder)
-                encoder.endEncoding()
-                texture = output; uv = SIMD4(0, 0, 1, 1); frame = stage
-            }
         }
 
         func encodeMesh(_ model: any WindowDeformer, source: OriginalPreviewCapture, stage: CGRect,

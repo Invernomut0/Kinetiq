@@ -19,17 +19,28 @@ final class PreviewSourceStore: ObservableObject {
     }
 }
 
-/// Lets the Effects library hand a preset to the Studio ("Open in Animation Studio").
+/// Lets the Effects library hand work to the Studio: a preset to add as a layer, a built-in
+/// effect to add as a layer, or a saved custom effect to open.
 @MainActor
 final class StudioLaunchRequest: ObservableObject {
     static let shared = StudioLaunchRequest()
     @Published var preset: EffectPreset?
+    @Published var builtin: String?
+    @Published var customID: UUID?
+}
+
+/// The newest subject, read by a playback loop that outlives the view value that started it.
+@MainActor
+private final class LatestSubject {
+    var value: PreviewSubject?
 }
 
 /// What the player shows: one library effect (with an optional edited preset) or a Studio document.
 enum PreviewSubject: Equatable {
     case effect(LibraryEffect, EffectPreset?)
     case document(StudioDocument)
+    /// A window arrangement on a small virtual desktop with several sample windows.
+    case overview(EffectPreset)
 }
 
 private struct StaticPreviewRequest: Equatable {
@@ -63,14 +74,18 @@ struct EffectPreviewPlayer: View {
     @State private var revision = 0
     /// One render at a time; a request arriving mid-render is kept and rendered afterwards.
     @State private var pendingTime: Double?
+    @State private var latest = LatestSubject()
 
     private var time: Binding<Double> { externalTime ?? $ownTime }
 
-    private var duration: Double {
+    private var duration: Double { duration(of: subject) }
+
+    private func duration(of subject: PreviewSubject) -> Double {
         switch subject {
         case .effect(let effect, let preset):
             return OriginalPreviewRenderer.timelineSeconds(effect: effect, preset: preset, settings: settings)
         case .document(let document): return max(0.1, document.duration)
+        case .overview: return OriginalPreviewRenderer.overviewPreviewSeconds
         }
     }
 
@@ -123,16 +138,21 @@ struct EffectPreviewPlayer: View {
         .task(id: revision) { if revision > 0, !playing { await renderFrame(at: time.wrappedValue) } }
         .onAppear {
             visible = true
+            latest.value = subject
             if sources.windows.isEmpty { sources.refresh() }
             if let startTime, externalTime == nil { ownTime = min(duration, max(0, startTime)) }
-            if autoplay && externalTime == nil { playing = true }
+            if autoplay { playing = true }
         }
         .onDisappear { visible = false; playing = false; renderer.cancel() }
         .onChange(of: subject) { old, new in
+            latest.value = new
+            // Edits of the same effect or document keep playing from where they are.
             if case .effect(let a, _) = old, case .effect(let b, _) = new, a == b { return }
+            if case .document = old, case .document = new { error = nil; return }
+            if case .overview(let a) = old, case .overview(let b) = new, a.effect == b.effect { return }
             if externalTime == nil { ownTime = 0 }
             image = nil; error = nil
-            if autoplay && externalTime == nil && visible { playing = true }
+            if autoplay && visible { playing = true }
         }
         .onChange(of: sources.source) { _, _ in image = nil; error = nil }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
@@ -145,14 +165,13 @@ struct EffectPreviewPlayer: View {
 
     private var controls: some View {
         HStack(spacing: 10) {
-            if externalTime == nil {
-                Button {
-                    if !playing, time.wrappedValue >= duration - 0.001 { time.wrappedValue = 0 }
-                    playing.toggle()
-                } label: { Image(systemName: playing ? "pause.fill" : "play.fill").frame(width: 14) }
-                    .help(playing ? "Pause" : "Play (loops)")
-                    .accessibilityLabel(playing ? "Pause preview" : "Play preview")
-            }
+            Button {
+                if !playing, time.wrappedValue >= duration - 0.001 { time.wrappedValue = 0 }
+                playing.toggle()
+            } label: { Image(systemName: playing ? "pause.fill" : "play.fill").frame(width: 14) }
+                .buttonStyle(.borderedProminent).controlSize(.small)
+                .help(playing ? "Pause" : "Play (loops)")
+                .accessibilityLabel(playing ? "Pause preview" : "Play preview")
             Slider(value: Binding(get: { min(time.wrappedValue, duration) }, set: { value in
                 playing = false
                 time.wrappedValue = value
@@ -209,6 +228,7 @@ struct EffectPreviewPlayer: View {
         var holdUntil: Double?
         while !Task.isCancelled, playing, visible {
             let now = ProcessInfo.processInfo.systemUptime
+            let duration = duration(of: latest.value ?? subject)
             if let hold = holdUntil {
                 if now >= hold { holdUntil = nil; time.wrappedValue = 0 }
             } else {
@@ -245,6 +265,8 @@ struct EffectPreviewPlayer: View {
     private func renderOnce(at seconds: Double) async {
         do {
             let result: NSImage
+            let subject = latest.value ?? subject
+            let duration = duration(of: subject)
             switch subject {
             case .effect(let effect, let preset):
                 let progress = duration > 0 ? min(1, max(0, seconds / duration)) : 0
@@ -252,6 +274,8 @@ struct EffectPreviewPlayer: View {
                                                     progress: progress, settings: settings)
             case .document(let document):
                 result = try await renderer.preview(document: document, time: seconds, source: sources.source, settings: settings)
+            case .overview(let preset):
+                result = try await renderer.previewOverview(preset, progress: min(1, max(0, seconds / duration)), settings: settings)
             }
             guard visible else { return }
             image = result

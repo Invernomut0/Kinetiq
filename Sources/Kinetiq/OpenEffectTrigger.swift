@@ -53,7 +53,7 @@ final class OpenEffectTrigger {
                 guard settings.enabled, !inProgress, !isBusy(), !CatalogRuntime.shared.isPlaying, pid != ProcessInfo.processInfo.processIdentifier,
               !AppExclusions.contains(pid: pid) else { return }
                 let assigned = CatalogStore.shared.assigned(to: .open)
-                guard assigned != nil || entrance() != nil else { return }
+                guard assigned != nil || CatalogStore.shared.assignedCustom(to: .open) != nil || entrance() != nil else { return }
                 let token = generation
         inProgress = true
         onStarted?()
@@ -104,6 +104,10 @@ final class OpenEffectTrigger {
             guard generation == token else { return }
             inProgress = false
             guard settings.enabled, !isBusy(), !CatalogRuntime.shared.isPlaying, !AppExclusions.contains(pid: initial.pid) else { return }
+            if let custom = CatalogStore.shared.assignedCustom(to: .open) {
+                await CatalogRuntime.shared.playDocument(custom.document, windowID: initial.id)
+                return
+            }
             if let assigned = CatalogStore.shared.assigned(to: .open) {
                 // Runtime captures the painted, on-screen window BEFORE it parks it.
                 await CatalogRuntime.shared.play(assigned, windowID: initial.id)

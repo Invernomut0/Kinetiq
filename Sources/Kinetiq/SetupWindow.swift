@@ -51,6 +51,12 @@ final class SetupModel: ObservableObject {
 
     func startScreenSaver() { startChaos() }
 
+    /// Lets views outside this model tell the engine that a trigger owner changed.
+    func closeEffectChangedPublic() {
+        closeEffectChanged()
+        refresh()
+    }
+
     func binding<T>(_ get: @escaping () -> T, _ set: @escaping (T) -> Void) -> Binding<T> {
         Binding(get: get, set: { [weak self] value in
             set(value)
@@ -130,6 +136,28 @@ final class SetupModel: ObservableObject {
             afterAssignmentChange(trigger)
             return true
         } catch { effectError = error.localizedDescription; return false }
+    }
+
+    /// Makes a saved Studio composition what `trigger` plays (Open, Close or Minimize).
+    @discardableResult
+    func assignCustom(_ id: UUID, to trigger: EffectTrigger) -> Bool {
+        do {
+            guard CustomEffect.assignableTriggers.contains(trigger), var custom = CatalogStore.shared.customEffect(id) else {
+                throw StudioUIError.message("My Effects can be used when a window opens, closes or is minimized.")
+            }
+            custom.trigger = trigger
+            try CatalogStore.shared.saveCustom(custom)
+            afterAssignmentChange(trigger)
+            return true
+        } catch { effectError = error.localizedDescription; return false }
+    }
+
+    /// Releases a Studio preset or My Effect from `trigger`; the built-in choice underneath plays again.
+    @discardableResult
+    func releaseTrigger(_ trigger: EffectTrigger) -> Bool {
+        guard releaseCatalogTrigger(trigger) else { return false }
+        afterAssignmentChange(trigger)
+        return true
     }
 
     /// Off or Random for a trigger; releases any Studio owner first.

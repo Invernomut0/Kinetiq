@@ -30,7 +30,10 @@ final class StudioUITests: XCTestCase {
             // Built-ins first, then Studio presets under their own header.
             let supporting = LibraryEffect.supporting(trigger)
             let expected = supporting.filter { !$0.isStudio } + supporting.filter(\.isStudio)
-            let entries = submenu.items.filter { $0.action == NSSelectorFromString("assignEffect:") }
+            let entries = submenu.items.filter {
+                $0.action == NSSelectorFromString("assignEffect:")
+                    && !(($0.representedObject as? String)?.hasPrefix(LibraryItem.customPrefix) ?? false)
+            }
             XCTAssertEqual(entries.map(\.title), expected.map(\.title), trigger.rawValue)
             for (entry, effect) in zip(entries, expected) {
                 XCTAssertTrue(entry.target === delegate)
@@ -59,11 +62,23 @@ final class StudioUITests: XCTestCase {
         let reachable = Set(tokens.compactMap { AppDelegate.parseToken($0)?.0 })
         XCTAssertEqual(reachable, Set(LibraryEffect.all.filter { !$0.automaticTriggers.filter { [.drag, .open, .close, .minimize].contains($0) }.isEmpty }))
         let tryMenu = try XCTUnwrap(menu.item(withTitle: "Try an Effect on the Front Window")?.submenu)
-        let runnable = tryMenu.items.filter { $0.action == NSSelectorFromString("runCatalogEffect:") }
-        XCTAssertEqual(runnable.map { $0.representedObject as? String }, EffectCategory.allCases.flatMap { category in
+        func flatten(_ menu: NSMenu) -> [NSMenuItem] { menu.items.flatMap { [$0] + ($0.submenu.map(flatten) ?? []) } }
+        let tryItems = flatten(tryMenu)
+        let studio = tryItems.filter { $0.action == NSSelectorFromString("runCatalogEffect:") }
+        XCTAssertEqual(studio.map { $0.representedObject as? String }, EffectCategory.allCases.flatMap { category in
             EffectCatalog.effects.filter { $0.category == category }.map(\.id.rawValue)
         })
-        XCTAssertEqual(runnable.count, 19)
+        let builtins = tryItems.filter { $0.action == NSSelectorFromString("runBuiltinEffect:") }
+        XCTAssertEqual(builtins.compactMap { $0.representedObject as? String }, BuiltinLayer.all.map(\.effect.id))
+        XCTAssertEqual(tryItems.filter { $0.action == NSSelectorFromString("runLiquid") }.count, 1)
+        // Every one of the 65 library effects can be tried: 19 Studio + 45 layerable built-ins + Liquid.
+        XCTAssertEqual(studio.count + builtins.count + 1, LibraryEffect.all.count)
+        for item in tryItems where item.action != nil && item.submenu == nil {
+            XCTAssertTrue(item.target === delegate, item.title)
+            XCTAssertTrue(delegate.responds(to: try XCTUnwrap(item.action)), item.title)
+        }
+        let arrange = try XCTUnwrap(menu.items.first { $0.title.hasPrefix("Arrange Windows") })
+        XCTAssertEqual(arrange.action, NSSelectorFromString("showOverview"))
         XCTAssertNil(menu.items.first { EffectCategory.allCases.map(\.title).contains($0.title) }, "Abstract categories are no longer top-level")
         XCTAssertEqual(CatalogStore.shared.presets, presets)
         XCTAssertEqual(CatalogStore.shared.document, document)
@@ -141,7 +156,7 @@ final class StudioUITests: XCTestCase {
             "Screen Saver", "Performance", "Windows", "Diagnostics", "Settings"
         ])
         XCTAssertEqual(ManagementPage.primary + ManagementPage.system, ManagementPage.allCases)
-        XCTAssertEqual(StudioInspectorTab.allCases.map(\.rawValue), ["Edit", "Keyframes", "Use It", "Advanced"])
+        XCTAssertEqual(StudioInspectorTab.allCases.map(\.rawValue), ["Edit", "Keyframes", "Advanced"])
         XCTAssertEqual(EffectTrigger.librarySections, [.drag, .open, .close, .minimize, .overview])
         XCTAssertEqual(EffectCategory.allCases.count, 6)
         XCTAssertEqual(EffectCatalog.effects.count, 19)
@@ -286,5 +301,141 @@ final class StudioUITests: XCTestCase {
         XCTAssertTrue(editor.document.layers.isEmpty)
         editor.redo()
         XCTAssertEqual(editor.document, original)
+    }
+}
+/// Saved compositions ("My Effects") share single trigger ownership with catalog presets.
+final class CustomEffectStoreTests: XCTestCase {
+    @MainActor private func store() throws -> (CatalogStore, UserDefaults) {
+        let suite = "io.github.invernomut0.Kinetiq.custom.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return (CatalogStore(defaults: defaults), defaults)
+    }
+
+    private func document(_ name: String) -> StudioDocument {
+        let incinerate = StudioLayer(builtin: "close:incinerate", name: "Incinerate", duration: 2, start: 0.5)
+        return StudioDocument(name: name, duration: 2.5, layers: [StudioLayer(preset: EffectPreset(effect: .ripple)), incinerate])
+    }
+
+    @MainActor func testCustomEffectsPersistAndOwnTriggersExclusivelyWithPresets() async throws {
+        let (store, defaults) = try store()
+        var fold = EffectPreset(effect: .fold); fold.trigger = .close
+        try store.save(fold)
+        XCTAssertEqual(store.assigned(to: .close)?.effect, .fold)
+        let custom = CustomEffect(document: document("Burn Out"), trigger: .close)
+        try store.saveCustom(custom)
+        XCTAssertEqual(store.assignedCustom(to: .close)?.id, custom.id)
+        XCTAssertNil(store.assigned(to: .close), "A custom owner releases the catalog owner")
+        XCTAssertEqual(store.preset(.fold).trigger, .manual)
+        XCTAssertEqual(store.preset(.fold).effect, .fold)
+
+        try store.save(fold)
+        XCTAssertNil(store.assignedCustom(to: .close), "A catalog owner releases the custom owner")
+        XCTAssertEqual(store.customEffect(custom.id)?.trigger, .manual)
+
+        var second = CustomEffect(document: document("Fade In"), trigger: .open)
+        try store.saveCustom(second)
+        second.document.name = "Fade In 2"
+        try store.saveCustom(second)
+        XCTAssertEqual(store.customEffects.count, 2)
+        let reloaded = CatalogStore(defaults: defaults)
+        XCTAssertNil(reloaded.errorMessage)
+        XCTAssertEqual(reloaded.customEffects, store.customEffects)
+        XCTAssertEqual(reloaded.assignedCustom(to: .open)?.name, "Fade In 2")
+        XCTAssertEqual(reloaded.customEffects.first?.document.layers.last?.builtin, "close:incinerate")
+
+        try reloaded.releaseAssignment(to: .open)
+        XCTAssertNil(reloaded.assignedCustom(to: .open))
+        XCTAssertNotNil(reloaded.customEffect(second.id), "Releasing keeps the effect")
+        reloaded.deleteCustom(custom.id)
+        XCTAssertNil(CatalogStore(defaults: defaults).customEffect(custom.id))
+
+        let settings = Settings(defaults: defaults)
+        try reloaded.saveCustom(CustomEffect(id: second.id, document: second.document, trigger: .minimize))
+        XCTAssertEqual(TriggerAssignment.current(.minimize, settings: settings, store: reloaded), .custom(second.id, "Fade In 2"))
+    }
+
+    @MainActor func testInvalidCustomEffectsAreRejectedAtomically() async throws {
+        let (store, _) = try store()
+        XCTAssertThrowsError(try store.saveCustom(CustomEffect(document: StudioDocument(name: "Empty"))))
+        XCTAssertThrowsError(try store.saveCustom(CustomEffect(document: document("Drag"), trigger: .drag)))
+        var bad = document("Unknown")
+        bad.layers[1].builtin = "close:"
+        XCTAssertThrowsError(try store.saveCustom(CustomEffect(document: bad)))
+        XCTAssertTrue(store.customEffects.isEmpty)
+    }
+
+    @MainActor func testMenuTokensRoundTripAndBuiltinLayersResolve() {
+        for builtin in BuiltinLayer.all {
+            XCTAssertEqual(BuiltinLayer(builtin.effect.id), builtin)
+            let layer = builtin.makeLayer(start: 1)
+            XCTAssertEqual(layer.builtin, builtin.effect.id)
+            XCTAssertEqual(layer.name, builtin.effect.title)
+            XCTAssertEqual(layer.start, 1)
+            XCTAssertNoThrow(try StudioDocument(duration: layer.end, layers: [layer]).validated())
+        }
+        XCTAssertEqual(BuiltinLayer.all.count, 45)
+        XCTAssertNil(BuiltinLayer("liquid"))
+        XCTAssertNil(BuiltinLayer("catalog:fold"))
+        XCTAssertTrue(LayerCompositor.needsCompositor(StudioDocument(duration: 2, layers: [BuiltinLayer.close(.fire).makeLayer()])))
+        XCTAssertFalse(LayerCompositor.needsCompositor(StudioDocument(duration: 1, layers: [StudioLayer(preset: EffectPreset(effect: .fold))])))
+    }
+}
+
+/// Overview geometry is pure: the desktop and the preview share it, and hit-testing reads it.
+final class OverviewLayoutTests: XCTestCase {
+    private let stage = CGRect(x: 60, y: 70, width: 1320, height: 760)
+    private var homes: [CGRect] { OverviewLayout.sampleHomes(in: CGRect(x: 0, y: 0, width: 1440, height: 900), count: 5) }
+
+    func testWindowsStartAtTheirRealFramesAndArriveInsideTheStage() {
+        for effect in Settings.overviewLayouts {
+            let preset = EffectPreset(effect: effect)
+            var state = OverviewState(amount: 0, hover: Array(repeating: 0, count: homes.count))
+            let start = OverviewLayout.place(effect: effect, preset: preset, homes: homes, stage: stage, state: state)
+            XCTAssertEqual(start.placements.map(\.rect), homes, "\(effect)")
+            XCTAssertTrue(start.placements.allSatisfy { $0.preset.value("amplitude", at: 0) == 0 }, "Flat while at home")
+            state.amount = 1
+            let arranged = OverviewLayout.place(effect: effect, preset: preset, homes: homes, stage: stage, state: state)
+            XCTAssertEqual(Set(arranged.order), Set(homes.indices), "\(effect)")
+            XCTAssertEqual(arranged.order.count, homes.count)
+            for placement in arranged.placements {
+                XCTAssertTrue(stage.insetBy(dx: -stage.width * 0.2, dy: -stage.height * 0.2).contains(placement.rect), "\(effect)")
+                XCTAssertGreaterThan(placement.preset.value("amplitude", at: 0), 0)
+            }
+        }
+    }
+
+    func testHighlightedWindowIsDrawnLastAndLifted() {
+        for effect in Settings.overviewLayouts {
+            var state = OverviewState(amount: 1, focus: 2, hover: [0, 0, 1, 0, 0])
+            let lifted = OverviewLayout.place(effect: effect, preset: EffectPreset(effect: effect), homes: homes, stage: stage, state: state)
+            XCTAssertEqual(lifted.order.last, 2, "\(effect)")
+            state.hover = Array(repeating: 0, count: 5)
+            let plain = OverviewLayout.place(effect: effect, preset: EffectPreset(effect: effect), homes: homes, stage: stage, state: state)
+            XCTAssertGreaterThan(lifted.placements[2].rect.width, plain.placements[2].rect.width, "\(effect)")
+        }
+        // Exposé straightens the highlighted window.
+        let expose = OverviewLayout.place(effect: .expose3D, preset: EffectPreset(effect: .expose3D), homes: homes, stage: stage,
+                                          state: OverviewState(amount: 1, hover: [1, 0, 0, 0, 0]))
+        XCTAssertEqual(expose.placements[0].preset.value("angle", at: 0), 0, accuracy: 1e-9)
+        XCTAssertGreaterThan(expose.placements[1].preset.value("angle", at: 0), 0)
+    }
+
+    func testCarouselTurnsSideWindowsAndOrbitSpinMovesWindows() {
+        let cube = OverviewLayout.place(effect: .workspaceCube, preset: EffectPreset(effect: .workspaceCube), homes: homes,
+                                        stage: stage, state: OverviewState(amount: 1, focus: 2, hover: []))
+        XCTAssertEqual(cube.placements[2].preset.value("angle", at: 0), 0, accuracy: 1e-9)
+        XCTAssertLessThan(cube.placements[0].rect.midX, cube.placements[2].rect.midX)
+        XCTAssertGreaterThan(cube.placements[4].rect.midX, cube.placements[2].rect.midX)
+        XCTAssertEqual(cube.order.last, 2)
+        let a = OverviewLayout.place(effect: .orbit, preset: EffectPreset(effect: .orbit), homes: homes, stage: stage,
+                                     state: OverviewState(amount: 1, spin: 0, hover: []))
+        let b = OverviewLayout.place(effect: .orbit, preset: EffectPreset(effect: .orbit), homes: homes, stage: stage,
+                                     state: OverviewState(amount: 1, spin: 1, hover: []))
+        XCTAssertNotEqual(a.placements[0].rect, b.placements[0].rect)
+        XCTAssertEqual(OverviewLayout.enter(0), 0, accuracy: 1e-9)
+        XCTAssertEqual(OverviewLayout.enter(1), 1, accuracy: 1e-9)
+        XCTAssertGreaterThan((0...20).map { OverviewLayout.enter(Double($0) / 20) }.max()!, 1, "Entering overshoots like a spring")
+        XCTAssertEqual(OverviewLayout.leave(1), 1, accuracy: 1e-9)
     }
 }

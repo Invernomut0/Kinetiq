@@ -273,10 +273,13 @@ struct SetupView: View {
                             Text(assignment.title).fontWeight(.medium)
                             if case .effect(let effect) = assignment {
                                 Text(effect.kindLabel).font(.caption2).foregroundStyle(.secondary)
+                            } else if case .custom = assignment {
+                                Text("My Effect").font(.caption2).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Button("Change") {
                                 if let effect = assignment.effect { model.requestedLibraryEffect = effect.id }
+                                if let id = assignment.customID { model.requestedLibraryEffect = LibraryItem.customPrefix + id.uuidString }
                                 selection = .effects
                             }
                             .buttonStyle(.borderless)
