@@ -31,8 +31,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var setupWindow: SetupWindowController?
     private var chaosSaver: ChaosSaver?
     private var systemScreenSaver: SystemScreenSaver?
+    private let telemetry = KinetiqTelemetry.forApplication()
+    private var quitting = false
+    private var repliedToQuit = false
+    private var productCleanedUp = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Task {
+            await telemetry.initialize()
+            guard !quitting else { return }
+            ensureSetupController().requestAnalyticsConsentIfNeeded()
+        }
         controller = KinetiqController(settings: settings)
         let saver = ChaosSaver(settings: settings)
         saver.observeSleep()
@@ -41,7 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         systemSaver.startWatching()
         systemScreenSaver = systemSaver
         if ProcessInfo.processInfo.environment["KINETIQ_CHAOS"] != nil {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saver.start() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self, !self.quitting else { return }
+                saver.start()
+            }
         }
         DockGenie.sync(enabled: settings.minimizeEffect != .off)
         setUpStatusItem()
@@ -67,6 +79,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        cleanUpProduct()
+    }
+
+    /// Restore windows before waiting for telemetry; never block the main run loop or quit forever.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !quitting else { return .terminateLater }
+        quitting = true
+        cleanUpProduct()
+        Task { [self] in
+            await telemetry.shutdown()
+            replyToQuit(sender)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [self] in
+            replyToQuit(sender)
+        }
+        return .terminateLater
+    }
+
+    private func replyToQuit(_ sender: NSApplication) {
+        guard !repliedToQuit else { return }
+        repliedToQuit = true
+        sender.reply(toApplicationShouldTerminate: true)
+    }
+
+    private func cleanUpProduct() {
+        guard !productCleanedUp else { return }
+        productCleanedUp = true
+        permissionTimer?.invalidate()
+        permissionTimer = nil
         controller?.cancelAll()
         tap?.stop()
         chaosSaver?.stop()
@@ -80,7 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @discardableResult
     private func startTap(prompt: Bool) -> Bool {
-        guard Permissions.accessibilityGranted(prompt: prompt), let controller else { return false }
+        guard !quitting, Permissions.accessibilityGranted(prompt: prompt), let controller else { return false }
         let tap = EventTap { type, event in controller.handle(type, event) }
         tap.onDisabled = { controller.cancelAll() }
         guard tap.start() else { return false }
@@ -333,7 +374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }, runtimeStatus: { [weak self] in
             ManagementRuntimeStatus(metalAvailable: self?.controller != nil,
                                     eventTapRunning: self?.tap?.isRunning == true)
-        }, systemSaver: systemScreenSaver)
+        }, systemSaver: systemScreenSaver, telemetry: telemetry)
         setupWindow = controller
         return controller
     }

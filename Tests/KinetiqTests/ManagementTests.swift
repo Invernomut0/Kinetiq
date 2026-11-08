@@ -37,6 +37,42 @@ final class ManagementTests: XCTestCase {
         }
     }
 
+    func testCoffeeCTAUsesVerifiedProfileWithoutTrackingParameters() {
+        XCTAssertEqual(SupportCoffeeView.title, "Buy me a coffee")
+        let destination = SupportCoffeeView.destination
+        XCTAssertEqual(destination.scheme, "https")
+        XCTAssertEqual(destination.host, "buymeacoffee.com")
+        XCTAssertEqual(destination.path, "/invernomut0")
+        XCTAssertNil(destination.query)
+        XCTAssertNil(destination.fragment)
+        XCTAssertNil(destination.user)
+        XCTAssertNil(destination.password)
+    }
+
+    /// Real composed-window pixels: the persistent CTA must fit even beside the Studio at minimum size.
+    @MainActor
+    func testCoffeeCTAIsVisibleInNativeSidebarAcrossPagesAndAppearances() async throws {
+        let model = model(settings: try isolatedSettings())
+        let (window, shell) = try hostingWindow(model: model)
+        defer { window.close() }
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            window.appearance = NSAppearance(named: appearance)
+            for size in [NSSize(width: 960, height: 700), NSSize(width: 1180, height: 780)] {
+                window.setContentSize(size)
+                for page in [ManagementPage.overview, .animationStudio, .settings] {
+                    model.requestedPage = page
+                    await settleLayout(shell, window: window)
+                    // Compact forms can sample only eight colors; the CTA's actual surface
+                    // proves rendering here, without changing the richer screenshot checks.
+                    let image = try await ownWindowImage(shell, window: window, requireDiversePalette: false)
+                    assertCoffeeCTAVisible(image, window: window)
+                    XCTAssertFalse(CatalogRuntime.shared.isPlaying)
+                    XCTAssertNil(model.telemetry, "Support must not construct or grant analytics")
+                }
+            }
+        }
+    }
+
     @MainActor
     func testEnableControlPersistsBeforeCallingEngineAction() async throws {
         let settings = try isolatedSettings()
@@ -275,11 +311,12 @@ final class ManagementTests: XCTestCase {
         let (window, shell) = try hostingWindow(model: model)
         defer { window.close() }
         XCTAssertFalse(CatalogRuntime.shared.isPlaying)
-        for page in [ManagementPage.effects, .animationStudio, .performance] {
+        for page in [ManagementPage.overview, .effects, .animationStudio, .performance, .settings] {
             model.requestedPage = page
             await settleLayout(shell, window: window)
             XCTAssertEqual(window.title, "Kinetiq — \(page.title)")
             let image = try await ownWindowImage(shell, window: window)
+            assertCoffeeCTAVisible(image, window: window)
             XCTAssertGreaterThan(image.pixelsWide, 0)
             XCTAssertGreaterThan(image.pixelsHigh, 0)
             XCTAssertLessThanOrEqual(image.pixelsWide * image.pixelsHigh, 8_000_000)
@@ -357,7 +394,8 @@ final class ManagementTests: XCTestCase {
 
     /// Capture the actual composed window, including its toolbar and native colors.
     @MainActor
-    private func ownWindowImage(_ shell: NSView, window: NSWindow) async throws -> NSBitmapImageRep {
+    private func ownWindowImage(_ shell: NSView, window: NSWindow,
+                               requireDiversePalette: Bool = true) async throws -> NSBitmapImageRep {
         guard CGPreflightScreenCaptureAccess() else {
             throw XCTSkip("Screen Recording is required only for optional own-window screenshots")
         }
@@ -373,8 +411,29 @@ final class ManagementTests: XCTestCase {
         config.colorSpaceName = CGColorSpace.sRGB
         let image = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: own), configuration: config)
         let bitmap = try XCTUnwrap(NSBitmapImageRep(cgImage: image).converting(to: .deviceRGB, renderingIntent: .default))
-        XCTAssertTrue(hasVisiblePixels(bitmap), "The screenshot must contain the actual painted UI")
+        if requireDiversePalette {
+            XCTAssertTrue(hasVisiblePixels(bitmap), "The screenshot must contain the actual painted UI")
+        }
         return bitmap
+    }
+
+    /// Count only the brand-yellow surface in the sidebar footer, not unrelated detail content.
+    @MainActor
+    private func assertCoffeeCTAVisible(_ bitmap: NSBitmapImageRep, window: NSWindow) {
+        let scale = CGFloat(bitmap.pixelsWide) / window.frame.width
+        let right = min(bitmap.pixelsWide, Int(250 * scale))
+        let top = max(0, bitmap.pixelsHigh - Int(180 * scale))
+        var yellowPixels = 0
+        for y in stride(from: top, to: bitmap.pixelsHigh, by: 2) {
+            for x in stride(from: 0, to: right, by: 2) {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                if color.alphaComponent > 0.95, color.redComponent > 0.96,
+                   abs(color.greenComponent - 221.0 / 255) < 0.05, color.blueComponent < 0.10 {
+                    yellowPixels += 1
+                }
+            }
+        }
+        XCTAssertGreaterThan(yellowPixels, 500, "The yellow coffee CTA must remain visibly inside the sidebar footer")
     }
 
     @MainActor

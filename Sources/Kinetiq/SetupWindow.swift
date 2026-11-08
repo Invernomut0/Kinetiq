@@ -17,6 +17,7 @@ final class SetupModel: ObservableObject {
     private let enabledChanged: () -> Void
     let runtimeStatus: () -> ManagementRuntimeStatus
     let systemSaver: SystemScreenSaver?
+    let telemetry: KinetiqTelemetry?
     @Published var requestedPage: ManagementPage?
     @Published var requestedLibraryEffect: String?
     @Published private(set) var effectError: String?
@@ -24,13 +25,14 @@ final class SetupModel: ObservableObject {
 
     init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void,
          enabledChanged: @escaping () -> Void, runtimeStatus: @escaping () -> ManagementRuntimeStatus,
-         systemSaver: SystemScreenSaver? = nil) {
+         systemSaver: SystemScreenSaver? = nil, telemetry: KinetiqTelemetry? = nil) {
         self.settings = settings
         self.closeEffectChanged = closeEffectChanged
         self.startChaos = startChaos
         self.enabledChanged = enabledChanged
         self.runtimeStatus = runtimeStatus
         self.systemSaver = systemSaver
+        self.telemetry = telemetry
     }
 
     func refresh() {
@@ -452,6 +454,10 @@ struct SetupControlsView: View {
                 }
             }
 
+            if let telemetry = model.telemetry {
+                TelemetryPrivacyView(telemetry: telemetry)
+            }
+
             Section {
                 Button("Reset Effect Settings…", role: .destructive) { confirmingReset = true }
                 Text("Restores physics, effects, screen saver and app rules. Your enable state and drag shortcut are preserved.")
@@ -536,9 +542,10 @@ final class SetupWindowController {
 
     init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void,
          enabledChanged: @escaping () -> Void, runtimeStatus: @escaping () -> ManagementRuntimeStatus,
-         systemSaver: SystemScreenSaver? = nil) {
+         systemSaver: SystemScreenSaver? = nil, telemetry: KinetiqTelemetry? = nil) {
         model = SetupModel(settings: settings, closeEffectChanged: closeEffectChanged, startChaos: startChaos,
-                           enabledChanged: enabledChanged, runtimeStatus: runtimeStatus, systemSaver: systemSaver)
+                           enabledChanged: enabledChanged, runtimeStatus: runtimeStatus, systemSaver: systemSaver,
+                           telemetry: telemetry)
     }
 
     func show(page: ManagementPage? = nil, effect: LibraryEffect? = nil) {
@@ -564,5 +571,11 @@ final class SetupWindowController {
         }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Called after the application's single telemetry owner finishes initializing.
+    func requestAnalyticsConsentIfNeeded() {
+        guard let telemetry = model.telemetry, let window else { return }
+        TelemetryConsentPrompt.present(for: telemetry, on: window)
     }
 }
