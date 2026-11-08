@@ -215,6 +215,15 @@ def main() -> int:
         if present:
             config = module.load_client(config_path)
             assert plistlib.loads(config_path.read_bytes()) == config
+        ga4_spec = importlib.util.spec_from_file_location("ga4_configuration", root / "scripts/configure-ga4.py")
+        assert ga4_spec is not None and ga4_spec.loader is not None
+        ga4 = importlib.util.module_from_spec(ga4_spec)
+        ga4_spec.loader.exec_module(ga4)
+        ga4_path = resources / ga4.RESOURCE
+        expected_ga4 = ga4.load_env(root / ".env")
+        assert ga4_path.exists() == (expected_ga4 is not None)
+        if expected_ga4 is not None:
+            assert ga4.load_resource(ga4_path) == expected_ga4
         inventory = plistlib.loads((resources / "FirebasePackaging.plist").read_bytes())
         assert "firebaseiossdk" in inventory["SourcePackages"]
         assert "FirebaseAnalytics" in inventory["MacOSAnalyticsFrameworks"]
@@ -251,6 +260,7 @@ def main() -> int:
         verify_removed_binary_providers(resources.parent / "MacOS/Kinetiq")
         verify_removed_binary_providers(saver / "Contents/MacOS/KinetiqScreenSaver")
         assert not any(saver.rglob("GoogleService-Info*.plist"))
+        assert not any(saver.rglob(ga4.RESOURCE))
         assert not any(removed(path.name) or path.name.startswith(".env")
                        or "serviceaccount" in path.name.lower().replace("-", "").replace("_", "")
                        for path in resources.parent.rglob("*"))

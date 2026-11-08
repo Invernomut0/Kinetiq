@@ -2,7 +2,57 @@
 
 Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (implementation).
 
-**Current Firebase migration:** F1/F2 are the active acceptance gates. T1–T5 and
+**Current GA4 Web transport — v0.3.4 / build 39:** **G1 Done (Copilot)** for verified
+implementation and offline/local acceptance only; **G2 Review (Lorenzo)** for actual
+Web-stream ingestion and distribution/privacy.
+GA4 takes precedence with fresh default-off consent and separate app-local identity;
+the native SDK remains linked but dormant in this mode. No Keychain access, automatic
+native/OS/session events or realtime guarantee. Approved actual visits carry a positive
+Date-based session ID and only positive consented ContinuousClock foreground engagement;
+no automatic startup/Overview events or fake timing. The owner authorizes an extractable
+ingestion secret; server-only secret deployment remains recommended. No admin JSON.
+Complete current **Release and Debug each passed 361 = 179 app + 36 Effects + 146 Core;
+0 failures, 0 skips, exit 0**, `/tmp/kinetiq-ga4-fix-release.log` and
+`/tmp/kinetiq-ga4-fix-debug.log` (`DEBUG_EXIT=0`). Debug app duration approximately
+**1928 seconds**, completed, not hung. Focused Release: **55 = 21 GA4 Swift + 34 native
+contracts, 0 failures**, `/tmp/kinetiq-ga4-fix-focused.log`; actual denied Settings
+mount → grant while visible without navigation → exactly one event → revoke uses
+the retained owner and recording boundary. GA4 disclosure is tested; no normal
+consented app GUI launch or live GA4 collection was automated.
+
+Python GA4: **26 passed, 0 failures/errors/skips, exit 0**; native parser: **19 passed,
+0 skips**; signing: **5 ran, 4 passed, 1 skipped**, real Apple Team unavailable.
+Current explicit session-aware Google debug probe: **0 validation messages, exit 0**,
+structure only, not authentication/ingestion. Its real Web session ID and optional
+measured probe-preparation timing are not app engagement; ordinary tests/smoke are offline.
+Universal build: **`BUILD_EXIT=0`**, `/tmp/kinetiq-ga4-fix-build.log`, app+saver each
+**arm64 + x86_64**, both deep/strict signatures verified **0**. Direct terminal
+resource verifier **0**, `KINETIQ_TELEMETRY_BUNDLE_CHECK_SUCCESS`; signed disabled smoke
+**0**, `KINETIQ_TELEMETRY_DISABLED_SMOKE_SUCCESS`; no saved logs invented for these checks.
+Native fallback is `KINETIQ_FIREBASE_SIGNING_BLOCKED_OFF`, **not GA4 unavailable**:
+the local `build/Kinetiq.app` contains owner GA4 configuration and works without
+Keychain after fresh default-off consent.
+
+Actual Release LLVM **Lines**, not Regions: provider **77.09% (275/63 missed)**,
+owner **97.08% (240/7)**, privacy UI **89.69% (97/10)**, store **100% (20/0)**,
+native adapter **21.31% (61/48)**. Matching binary:
+`.build/out/Products/Release/KinetiqTests.xctest/Contents/MacOS/KinetiqTests`;
+profile `/tmp/kinetiq-ga4-fix-release.profdata`; report `/tmp/kinetiq-ga4-fix-coverage.txt`.
+Approved live data-task/response/cancellation and 30-minute session-boundary exclusions
+are **not runtime-tested**; no ingestion or exhaustive/100% integration coverage claim.
+Full suites include real README optics. The focused post-documentation rerun using
+`swift test -c release --filter 'LiquidIntegrationTests/testCapturedREADMEOpticsPreserveNativeTextContrast'`
+passed the actual Test Case in **2.618 seconds: 1 test, 0 failures, 0 skips, exit 0**
+(`/tmp/kinetiq-ga4-fix-postdocs.log`). The initial dot-filter attempt selected
+0 tests and is not a successful regression run.
+
+**Workflow:** Owner-requested publication uses commits/push on firebase, reviewed PR and normal merge into main. Git history and PR are publication evidence; local packaging is not new DMG release.
+
+Two root `.env` keys remain ignored/local only, **not uploaded or provisioned in
+GitHub CI**. Workflow builds without owner `.env` fall back safely to native blocked
+off and **do not produce a configured GA4 release app**. Hosted CI is unverified.
+
+**Historical native Firebase migration:** F1/F2 record native-only acceptance. T1–T5 and
 the 328/330/334-test evidence are historical PostHog/pre-Firebase records; their Done
 statuses do not certify this migration. Old consent/UUID are untouched but not reused.
 F1 is Done for implementation and verified offline/local acceptance only: complete
@@ -11,7 +61,7 @@ final Debug and serialized restored-core Release each passed 339 tests (157 app 
 Actual signing remains `KINETIQ_FIREBASE_SIGNING_BLOCKED_OFF`, not
 `PRIVATE_GROUP_READY`. F2 remains Review; no owner gate is closed.
 
-**Current follow-up:** the owner requests commit/push for each completed task on
+**Historical native follow-up:** the owner requests commit/push for each completed task on
 `firebase`, then a reviewed PR merge into `main`. The local root client plist is ignored/excluded;
 `.vscode/launch.json` and `.serena/` are preserved. The real post-documentation
 README optics gate passed: 1 test, zero failures (`/tmp/kinetiq-firebase-postdocs.log`). An earlier overlapping
@@ -22,8 +72,10 @@ pin, without SDK source edits.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
+| G1 | Owner-authorized GA4 Web transport and current offline/local acceptance | Done | Owner: Copilot. Implementation and offline/local acceptance only, 0.3.4/build 39. Single retained owner/core, fresh consent/identity, GA4 precedence, native fallback unchanged. Ready/enabled/consent-keyed cancellable 100 ms actual Settings task, not busy state; real denied mount/grant while visible without navigation/exactly one event/revoke exercised with retained owner and recording boundary. GA4 disclosure tested, no normal consented app GUI launch/live collection automated. Complete Release/Debug each 361 (179 app + 36 Effects + 146 Core), 0 failures/skips, exit 0; Debug app completed in ~1928 seconds. Focused 55 (21 GA4 Swift + 34 native), 0 failures. Python GA4 26 passed/0 failures/errors/skips; parser 19 passed/0 skips; signing 5 ran/4 passed/1 real-Team skip. Current session-aware debug probe 0 messages/exit 0, structure only; probe timing is not app engagement. Universal app+saver arm64+x86_64 build exit 0; both deep/strict signatures, resource verifier and signed disabled smoke verified 0 directly. Lines and exact artifacts above; live data tasks/response/cancellation/30-minute session boundary unexecuted at runtime, not ingestion/exhaustive coverage. Full suites include README optics; focused post-doc slash-filter rerun verified 1 test, 0 failures/skips, exit 0, actual Test Case passed in 2.618 seconds (/tmp/kinetiq-ga4-fix-postdocs.log). |
+| G2 | GA4 Web ingestion, consented transport and distribution/privacy review | Review | Owner: Lorenzo. Actual Web-stream credentials/console ingestion, IP/location/retention/access/erasure/privacy, extractable-secret spam risk, terms, notarization and release provisioning remain open; hosted CI unverified. Root .env two ignored keys are local only, not uploaded/provisioned in GitHub CI; builds without owner .env use safe native blocked-off fallback, not a configured GA4 release app. Reopen actual build/Kinetiq.app containing owner configuration, then manually visit Settings → Privacy & Analytics with explicit consent and check Reports → Realtime. Home November 1–7 excludes Today November 8. HTTP acceptance/204 and debug validation do not prove authentication/ingestion. Use Web G- measurement ID and its own ingestion secret, not numeric/native app IDs; tagging banner alone is not MP failure. Consented cold/relaunch/live cancellation/offline/revocation remain owner review; no fake engagement/realtime guarantee. KINETIQ_FIREBASE_SIGNING_BLOCKED_OFF is native fallback status, not GA4 unavailability; no Keychain in configured GA4. Publication follows the standing workflow above. |
 | F1 | PostHog → official Google Firebase Analytics implementation and local acceptance | Done | Owner: Copilot. Implementation + offline/local acceptance only. Firebase Apple SDK 12.6.0 / GoogleAppMeasurement 12.5.0, unchanged approved generic core pin, consent-only singleton startup, fresh consent keys, no old identity reuse. Complete final Debug and serialized restored-core Release each 339 (157 app + 36 Effects + 146 Core), including 33 telemetry contracts, zero failures/skips. Python parser/artifacts 19 passed/0 skipped, including real linked Google ParamsEntry/sEntry collision regression with correct vendor boundaries. Signing 5 ran: 4 passed/1 skipped (real-Team positive unavailable for actual ad-hoc app). Universal build exit 0, actual app+saver arm64+x86_64, deep/strict signatures pass. Actual KINETIQ_FIREBASE_SIGNING_BLOCKED_OFF, NOT PRIVATE_GROUP_READY; controls safely unavailable without actual Apple private scope. Bundle verifier exit 0 KINETIQ_TELEMETRY_BUNDLE_CHECK_SUCCESS: broad Sentry false positive fixed/tested, not ignoring vendor symbols; sanitized client only in app, core privacy/MIT intact, old providers absent. Saver has no Firebase product/configuration/entitlement. Disabled signed smoke exit 0 KINETIQ_TELEMETRY_DISABLED_SMOKE_SUCCESS; no Firebase configure/consent/events/Keychain UI. LLVM Lines: owner 96.63% (208/7 missed), adapter 21.31% (61/48), privacy 96.83% (63/2), store 100% (20/0); live start/lifecycle/offline/reset untested. Exact logs/profile/binary in README/docs. Version/build 0.3.3/38 preserved. |
-| F2 | Firebase console, consented native/offline delivery and distribution review | Review | Owner: Lorenzo. Actual Apple signing identity/private Team.bundle scope unavailable and unverified. Supplied client matches kinetiq-75593 / io.github.invernomut0.Kinetiq, but actual root IS_ANALYTICS_ENABLED=false requires real console Analytics-link review, not backend validation. Actual signed restart/cold launch, live/native lifecycle deduplication, offline/retry/queued/in-flight revocation and denied relaunch, ingestion, IP/location/retention/erasure policy, project/environment/advertising changes, applicable binary terms, hosted CI/privacy report and notarization remain unverified. Explicit approval before real provider/event verification; no pending gate is claimed complete. |
+| F2 | Historical native Firebase consented/offline delivery and distribution review | Review | Owner: Lorenzo. Native fallback still requires actual Apple signing identity/private Team.bundle scope, unavailable and unverified; GA4 does not remove that native gate. Console Analytics active per owner; client IS_ANALYTICS_ENABLED is not authoritative console state or ingestion proof. Actual signed restart/cold launch, live/native lifecycle deduplication, offline/retry/queued/in-flight revocation and denied relaunch, ingestion, IP/location/retention/erasure policy, project/environment/advertising changes, applicable binary terms, hosted CI/privacy report and notarization remain unverified. Explicit approval before real provider/event verification; no pending gate is claimed complete. |
 | T5 | Analytics identity without Keychain prompts | Done | Owner: Copilot. Default host store uses product-scoped app-local preferences; old Keychain item never read/migrated/deleted. Existing consent preserved; UUID creation consent-gated. Four real-preference/core contracts added, 28 telemetry contracts pass. Full Release 334 (152 app + 36 Effects + 146 Core), zero failures/skips; focused Debug passes. Store Lines 100%, owner 97.58%, privacy UI 96.83%. Universal app+saver strict signatures, bundle check and disabled smoke pass; reopen build/Kinetiq.app. Version/build 0.3.3/38 preserved; no SDK edit, normal consented launch, live probe, commit or push. Exact evidence in README/docs. |
 | C1 | Native Buy Me a Coffee CTA | Done | Owner: Copilot. Persistent yellow/black/coffee SwiftUI sidebar link to the verified Invernomut0 HTTPS profile; opens browser only on click, no scripts/fonts/checkout or analytics changes. Debug Management 14 pass; full Release 330 (148 app + 36 Effects + 146 Core), zero failures/skips. CTA pixels verified across 3 pages × 2 sizes × light/dark; Overview/Studio real screenshots inspected. CTA Lines 97.92%; universal app+saver signatures, bundle check and disabled smoke pass. Version/build 0.3.3/38 and user changes preserved; no commit/push. Logs and coverage in README. |
 | T4 | Explicit startup analytics permission | Done | Owner: Copilot. First configured launch asks through the existing management window; Don't Share is default. Answers persist independently of configuration failures. Six new host/native regressions pass, including the actual sheet response. Final Debug/Release each 328 tests, zero failures/skips; universal app rebuilt and signed, disabled smoke passes. No automatic consent or live events. |
@@ -55,7 +107,7 @@ pin, without SDK source edits.
 ## Historical pre-telemetry v0.3.3 / build 38 status
 
 The evidence below belongs to task 19, before telemetry changes. It does not certify
-the current worktree; current Firebase acceptance and open gates are recorded in F1/F2
+the current worktree; current GA4 gates are G1/G2, historical native gates are F1/F2
 and `docs/telemetry.md`.
 
 - **Done — Owner: Copilot (task 19).** Final release acceptance: **304 tests — 122 app + 36 Effects + 146 Core; 0 failures, 0 skips** (`/tmp/kinetiq-v033-acceptance.log`), with both UI and Destruction opt-in dumps. Real README capture-to-Metal contact sheet inspected: text before shards, piling, clear at six seconds at 1× and correct initial clipping. Real test-window snapshots remain under `/tmp/kinetiq-v033-ui` and `/tmp/kinetiq-v033-destruction`, not fabricated sample images or distributed artifacts.

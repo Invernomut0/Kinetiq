@@ -21,6 +21,8 @@ cp "$BIN_DIR/Kinetiq" "$APP/Contents/MacOS/Kinetiq"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 # Optional owner-supplied Firebase client plist: safe metadata only, collection off.
 python3 scripts/configure-telemetry.py --plist "$APP/Contents/Info.plist" --config "$CONFIG"
+# Owner-authorized Web GA4 direct transport; only two .env fields, never admin credentials.
+python3 scripts/configure-ga4.py --app "$APP"
 cp Resources/PrivacyInfo.xcprivacy "$APP/Contents/Resources/"
 # Metal shaders and textures of the close effects (SwiftPM resource bundle, found in Contents/Resources).
 cp -R "$BIN_DIR/Kinetiq_KinetiqEffects.bundle" "$APP/Contents/Resources/"
@@ -66,7 +68,7 @@ else
         -r='designated => identifier "io.github.invernomut0.Kinetiq"' "$APP"
 fi
 # Only the actual post-sign TeamIdentifier can authorize a private Data Protection group.
-# Ad-hoc stays blocked/off; this does not configure or activate the Firebase SDK.
+# Native Firebase stays blocked/off on ad-hoc; GA4 direct transport does not use this scope.
 python3 scripts/configure-firebase-signing.py --app "$APP" --identity "${IDENTITY:--}"
 echo "KINETIQ_PRODUCT_SIGNING_COMPLETE"
 echo "$APP"

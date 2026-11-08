@@ -736,6 +736,85 @@ final class KinetiqTelemetryTests: XCTestCase {
         XCTAssertNil(controller.model.telemetry)
     }
 
+    /// Grant consent without remounting Settings; withdrawal must suppress subsequent actions.
+    func testNativeSettingsPageRecordsConsentGrantedWhileAlreadyMountedAndSuppressesAfterWithdrawal() async throws {
+        guard CGSessionCopyCurrentDictionary() != nil, !NSScreen.screens.isEmpty else {
+            throw XCTSkip("A graphical session is required for the owned Settings window")
+        }
+        let (defaults, _) = try preferences()
+        let provider = RecordingHostAnalytics()
+        let telemetry = owner(defaults, provider: provider)
+        let settings = Settings(defaults: defaults)
+        let controller = SetupWindowController(settings: settings, closeEffectChanged: {}, startChaos: {},
+            enabledChanged: {}, runtimeStatus: { ManagementRuntimeStatus(metalAvailable: false, eventTapRunning: false) },
+            telemetry: telemetry)
+        XCTAssertTrue(controller.model.telemetry === telemetry)
+        let app = NSApplication.shared
+        app.setActivationPolicy(.regular)
+        app.finishLaunching()
+        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 1180, height: 780),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
+        addTeardownBlock { @MainActor in
+            window.close()
+            await telemetry.shutdown()
+        }
+        await telemetry.initialize()
+        let hosting = NSHostingController(rootView: SetupView(model: controller.model))
+        window.contentViewController = hosting
+        window.orderFrontRegardless()
+        func settle() async {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    hosting.view.layoutSubtreeIfNeeded()
+                    window.displayIfNeeded()
+                    continuation.resume()
+                }
+            }
+        }
+        await settle()
+        controller.model.requestedPage = .settings
+        await settle()
+        XCTAssertTrue(window.isVisible)
+        XCTAssertEqual(window.title, "Kinetiq — Settings")
+        XCTAssertFalse(telemetry.analyticsConsent)
+        XCTAssertTrue(telemetry.canChangeConsent)
+        let deniedCalls = await provider.calls
+        let deniedEvents = await provider.events
+        XCTAssertFalse(deniedCalls.contains("start"))
+        XCTAssertTrue(deniedEvents.filter { $0.name == "feature_used" }.isEmpty)
+
+        // No navigation or replacement of the hosting view occurs during the grant.
+        await telemetry.setAnalyticsConsent(true)
+        await settle()
+        await settle()
+        XCTAssertTrue(telemetry.analyticsConsent)
+        XCTAssertTrue(window.isVisible)
+        XCTAssertEqual(window.title, "Kinetiq — Settings")
+        XCTAssertTrue(window.contentViewController === hosting)
+        let grantedCalls = await provider.calls
+        let grantedEvents = await provider.events
+        XCTAssertEqual(grantedCalls.filter { $0 == "start" }.count, 1)
+        XCTAssertEqual(grantedCalls.filter { $0 == "capture:feature_used" }.count, 1)
+        let features = grantedEvents.filter { $0.name == "feature_used" }
+        XCTAssertEqual(features.count, 1, "Consent on mounted Settings must emit once, without a busy-state loop")
+        let feature = try XCTUnwrap(features.first)
+        XCTAssertEqual(feature.properties["feature"], .string("privacy_settings"))
+        XCTAssertEqual(FirebaseAnalyticsPolicy.parameters(for: feature), ["feature": "privacy_settings"])
+
+        await telemetry.setAnalyticsConsent(false)
+        await settle()
+        await telemetry.privacySettingsOpened()
+        await settle()
+        XCTAssertFalse(telemetry.analyticsConsent)
+        XCTAssertFalse(defaults.bool(forKey: KinetiqTelemetry.consentKey))
+        XCTAssertTrue(window.isVisible)
+        XCTAssertEqual(window.title, "Kinetiq — Settings")
+        let withdrawnEvents = await provider.events
+        XCTAssertEqual(withdrawnEvents, grantedEvents, "Withdrawal must suppress both pending UI work and later actions")
+    }
+
     /// Mount the actual management shell: Overview must not emit the Settings action.
     func testNativeSettingsPageUsesRetainedOwnerAndDefaultOffConsent() async throws {
         guard CGSessionCopyCurrentDictionary() != nil, !NSScreen.screens.isEmpty else {
