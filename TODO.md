@@ -2,6 +2,38 @@
 
 Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (implementation).
 
+**New release — v0.5.2 / build 45: task 27 Doing**, owner **Copilot**.
+Package the normally merged PR #9 wobbly fix; telemetry, consent, dependencies and
+runtime sources/tests are unchanged. README/install/release records updated.
+
+- **Done — Copilot (local acceptance):** complete serial Release **421 = 237 app +
+	36 Effects + 148 Core**, zero failures/skips (`/tmp/kinetiq-v052-final-release.log`).
+	All seven real native compatibility cases and actual captured-README optics passed
+	(2.500 s), after the last README edit. No test assertions or source changes.
+- **Historical failed attempts:** first full run had three app assertions (one
+	unexpected), while Effects/Core passed (`/tmp/kinetiq-v052-release.log`). Two
+	Liquid cases failed: helper-frontmost/`windowNotShareable` and real-obstacle geometry.
+	Focused two-case rerun retained two assertions in the helper case; obstacle passed
+	(`/tmp/kinetiq-v052-focused.log`). Final complete suite passed unchanged. Session
+	blocking was false; a definitive transient-environment root cause is not claimed.
+- **Done — Copilot:** universal arm64 + x86_64 app/saver **0.5.2/45**, strict signatures,
+	bundle verifier and correct disabled `--telemetry-smoke-test` passed. Logs:
+	`/tmp/kinetiq-v052-build.log`, `-bundle.log`, `-smoke.log`. No normal user-app
+	lifecycle, real consent automation or live analytics in this release verification.
+- **Done — Copilot:** matching LLVM **Lines** AXBridge 81.00%, WindowLocator 87.08%,
+	controller 50.17%, overlay 97.44% (`/tmp/kinetiq-v052-coverage.txt`, matching
+	`-KinetiqTests` and `-release.profdata` saved before build). Not exhaustive/Metal coverage.
+- **Done — Copilot:** new DMG integrity, read-only mounted app/saver byte comparison,
+	versions/architectures/signatures and SHA-256 verification passed (`/tmp/kinetiq-v052-dmg.log`).
+	`Kinetiq-0.5.2.dmg`: 13,961,781 bytes; SHA-256
+	`4662ed5dd0616a6a1d90d8fa9cdfe003fd7531cdbac598b7b752d4bd38725997`.
+	`SHA256SUMS.txt`: 84 bytes; file SHA-256
+	`c59eeeb464b15ced2797739ff4065ac338251391b0d05eeb70ae05437f8b93ad`.
+	Existing v0.5.1 DMG hash is unchanged.
+- **Doing — Copilot (remote publication):** normal exact-head PR merge, new annotated
+	tag and GitHub asset verification pending. Repository visibility, hosted CI and
+	owner G2/F2 review remain separate. User launch settings, `.serena` and audio excluded.
+
 **Wobbly window compatibility — task 26 Done**, owner **Copilot**
 (implementation and local acceptance; publication tracked in PR #9).
 Drag-only admission supports app-owned floating/modal/popup levels, small windows,
@@ -237,6 +269,7 @@ pin, without SDK source edits.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
+| 27 | Publish v0.5.2/build 45 with the wobbly compatibility fix | Doing | Owner: Copilot. Local acceptance Done: final Release421, zero failures/skips, actual README optics and seven real wobbly cases; matching Lines, universal app/saver, strict signatures, bundle/disabled smoke and new read-only byte-verified DMG/checksum passed. Initial failed native attempts retained above. Remote exact-head PR/tag/GitHub publication pending; old v0.5.1/user files and G2/F2 gates preserved. |
 | 26 | Broaden safe wobbly window compatibility | Done | Owner: Copilot, implementation/local acceptance. Unlocked complete Release421 (237 app + 36 Effects + 148 Core), zero failures/skips; all seven real native regressions pass. Final README optics + wobbly8 passed; universal app/saver, strict signatures, bundle/disabled smoke and matching Lines verified above. Historical loginwindow failures and incorrect-smoke incident retained. PR #9 normal publication tracked in Git history. No named third-party app certification, exclusion/security bypass or new release. |
 | 25 | GitHub v0.5.1 release and safe first-launch instructions | Done | Owner: Copilot. README installation, checksum, Gatekeeper and targeted quarantine guidance implemented; post-doc90 including real optics, DMG integrity/read-only byte comparison/universal metadata/signatures and checksum passed. PR #7 normal merge 2a8d3f4, annotated v0.5.1 and Latest publication with matching uploaded asset digests verified. Private repository requires authorized login; no visibility, real consent/live analytics, normal app lifecycle or billing/protection changes. Hosted CI failures remain separate owner Review. |
 | 24 | Consented macOS configured country for standard GA4 Country | Done | Owner: Copilot, implementation/local acceptance only. v0.5.1/build 44; GA4 revision 3/native 2, country-only top-level user_location, closed ISO249, no custom country key or fabricated location. Final Release414, 89 analytics; matching Lines and universal package/signatures/bundle/disabled smoke verified in docs/telemetry.md. Actual Mac-region getter/live delivery unexecuted. Final post-edit README optics and publication tracked in task25; G2/F2 remain owner Review. |

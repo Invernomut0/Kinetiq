@@ -67,8 +67,8 @@ a close button. For custom or borderless windows, use **⌃⌘ + drag**; ordinar
 drags leave buttons, tabs and text fields native. Accessibility and Screen Recording
 must be granted, and the target must expose its exact movable window to macOS.
 App exclusions (including Kinetiq itself), menus, locked-screen surfaces, full-screen
-windows and nonmovable/protected popovers remain outside this support. This source
-change is not included in the already-published v0.5.1 DMG.
+windows and nonmovable/protected popovers remain outside this support. These
+compatibility improvements are included starting with **v0.5.2**.
 
 The **[Wiki](https://github.com/Invernomut0/Kinetiq/wiki)** walks through every feature step by step. The [user guide](docs/user-guide.md) explains every page, effect and setting. See also the [Animation Studio guide](docs/animation-studio.md) and the [list of built-in effects](docs/original-effects.md).
 
