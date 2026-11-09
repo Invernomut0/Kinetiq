@@ -17,7 +17,7 @@
   <a href="https://buymeacoffee.com/invernomut0"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy%20me%20a%20coffee-ffdd00?logo=buymeacoffee&logoColor=000"></a>
 </p>
 
-https://github.com/user-attachments/assets/96e8ca2d-131d-411c-ab5c-c8943e25a40a
+https://github.com/user-attachments/assets/a9a53f75-3b60-4f47-85a1-f9e91e75eec1
 
 <p align="center"><sub>Music: <i>Eternity</i> by Pufino · Free To Use Music (freetouse.com)</sub></p>
 
