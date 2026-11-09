@@ -1,6 +1,6 @@
 # Animation Studio and catalog — v0.4.1 (build 41)
 
-Kinetiq's compact motion editor composes effects on a window capture. Previews play on a built-in **sample window** (a drawn macOS-style document packaged like a ScreenCaptureKit capture) or on any real window you pick as preview source; real windows are only captured for previews, never moved. The [README library](../README.md#effects-library-66-effects-organized-by-what-you-do) describes the shared **66-entry** `LibraryEffect` manifest (**19 Studio + 47 originals: 30 close shaders + 6 entrances + 9 minimize morphs + Liquid + Window Destruction**) that the menu bar and the Effects library organize by window event. The [original-effects guide](original-effects.md) lists every built-in effect.
+Kinetiq's compact motion editor composes effects on a window capture. Previews play on a built-in **sample window** (a drawn macOS-style document packaged like a ScreenCaptureKit capture) or on any real window you pick as preview source; real windows are only captured for previews, never moved. The [README library](user-guide.md#effects-library-66-effects-organized-by-what-you-do) describes the shared **66-entry** `LibraryEffect` manifest (**19 Studio + 47 originals: 30 close shaders + 6 entrances + 9 minimize morphs + Liquid + Window Destruction**) that the menu bar and the Effects library organize by window event. The [original-effects guide](original-effects.md) lists every built-in effect.
 
 The **19 Studio effect IDs are unchanged** since v0.2.0. Documents are **schema 2** since v0.4.0: a layer may play a built-in engine (`builtin`) and play in reverse (`reversed`). Schema 1 documents still import and are upgraded on save. Originals are not Studio JSON layers and cannot be added as such. Catalog Liquid Morph remains separate from original Liquid; shared titles such as Morph, Portal, Ripple and Genie do not identify interchangeable engines.
 
@@ -139,7 +139,7 @@ There is **one explicit catalog owner per non-manual action**, not a chain of ef
 
 ## Quality and resource budget
 
-The [README quality table](../README.md#render-quality-and-real-gpu-timings) gives `RenderBudget.forQuality` values: Low/Balanced/High/Ultra mesh ceilings **16/32/48/64** and secondary rate ceilings **30/60/90/120 Hz**. Auto starts at High, never automatically enters Ultra and changes one resource per step.
+The [README quality table](user-guide.md#render-quality-and-real-gpu-timings) gives `RenderBudget.forQuality` values: Low/Balanced/High/Ultra mesh ceilings **16/32/48/64** and secondary rate ceilings **30/60/90/120 Hz**. Auto starts at High, never automatically enters Ultra and changes one resource per step.
 
 The **12-step reduction order** is texture scale (0.75, 0.5), particles (1000, 700, 400), blur rings (1, 0), mesh (32, 24, 16), secondary rate (60, 30). Low and every Auto step keep expensive effects available: quality adaptation must not stop the GPU completions needed for recovery. Recovery reverses this order. The smoothed GPU duration uses EWMA alpha 0.15; >12 ms needs 0.5 s and 8 samples to reduce, with 3 s cooldown; <6 ms needs 5 s and 30 samples to recover, with 8 s cooldown. Gaps over one second reset sustained evidence. Only successful completed GPU durations from 10 µs to 1 s are accepted; unsupported/failed timestamps are not replaced with CPU time.
 
@@ -169,7 +169,7 @@ Final build exit 0 (`/tmp/kinetiq-v033-final-build.log`); app and embedded saver
 
 LLVM release **line** coverage (`/tmp/kinetiq-v033-coverage.txt`, not Regions): DestructionEffectPlayer **95.95%**, OriginalEffectPreview **92.49%**, LibraryEffect **98.49%**, ChaosWorld **99.20%**, ChaosRenderer Swift **88.86%**. Not 100%, not Metal shader branch coverage, and not proof of every native failure path/display configuration. Window Destruction remains a Close-only built-in with a local-floor, non-mutating preview; Studio's 19 effects, schema 1 and layer model and the existing screen saver behavior are unchanged.
 
-**Historical v0.3.2 / build 37:** Liquid drainage acceptance is recorded in the [README](../README.md#building) and [original-effects guide](original-effects.md#verification-status); it is not v0.3.3 acceptance.
+**Historical v0.3.2 / build 37:** Liquid drainage acceptance is recorded in the [README](building.md) and [original-effects guide](original-effects.md#verification-status); it is not v0.3.3 acceptance.
 
 **Historical v0.3.1 / build 36:** the release suite passed **284 tests — 144 Core + 36 Effects + 104 app; 0 failures, 0 skips** (`/tmp/kinetiq-v031-final-suite.log`). Native regression coverage checks actual split/sidebar geometry for empty/populated documents at three window sizes in light/dark appearances. The test changes only in-memory documents and restores them; it never saves over the user's composition. The signed universal packaged app and saver were verified, and Studio was inspected empty and after Add Layer, including creating a keyframe track at minimum window size. The guide no longer overlaps the editor.
 
