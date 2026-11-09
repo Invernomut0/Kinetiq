@@ -28,6 +28,28 @@ thermal refusals. Universal app/saver signatures, bundle checks and disabled smo
 passed. Logs: `/tmp/kinetiq-budget-release.log`, `/tmp/kinetiq-budget-build.log`.
 No live analytics or user-window mutations were automated.
 
+**v0.4.2 · build 42** fixes a separate cause of the same apparent block: Layouts
+under-counted native capture memory by omitting the shadow room, then aborted the
+entire overview if an additional window exceeded the total. Admission now includes
+the shadow buffer and skips only additional windows that do not fit; the **32 MP
+total, eight-window maximum and native capture resolution are unchanged**. Layouts
+reports the number of admitted windows. Memory/allocation/busy errors are distinct
+from an actual critical-thermal refusal. Stopping, retrying or changing pages clears
+previous-operation errors; a recovered thermal gate clears its own refusal, without
+hiding unrelated failures. No user assignments or mandatory Kinetiq exclusion change.
+
+Local verification: **380 Release tests passed** (196 app + 36 Effects + 148 Core),
+zero failures/skips. Real owned README windows verify Low/Auto overview admission,
+shadow-buffer accounting, thermal recovery and desktop Ripple → Incinerate playback
+with exact-origin restoration. The four-window case failed before the fix. Logs:
+`/tmp/kinetiq-layout-final-release.log`, `/tmp/kinetiq-layout-red.log`.
+Universal **x86_64 + arm64** app/saver, strict signatures, bundle verification and
+signed disabled smoke passed (`/tmp/kinetiq-layout-build.log`). LLVM **Lines**:
+runtime **75.74%**, capture **75.00%**, compositor **96.47%**, Studio UI **59.15%**,
+library UI **67.31%** (`/tmp/kinetiq-layout-final-coverage.txt`); not exhaustive
+integration or Metal shader branch coverage. No normal app restart or live analytics
+was automated. Quit and reopen **`build/Kinetiq.app`** to run **0.4.2/build 42**.
+
 ## Installing
 
 Requires macOS 14 or later, on Apple Silicon or Intel.

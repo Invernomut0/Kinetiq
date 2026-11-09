@@ -2,6 +2,20 @@
 
 Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (implementation).
 
+**Layouts capture admission — v0.4.2 / build 42:** task 22 Done (Copilot, implementation/local acceptance).
+Reproduced the exact quality-budget error at nominal thermal pressure with four
+real helper-owned README windows, in both Low and Auto (six pre-fix assertion
+failures, `/tmp/kinetiq-layout-red.log`). Include shadow buffers in admission,
+skip extra captures rather than cancel the overview, distinguish failure causes
+and clear stale errors. The 32 MP total/eight-window maximum remain unchanged.
+Complete Release: **380 passed** (196 app + 36 Effects + 148 Core), zero failures/skips,
+including actual Low/Auto desktop Ripple → Incinerate playback and exact restoration.
+Universal app/saver, strict signatures, bundle verification and disabled smoke passed.
+Logs: `/tmp/kinetiq-layout-final-release.log`, `/tmp/kinetiq-layout-build.log`.
+LLVM Lines: runtime 75.74%, capture 75.00%, compositor 96.47%, Studio UI 59.15%,
+library UI 67.31% (`/tmp/kinetiq-layout-final-coverage.txt`), not exhaustive/Metal coverage.
+Publication is tracked separately in Git/PR history; no new DMG or normal app restart.
+
 **Budget and protected Settings — v0.4.1 / build 41:** task 21 Done (Copilot).
 Low/Auto keep expensive effects available with bounded reduced resources; only
 critical thermal pressure closes the gate. Kinetiq's exclusion is mandatory in
@@ -84,6 +98,7 @@ pin, without SDK source edits.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
+| 22 | Fix false quality blocks caused by capture accounting and stale errors | Done | Owner: Copilot, implementation/local acceptance. v0.4.2/build 42; real four-window pre-fix regression reproduces failure at Low/Auto. Include shadow allocation, skip over-budget additional windows, retain hard memory limits and mandatory own exclusions; separate error causes and clear stale messages. Complete Release 380 passed (196 app + 36 Effects + 148 Core), zero failures/skips, including actual desktop Ripple/Incinerate and restoration. Universal app/saver, signatures, bundle and disabled smoke passed; exact logs/coverage above. |
 | 21 | Relax effect quality gate and protect Settings exclusion | Done | Owner: Copilot. 12-step resource-only Auto ladder, expensive effects allowed at Low/serious thermal pressure, critical thermal and memory/capture safety retained; protected Kinetiq rule enforced in UI, settings and runtime. Complete Release 376 passed (192 app + 36 Effects + 148 Core), zero failures/skips, including actual captured-README rendering and protected rule persistence. Universal app/saver, strict signatures, bundle and disabled smoke passed. Exact logs/Lines coverage above. |
 | 20 | v0.4.0 Studio built-ins, My Effects, complete Try menu, interactive Layouts | Done | Owner: Copilot. Built-in close/open/minimize engines as Studio layers through `LayerCompositor`, reverse playback, saved compositions owning Open/Close/Minimize, Try menu with every effect, animated hover/keyboard/scroll overview with ⌃⌥↑ and five-window demos. See CHANGELOG 0.4.0 for verification. |
 | G1 | Owner-authorized GA4 Web transport and current offline/local acceptance | Done | Owner: Copilot. Implementation and offline/local acceptance only, 0.3.4/build 39. Single retained owner/core, fresh consent/identity, GA4 precedence, native fallback unchanged. Ready/enabled/consent-keyed cancellable 100 ms actual Settings task, not busy state; real denied mount/grant while visible without navigation/exactly one event/revoke exercised with retained owner and recording boundary. GA4 disclosure tested, no normal consented app GUI launch/live collection automated. Complete Release/Debug each 361 (179 app + 36 Effects + 146 Core), 0 failures/skips, exit 0; Debug app completed in ~1928 seconds. Focused 55 (21 GA4 Swift + 34 native), 0 failures. Python GA4 26 passed/0 failures/errors/skips; parser 19 passed/0 skips; signing 5 ran/4 passed/1 real-Team skip. Current session-aware debug probe 0 messages/exit 0, structure only; probe timing is not app engagement. Universal app+saver arm64+x86_64 build exit 0; both deep/strict signatures, resource verifier and signed disabled smoke verified 0 directly. Lines and exact artifacts above; live data tasks/response/cancellation/30-minute session boundary unexecuted at runtime, not ingestion/exhaustive coverage. Full suites include README optics; focused post-doc slash-filter rerun verified 1 test, 0 failures/skips, exit 0, actual Test Case passed in 2.618 seconds (/tmp/kinetiq-ga4-fix-postdocs.log). |

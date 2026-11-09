@@ -256,7 +256,7 @@ struct EffectDetailView: View {
             }
             .padding(20)
         }
-        .onAppear { editing = saved }
+        .onAppear { editing = saved; runtime.clearError() }
         .onChange(of: store.presets) { _, _ in if editing == nil { editing = saved } }
         .onDisappear { runTask?.cancel(); runtime.stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
@@ -538,6 +538,7 @@ struct CustomEffectDetailView: View {
                     model.closeEffectChangedPublic()
                 }
             } message: { Text("It is removed from My Effects and stops playing on any event. This cannot be undone.") }
+            .onAppear { runtime.clearError() }
             .onDisappear { runTask?.cancel(); runtime.stop() }
         } else {
             ContentUnavailableView("Effect deleted", systemImage: "star.slash")
@@ -724,12 +725,17 @@ struct CatalogArrangementView: View {
                 header
                 ForEach(Settings.overviewLayouts, id: \.self) { id in card(id) }
                 if let error = runtime.errorMessage { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+                if runtime.isPlaying {
+                    Text("Showing \(runtime.capturedWindowCount) windows within the 32-megapixel capture limit.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Text("Uses captures of up to eight windows on the current Space. Windows are never moved: they are put back exactly where they were, and the one you click is brought to the front. Kinetiq does not switch native Spaces.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             .padding(24)
         }
-        .onDisappear { runTask?.cancel() }
+        .onAppear { runtime.clearError() }
+        .onDisappear { runTask?.cancel(); runtime.stop() }
     }
 
     private var header: some View {

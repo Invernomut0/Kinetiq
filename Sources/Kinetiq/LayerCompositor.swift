@@ -10,7 +10,8 @@ import KinetiqEffects
 enum CompositorError: String, LocalizedError {
     case metal = "Metal could not prepare this composition."
     case gpu = "The GPU could not encode this composition."
-    case budget = "This effect is disabled by the current quality safety budget."
+    case thermal = "macOS reports critical thermal pressure. Heavy effects are temporarily paused by the safety budget."
+    case budget = "The rendering budget has no usable mesh or particle resources."
     case builtin = "This built-in effect cannot be used as a Studio layer."
     var errorDescription: String? { rawValue }
 }
@@ -105,11 +106,11 @@ final class LayerCompositor {
         guard budget.meshLimit > 0 else { throw CompositorError.budget }
         if let id = layer.builtin {
             guard let builtin = BuiltinLayer(id) else { throw CompositorError.builtin }
-            if case .close = builtin, !budget.allowsExpensive { throw CompositorError.budget }
+            if case .close = builtin, !budget.allowsExpensive { throw CompositorError.thermal }
             return
         }
         let descriptor = EffectCatalog.descriptor(layer.preset.effect)
-        guard !descriptor.expensive || budget.allowsExpensive else { throw CompositorError.budget }
+        guard !descriptor.expensive || budget.allowsExpensive else { throw CompositorError.thermal }
         guard (layer.preset.effect != .shatter && layer.preset.effect != .explode) || budget.maxParticles > 0 else {
             throw CompositorError.budget
         }

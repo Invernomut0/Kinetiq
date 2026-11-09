@@ -77,6 +77,18 @@ final class WindowCapture {
     /// Room around the window for its shadow (an active window's reaches ~56 pt sideways and ~72 pt down).
     private static let shadowRoom: CGFloat = 100
 
+    /// Shared ceiling for bounded catalog/preview consumers; includes the shadow's IOSurface.
+    static let maximumPixelCount = 32_000_000
+
+    /// Matches the rounded dimensions passed to ScreenCaptureKit, not just the opaque window.
+    static func estimatedPixelCount(windowSize: CGSize, scale: CGFloat) -> Double {
+        guard windowSize.width.isFinite, windowSize.height.isFinite, scale.isFinite,
+              windowSize.width > 0, windowSize.height > 0, scale > 0 else { return .infinity }
+        let room = (shadowRoom * scale).rounded()
+        return Double((windowSize.width * scale).rounded() + 2 * room)
+            * Double((windowSize.height * scale).rounded() + 2 * room)
+    }
+
     /// Captures the window with its native shadow, so the overlay's shadow is the real one and nothing
     /// changes when the real window takes over. Falls back to the bare window if it can't be located.
     func capture(_ info: WindowInfo) async throws -> CapturedFrame {
