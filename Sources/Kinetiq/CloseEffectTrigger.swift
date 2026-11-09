@@ -277,9 +277,9 @@ final class CloseEffectTrigger {
                 CatalogStore.shared.assignedCustom(to: .close) == custom,
                 settings.closeEffect(forBundleID: app.bundleIdentifier) == choice else { return }
             if let custom {
-                Task { _ = await CatalogRuntime.shared.playCaptured(frame, windowFrame: windowFrame, document: custom.document) }
+                Task { _ = await CatalogRuntime.shared.playCaptured(frame, windowFrame: windowFrame, document: custom.document, trigger: .close) }
             } else if let assigned {
-                _ = CatalogRuntime.shared.playCaptured(frame, windowFrame: windowFrame, preset: assigned)
+                _ = CatalogRuntime.shared.playCaptured(frame, windowFrame: windowFrame, preset: assigned, trigger: .close)
             } else if choice == .liquid {
                 liquid?.play(frame, windowFrame: windowFrame, durationScale: speed)
             } else if choice == .destruction {

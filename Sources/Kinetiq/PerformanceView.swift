@@ -13,7 +13,11 @@ struct PerformanceView: View {
     var body: some View {
         Form {
             Section("Render Quality") {
-                Picker("Selection", selection: $manager.selection) {
+                Picker("Selection", selection: Binding(get: { manager.selection }, set: { choice in
+                    guard manager.selection != choice else { return }
+                    manager.selection = choice
+                    KinetiqTelemetry.emit(.quality(choice))
+                })) {
                     ForEach(RenderQuality.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 LabeledContent("Resolved quality", value: manager.resolvedQuality.title)
@@ -38,7 +42,7 @@ struct PerformanceView: View {
                 LabeledContent("Mesh limit per axis", value: "\(manager.budget.meshLimit)")
                 LabeledContent("Secondary animation rate ceiling", value: "\(manager.budget.secondaryFPS) Hz")
                 LabeledContent("Expensive effects", value: manager.budget.allowsExpensive ? "Allowed" : "Limited")
-                Text("Thermal pressure and Low Power Mode can cap even a manual selection. Original captures and desktop destinations stay native; Studio preview and composition intermediates follow the texture budget.")
+                Text("Low and Auto reduce detail without disabling effects. Only critical thermal pressure blocks expensive effects; other thermal states and Low Power Mode cap resource use. Original captures and desktop destinations stay native; Studio preview and composition intermediates follow the texture budget.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {

@@ -75,6 +75,9 @@ final class SystemScreenSaver: ObservableObject {
     /// Called only after explicit user consent, including consent to local desktop snapshots.
     func setEnabled(_ enabled: Bool) async {
         guard !isChanging else { return }
+        refreshStatus()
+        let previouslySelected = isSelected
+        let previouslyHadSelection = hasSelection
         isChanging = true
         errorMessage = nil
         preparation?.cancel()
@@ -110,6 +113,12 @@ final class SystemScreenSaver: ObservableObject {
                 try await restorePreviousSelection()
                 settings.chaosEnabled = false
                 try removeSavedScene()
+            }
+            refreshStatus()
+            if enabled, isSelected, !previouslySelected {
+                KinetiqTelemetry.emit(.screenSaver(.enabled))
+            } else if !enabled, !hasSelection, previouslyHadSelection {
+                KinetiqTelemetry.emit(.screenSaver(.disabled))
             }
         } catch {
             refreshStatus()

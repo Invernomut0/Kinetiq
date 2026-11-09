@@ -82,6 +82,7 @@ final class SetupModel: ObservableObject {
         settings.closeEffect = CloseEffectChoice(rawValue: raw)
         closeEffectChanged()
         refresh()
+        recordAssignment(.close)
     }
 
     func selectOpenEffect(_ raw: String) {
@@ -89,6 +90,7 @@ final class SetupModel: ObservableObject {
         settings.openEffect = OpenEffectChoice(rawValue: raw)
         closeEffectChanged()
         refresh()
+        recordAssignment(.open)
     }
 
     func selectMinimizeEffect(_ raw: String) {
@@ -97,6 +99,7 @@ final class SetupModel: ObservableObject {
         DockGenie.sync(enabled: settings.minimizeEffect != .off)
         closeEffectChanged()
         refresh()
+        recordAssignment(.minimize)
     }
 
     /// Original engines keep their existing keys and native trigger lifecycle.
@@ -107,6 +110,7 @@ final class SetupModel: ObservableObject {
             effectError = nil
             closeEffectChanged()
             refresh()
+            recordAssignment(trigger)
         } catch { effectError = error.localizedDescription }
     }
 
@@ -135,7 +139,7 @@ final class SetupModel: ObservableObject {
             } else {
                 try OriginalEffectAssignment.apply(effect, trigger: trigger, settings: settings, store: .shared)
             }
-            afterAssignmentChange(trigger)
+            afterAssignmentChange(trigger, effectID: effect.id)
             return true
         } catch { effectError = error.localizedDescription; return false }
     }
@@ -176,11 +180,16 @@ final class SetupModel: ObservableObject {
         return true
     }
 
-    private func afterAssignmentChange(_ trigger: EffectTrigger) {
+    private func afterAssignmentChange(_ trigger: EffectTrigger, effectID: String? = nil) {
         if trigger == .minimize { DockGenie.sync(enabled: settings.minimizeEffect != .off) }
         effectError = nil
         closeEffectChanged()
         refresh()
+        recordAssignment(trigger, effectID: effectID)
+    }
+
+    private func recordAssignment(_ trigger: EffectTrigger, effectID: String? = nil) {
+        telemetry?.record(trigger.usageEvent(effectID: effectID ?? assignment(for: trigger).usageEffectID, selected: true))
     }
 
     private func releaseCatalogTrigger(_ trigger: EffectTrigger) -> Bool {
@@ -204,7 +213,10 @@ final class SetupModel: ObservableObject {
         settings.resetToDefaults()
         CatalogRuntime.shared.stop()
         CatalogStore.shared.resetAll()
-        RenderQualityManager.shared.reset()
+        let quality = RenderQualityManager.shared
+        let previousQuality = quality.selection
+        quality.reset()
+        if quality.selection != previousQuality { telemetry?.record(.quality(quality.selection)) }
         DockGenie.sync(enabled: settings.minimizeEffect != .off)
         closeEffectChanged()
         refresh()
@@ -217,6 +229,7 @@ final class SetupModel: ObservableObject {
     }
 
     func removeExclusion(_ bundleID: String) {
+        guard bundleID != Settings.protectedExclusionID else { return }
         settings.excludedApps.removeAll { $0 == bundleID }
         refresh()
     }
@@ -247,12 +260,26 @@ final class SetupModel: ObservableObject {
         settings.appCloseEffects[bundleID] = settings.closeEffect.rawValue
         closeEffectChanged()
         refresh()
+        recordAppCloseSelection(settings.closeEffect.rawValue)
     }
 
     func setAppEffect(_ bundleID: String, _ raw: String) {
         settings.appCloseEffects[bundleID] = raw
         closeEffectChanged()
         refresh()
+        recordAppCloseSelection(raw)
+    }
+
+    private func recordAppCloseSelection(_ raw: String) {
+        let id: String
+        switch CloseEffectChoice(rawValue: raw) {
+        case .off: id = "off"
+        case .random: id = "random"
+        case .liquid: id = LibraryEffect.liquid.id
+        case .destruction: id = LibraryEffect.destruction.id
+        case .effect(let effect): id = LibraryEffect.close(effect).id
+        }
+        telemetry?.record(.effectSelected(effectID: id, trigger: .close))
     }
 
     func removeAppEffect(_ bundleID: String) {
@@ -444,7 +471,8 @@ struct SetupControlsView: View {
                     Text("No excluded apps").foregroundStyle(.secondary)
                 }
                 ForEach(settings.excludedApps, id: \.self) { id in
-                    AppRow(bundleID: id, remove: { model.removeExclusion(id) }) { EmptyView() }
+                    AppRow(bundleID: id, canRemove: id != Settings.protectedExclusionID,
+                           remove: { model.removeExclusion(id) }) { EmptyView() }
                 }
                 HStack {
                     Menu("Add Running App") {
@@ -457,7 +485,7 @@ struct SetupControlsView: View {
             } header: {
                 Text("Exclusions")
             } footer: {
-                Text("Windows of these apps get no wobble, resize, maximize or close effect. Kinetiq's own windows (this one) are excluded by default.")
+                Text("Windows of these apps get no effects. Kinetiq's own windows (including Settings) are always excluded; this protection cannot be removed.")
             }
         }
     }
@@ -517,11 +545,14 @@ private struct SliderRow: View {
 
 private struct AppRow<Accessory: View>: View {
     let bundleID: String
+    let canRemove: Bool
     let remove: () -> Void
     @ViewBuilder let accessory: () -> Accessory
 
-    init(bundleID: String, remove: @escaping () -> Void, @ViewBuilder accessory: @escaping () -> Accessory) {
+    init(bundleID: String, canRemove: Bool = true, remove: @escaping () -> Void,
+         @ViewBuilder accessory: @escaping () -> Accessory) {
         self.bundleID = bundleID
+        self.canRemove = canRemove
         self.remove = remove
         self.accessory = accessory
     }
@@ -539,9 +570,11 @@ private struct AppRow<Accessory: View>: View {
             }
             Spacer()
             accessory()
-            Button(role: .destructive, action: remove) { Image(systemName: "minus.circle") }
+            Button(role: .destructive, action: remove) { Image(systemName: canRemove ? "minus.circle" : "lock.fill") }
                 .buttonStyle(.borderless)
-                .help("Remove app rule")
+                .disabled(!canRemove)
+                .accessibilityLabel(canRemove ? "Remove app rule" : "Kinetiq is always excluded")
+                .help(canRemove ? "Remove app rule" : "Kinetiq's Settings window must remain excluded")
         }
     }
 }

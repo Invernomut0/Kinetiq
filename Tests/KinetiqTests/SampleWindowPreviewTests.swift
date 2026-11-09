@@ -126,21 +126,23 @@ final class SampleWindowPreviewTests: XCTestCase {
         } catch { XCTAssertTrue(error.localizedDescription.contains("progress")) }
     }
 
-    @MainActor func testBudgetAndDisabledStateRefuseSamplePreviewsWithoutFallback() async throws {
+    @MainActor func testCriticalThermalBudgetAndDisabledStateRefuseSamplePreviewsWithoutFallback() async throws {
         try requireMetal()
         let preferences = try settings()
-        let low = OriginalPreviewRenderer(budget: { .forQuality(.low) })
-        for effect in [LibraryEffect.close(.fire), .liquid, .catalog(.shatter), .catalog(.burn)] {
+        var policy = RenderQualityPolicy()
+        policy.refreshEnvironment(thermalState: .critical, lowPowerMode: false)
+        let critical = OriginalPreviewRenderer(budget: { policy.budget })
+        for effect in [LibraryEffect.close(.fire), .liquid, .destruction, .catalog(.shatter), .catalog(.burn)] {
             do {
-                _ = try await low.preview(effect: effect, source: .sample, progress: 0.3, settings: preferences)
+                _ = try await critical.preview(effect: effect, source: .sample, progress: 0.3, settings: preferences)
                 XCTFail("\(effect.id) must refuse when expensive effects are disallowed")
             } catch { XCTAssertTrue(error.localizedDescription.contains("budget"), effect.id) }
         }
-        _ = try await low.preview(effect: .catalog(.wobbly), source: .sample, progress: 0.3, settings: preferences)
-        _ = try await low.preview(effect: .minimize(.genie), source: .sample, progress: 0.3, settings: preferences)
+        _ = try await critical.preview(effect: .catalog(.wobbly), source: .sample, progress: 0.3, settings: preferences)
+        _ = try await critical.preview(effect: .minimize(.genie), source: .sample, progress: 0.3, settings: preferences)
         preferences.enabled = false
         do {
-            _ = try await low.preview(effect: .catalog(.fold), source: .sample, progress: 0.3, settings: preferences)
+            _ = try await critical.preview(effect: .catalog(.fold), source: .sample, progress: 0.3, settings: preferences)
             XCTFail("Disabled effects must not preview")
         } catch { XCTAssertTrue(error.localizedDescription.contains("paused")) }
     }
@@ -170,6 +172,32 @@ final class CompositionPreviewTests: XCTestCase {
         try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
         try NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])!
             .write(to: URL(fileURLWithPath: path).appendingPathComponent("\(name).png"))
+    }
+
+    @MainActor func testEveryLayerAcceptsLowQualityButHonorsCriticalAndResourceLimits() throws {
+        let layers = BuiltinLayer.all.map { $0.makeLayer() }
+            + EffectCatalog.effects.map { StudioLayer(preset: $0.defaultPreset) }
+        var policy = RenderQualityPolicy(selection: .ultra)
+        policy.refreshEnvironment(thermalState: .critical, lowPowerMode: false)
+        for layer in layers {
+            XCTAssertNoThrow(try LayerCompositor.check(layer, budget: .forQuality(.low)), layer.name)
+            let expensive: Bool
+            if case .close = BuiltinLayer(layer.builtin) { expensive = true }
+            else { expensive = !layer.isBuiltin && EffectCatalog.descriptor(layer.preset.effect).expensive }
+            if expensive {
+                XCTAssertThrowsError(try LayerCompositor.check(layer, budget: policy.budget), layer.name)
+            } else {
+                XCTAssertNoThrow(try LayerCompositor.check(layer, budget: policy.budget), layer.name)
+            }
+            var invalid = RenderBudget.forQuality(.low)
+            invalid.meshLimit = 0
+            XCTAssertThrowsError(try LayerCompositor.check(layer, budget: invalid), layer.name)
+        }
+        var noParticles = RenderBudget.forQuality(.low)
+        noParticles.maxParticles = 0
+        for effect in [EffectID.shatter, .explode] {
+            XCTAssertThrowsError(try LayerCompositor.check(StudioLayer(preset: EffectPreset(effect: effect)), budget: noParticles))
+        }
     }
 
     @MainActor func testEveryBuiltinLayerAnimatesInADocumentAndReverses() async throws {
@@ -207,8 +235,13 @@ final class CompositionPreviewTests: XCTestCase {
         XCTAssertLessThan(alpha(try bytes(ended)), alpha(try bytes(single)), "A close shader ends with less of the window")
         try dump(composed, "studio-ripple-incinerate")
         let low = OriginalPreviewRenderer(budget: { .forQuality(.low) })
+        let lowOutput = try await low.preview(document: onlyBuiltin, time: 1, source: .sample, settings: preferences)
+        XCTAssertGreaterThan(alpha(try bytes(lowOutput)), 10)
+        var policy = RenderQualityPolicy()
+        policy.refreshEnvironment(thermalState: .critical, lowPowerMode: false)
+        let critical = OriginalPreviewRenderer(budget: { policy.budget })
         do {
-            _ = try await low.preview(document: onlyBuiltin, time: 1, source: .sample, settings: preferences)
+            _ = try await critical.preview(document: onlyBuiltin, time: 1, source: .sample, settings: preferences)
             XCTFail("Close shaders are refused when expensive effects are off")
         } catch { XCTAssertTrue(error.localizedDescription.contains("budget")) }
     }

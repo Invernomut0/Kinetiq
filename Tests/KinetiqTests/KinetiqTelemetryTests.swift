@@ -4,6 +4,7 @@
 import AppKit
 import FirebaseCore
 import Invernomut0Telemetry
+import KinetiqCore
 import SwiftUI
 import XCTest
 @testable import Kinetiq
@@ -25,6 +26,9 @@ final class KinetiqTelemetryTests: XCTestCase {
     private func preferences() throws -> (UserDefaults, String) {
         let suite = "kinetiq.telemetry.contract.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        // Historical grant tests intentionally represent consent to the current scope.
+        // Migration cases explicitly remove or replace this revision.
+        defaults.set(KinetiqTelemetry.usageConsentRevision, forKey: KinetiqTelemetry.usageConsentRevisionKey)
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         return (defaults, suite)
     }
@@ -35,6 +39,435 @@ final class KinetiqTelemetryTests: XCTestCase {
             configuration: .success(TelemetryHostConfiguration(options: nil, environment: .development)),
             productID: "kinetiq_contract_" + UUID().uuidString.lowercased(),
             provider: provider, identityStore: store, purgeFailed: { purgeFailure })
+    }
+
+    /// Await a real core capture, not a network request or an assumed scheduler delay.
+    private func waitForUsage(_ provider: RecordingHostAnalytics, count: Int = 1) async {
+        let captured = expectation(description: "Real core usage boundary reached")
+        let observer = Task {
+            while !Task.isCancelled {
+                let events = await provider.events
+                if events.filter({ FirebaseAnalyticsPolicy.parameters(for: $0) != nil }).count >= count {
+                    captured.fulfill()
+                    return
+                }
+                await Task.yield()
+            }
+        }
+        defer { observer.cancel() }
+        await fulfillment(of: [captured], timeout: 3)
+    }
+
+    func testStaticApplicationOwnerIsWeakAndEmitWithoutOwnerHasNoSideEffects() throws {
+        let previousOwner = KinetiqTelemetry.application
+        defer { KinetiqTelemetry.application = previousOwner }
+        let (defaults, _) = try preferences()
+        weak var retained: KinetiqTelemetry?
+        do {
+            let telemetry = owner(defaults)
+            retained = telemetry
+            KinetiqTelemetry.application = telemetry
+            XCTAssertTrue(KinetiqTelemetry.application === telemetry)
+            KinetiqTelemetry.emit(.studio(.saved))
+            XCTAssertFalse(telemetry.analyticsConsent)
+            XCTAssertFalse(telemetry.ready)
+        }
+        XCTAssertNil(retained)
+        XCTAssertNil(KinetiqTelemetry.application)
+        KinetiqTelemetry.emit(.feature(.effectsLibrary))
+        XCTAssertNil(defaults.object(forKey: KinetiqTelemetry.consentKey))
+        XCTAssertNil(defaults.object(forKey: KinetiqTelemetry.consentDecisionKey))
+    }
+
+    func testNativePreviousScopeGrantRequiresFreshConsentDespiteRememberedDecisionAndKeepsIdentity() async throws {
+        let (defaults, _) = try preferences()
+        defaults.removeObject(forKey: KinetiqTelemetry.usageConsentRevisionKey)
+        defaults.set(true, forKey: KinetiqTelemetry.consentKey)
+        defaults.set(true, forKey: KinetiqTelemetry.consentDecisionKey)
+        let productID = "kinetiq_scope_" + UUID().uuidString.lowercased()
+        let identityKey = TelemetryPreferenceIdentityStore.preferenceKey(productID: productID)
+        let previousIdentity = UUID().uuidString
+        defaults.set(previousIdentity, forKey: identityKey)
+        let provider = RecordingHostAnalytics()
+        let telemetry = KinetiqTelemetry(defaults: defaults,
+            configuration: .success(TelemetryHostConfiguration(options: nil, environment: .development)),
+            productID: productID, provider: provider)
+        XCTAssertFalse(telemetry.analyticsConsent)
+        telemetry.record(.studio(.saved))
+        await telemetry.initialize()
+        XCTAssertFalse(telemetry.analyticsConsent)
+        XCTAssertTrue(telemetry.shouldRequestConsentAtStartup)
+        XCTAssertTrue(telemetry.claimStartupConsentPrompt())
+        XCTAssertTrue(defaults.bool(forKey: KinetiqTelemetry.consentDecisionKey))
+        XCTAssertNil(defaults.object(forKey: KinetiqTelemetry.usageConsentRevisionKey))
+        let before = await provider.calls
+        XCTAssertTrue(before.isEmpty)
+        XCTAssertTrue(defaults.string(forKey: identityKey) == previousIdentity)
+        await telemetry.setAnalyticsConsent(true)
+        XCTAssertTrue(telemetry.analyticsConsent)
+        XCTAssertEqual(defaults.object(forKey: KinetiqTelemetry.usageConsentRevisionKey) as? Int, 2)
+        XCTAssertTrue(defaults.string(forKey: identityKey) == previousIdentity)
+        await telemetry.privacySettingsOpened()
+        let events = await provider.events
+        XCTAssertEqual(events.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) }, [["feature": "privacy_settings"]])
+        await telemetry.shutdown()
+    }
+
+    func testNativeMissingStaleAndStringRevisionRejectPersistedGrantWithoutStartingProvider() async throws {
+        for revision: Any? in [nil, 1, "2", true, 3] {
+            let (defaults, _) = try preferences()
+            defaults.removeObject(forKey: KinetiqTelemetry.usageConsentRevisionKey)
+            if let revision { defaults.set(revision, forKey: KinetiqTelemetry.usageConsentRevisionKey) }
+            defaults.set(true, forKey: KinetiqTelemetry.consentKey)
+            defaults.set(true, forKey: KinetiqTelemetry.consentDecisionKey)
+            let provider = RecordingHostAnalytics()
+            let store = ContractIdentity()
+            let telemetry = owner(defaults, provider: provider, store: store)
+            XCTAssertFalse(telemetry.analyticsConsent)
+            await telemetry.initialize()
+            XCTAssertTrue(telemetry.ready)
+            XCTAssertFalse(telemetry.analyticsConsent)
+            XCTAssertTrue(telemetry.shouldRequestConsentAtStartup)
+            let calls = await provider.calls
+            let accesses = await store.accesses
+            XCTAssertTrue(calls.isEmpty)
+            XCTAssertEqual(accesses, 0)
+            await telemetry.shutdown()
+        }
+    }
+
+    func testNativePreviousDenialIsPreservedWithoutRevisionAndDoesNotPromptAgain() async throws {
+        let (defaults, _) = try preferences()
+        defaults.removeObject(forKey: KinetiqTelemetry.usageConsentRevisionKey)
+        defaults.set(false, forKey: KinetiqTelemetry.consentKey)
+        defaults.set(true, forKey: KinetiqTelemetry.consentDecisionKey)
+        let provider = RecordingHostAnalytics()
+        for _ in 0..<2 {
+            let telemetry = owner(defaults, provider: provider)
+            await telemetry.initialize()
+            XCTAssertFalse(telemetry.analyticsConsent)
+            XCTAssertFalse(telemetry.shouldRequestConsentAtStartup)
+            XCTAssertFalse(telemetry.claimStartupConsentPrompt())
+            XCTAssertFalse(defaults.bool(forKey: KinetiqTelemetry.consentKey))
+            XCTAssertTrue(defaults.bool(forKey: KinetiqTelemetry.consentDecisionKey))
+            XCTAssertNil(defaults.object(forKey: KinetiqTelemetry.usageConsentRevisionKey))
+            await telemetry.shutdown()
+        }
+        let calls = await provider.calls
+        XCTAssertFalse(calls.contains("start"))
+    }
+
+    func testFailedFreshGrantDoesNotWriteUsageRevision() async throws {
+        let (defaults, _) = try preferences()
+        defaults.removeObject(forKey: KinetiqTelemetry.usageConsentRevisionKey)
+        let telemetry = owner(defaults, provider: RecordingHostAnalytics(failStart: true))
+        await telemetry.initialize()
+        await telemetry.setAnalyticsConsent(true)
+        XCTAssertFalse(telemetry.analyticsConsent)
+        XCTAssertFalse(defaults.bool(forKey: KinetiqTelemetry.consentKey))
+        XCTAssertNil(defaults.object(forKey: KinetiqTelemetry.usageConsentRevisionKey))
+        await telemetry.shutdown()
+    }
+
+    func testRecordDropsUnconsentedActionsWithoutReplayAndRecordsTypedActionAfterGrant() async throws {
+        let (defaults, _) = try preferences()
+        let provider = RecordingHostAnalytics()
+        let telemetry = owner(defaults, provider: provider)
+        telemetry.record(.studio(.imported))
+        await telemetry.initialize()
+        telemetry.record(.feature(.effectsLibrary))
+        telemetry.record(.effectPlayed(effectID: "custom", trigger: .manual))
+        let denied = await provider.calls
+        XCTAssertTrue(denied.isEmpty)
+        await telemetry.setAnalyticsConsent(true)
+        telemetry.record(.studio(.saved))
+        await waitForUsage(provider)
+        let events = await provider.events
+        let usage = events.filter { FirebaseAnalyticsPolicy.parameters(for: $0) != nil }
+        XCTAssertEqual(usage.map(\.name), ["studio_action"])
+        XCTAssertEqual(usage.map { FirebaseAnalyticsPolicy.parameters(for: $0) }, [["action": "saved"]])
+        XCTAssertTrue(usage.allSatisfy { $0.properties["product_id"] != nil })
+        await telemetry.shutdown()
+    }
+
+    func testSameTurnStudioSaveAndCustomCloseSelectionBothArriveExactlyOnce() async throws {
+        let (defaults, _) = try preferences()
+        let provider = RecordingHostAnalytics()
+        let telemetry = owner(defaults, provider: provider)
+        await telemetry.initialize()
+        await telemetry.setAnalyticsConsent(true)
+        // The Studio's Use when… action emits both before yielding the main actor.
+        telemetry.record(.studio(.saved))
+        telemetry.record(.effectSelected(effectID: "custom", trigger: .close))
+        await waitForUsage(provider, count: 2)
+        await telemetry.privacySettingsOpened()
+        let events = await provider.events
+        let usage = events.filter { FirebaseAnalyticsPolicy.parameters(for: $0) != nil && $0.name != "feature_used" }
+        XCTAssertEqual(usage.count, 2)
+        XCTAssertEqual(usage.filter { $0.name == "studio_action" }.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) },
+                       [["action": "saved"]])
+        XCTAssertEqual(usage.filter { $0.name == "effect_selected" }.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) },
+                       [["effect_id": "custom", "trigger": "close"]])
+        await telemetry.shutdown()
+    }
+
+    func testSameTurnStudioLayerAdditionAndImportBothArriveExactlyOnce() async throws {
+        let previousOwner = KinetiqTelemetry.application
+        defer { KinetiqTelemetry.application = previousOwner }
+        let (defaults, _) = try preferences()
+        let provider = RecordingHostAnalytics()
+        let telemetry = owner(defaults, provider: provider)
+        await telemetry.initialize()
+        await telemetry.setAnalyticsConsent(true)
+        KinetiqTelemetry.application = telemetry
+        let editor = StudioEditorModel(document: StudioDocument())
+        // The real editor hook and import completion occur in the same actor turn.
+        XCTAssertNotNil(editor.addLayer(EffectPreset(effect: .wobbly)))
+        telemetry.record(.studio(.imported))
+        XCTAssertEqual(editor.document.layers.count, 1)
+        XCTAssertNil(editor.errorMessage)
+        await waitForUsage(provider, count: 2)
+        await telemetry.privacySettingsOpened()
+        let events = await provider.events
+        let usage = events.filter { FirebaseAnalyticsPolicy.parameters(for: $0) != nil && $0.name != "feature_used" }
+        XCTAssertEqual(usage.map(\.name), ["studio_action", "studio_action"])
+        XCTAssertEqual(usage.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0)?["action"] }.sorted(),
+                       ["imported", "layer_added"])
+        await telemetry.shutdown()
+    }
+
+    func testRecordWithdrawalImmediatelyCancelsPendingActionAndRegrantDoesNotReplay() async throws {
+        let (defaults, _) = try preferences()
+        let provider = RecordingHostAnalytics()
+        let telemetry = owner(defaults, provider: provider)
+        await telemetry.initialize()
+        await telemetry.setAnalyticsConsent(true)
+        for _ in 0..<KinetiqTelemetry.maximumPendingUsageTasks {
+            telemetry.record(.studio(.exported))
+        }
+        await telemetry.setAnalyticsConsent(false)
+        telemetry.record(.studio(.imported))
+        await telemetry.setAnalyticsConsent(true)
+        await telemetry.privacySettingsOpened()
+        let events = await provider.events
+        XCTAssertEqual(events.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) }, [["feature": "privacy_settings"]])
+        XCTAssertFalse(events.contains { $0.name == "studio_action" })
+        await telemetry.shutdown()
+    }
+
+    func testRecordKillSwitchCancelsPendingActionWithoutReplayOnResume() async throws {
+        let (defaults, _) = try preferences()
+        let provider = RecordingHostAnalytics()
+        let telemetry = owner(defaults, provider: provider)
+        await telemetry.initialize()
+        await telemetry.setAnalyticsConsent(true)
+        for _ in 0..<KinetiqTelemetry.maximumPendingUsageTasks {
+            telemetry.record(.effectPlayed(effectID: "custom", trigger: .close))
+        }
+        await telemetry.setEnabled(false)
+        telemetry.record(.quality(.ultra))
+        XCTAssertTrue(telemetry.analyticsConsent)
+        await telemetry.setEnabled(true)
+        await telemetry.privacySettingsOpened()
+        let events = await provider.events
+        XCTAssertEqual(events.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) }, [["feature": "privacy_settings"]])
+        XCTAssertFalse(events.contains { ["effect_played", "quality_changed"].contains($0.name) })
+        await telemetry.shutdown()
+    }
+
+    func testRecordShutdownCancelsPendingActionAndCannotBeReinitializedOrReplay() async throws {
+        let (defaults, _) = try preferences()
+        let provider = RecordingHostAnalytics()
+        let telemetry = owner(defaults, provider: provider)
+        await telemetry.initialize()
+        await telemetry.setAnalyticsConsent(true)
+        for _ in 0..<KinetiqTelemetry.maximumPendingUsageTasks {
+            telemetry.record(.screenSaver(.previewStarted))
+        }
+        await telemetry.shutdown()
+        let stopped = await provider.events
+        telemetry.record(.studio(.saved))
+        await telemetry.initialize()
+        await telemetry.setAnalyticsConsent(true)
+        await telemetry.privacySettingsOpened()
+        await telemetry.shutdown()
+        let after = await provider.events
+        XCTAssertEqual(after, stopped)
+        XCTAssertTrue(after.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) }.isEmpty)
+        XCTAssertFalse(telemetry.ready)
+        XCTAssertTrue(defaults.bool(forKey: KinetiqTelemetry.consentKey), "Shutdown does not revoke consent")
+    }
+
+    func testRecordBoundsBurstToFourImmediateCoreSubmissionsAndDoesNotQueueRemainder() async throws {
+        let (defaults, _) = try preferences()
+        let provider = RecordingHostAnalytics(block: .capture)
+        let telemetry = owner(defaults, provider: provider)
+        await telemetry.initialize()
+        await telemetry.setAnalyticsConsent(true)
+        telemetry.record(.studio(.saved))
+        await waitForUsage(provider)
+        let first = await provider.events
+        guard first.contains(where: { $0.name == "studio_action" }) else {
+            await telemetry.shutdown()
+            return
+        }
+        await provider.waitUntilBlocked()
+        for _ in 0..<256 {
+            telemetry.record(.effectPlayed(effectID: "custom", trigger: .manual))
+        }
+        let blocked = await provider.events
+        XCTAssertEqual(blocked.filter { $0.name == "studio_action" }.count, 1)
+                XCTAssertLessThanOrEqual(blocked.filter { FirebaseAnalyticsPolicy.parameters(for: $0) != nil }.count,
+                                                                 KinetiqTelemetry.maximumPendingUsageTasks)
+        await provider.release()
+                await waitForUsage(provider, count: KinetiqTelemetry.maximumPendingUsageTasks)
+        // The awaited real-core action is also a barrier behind the retained capture.
+        await telemetry.privacySettingsOpened()
+        let events = await provider.events
+                let usage = events.filter { FirebaseAnalyticsPolicy.parameters(for: $0) != nil }
+                XCTAssertEqual(usage.count, KinetiqTelemetry.maximumPendingUsageTasks + 1)
+                XCTAssertEqual(usage.filter { $0.name == "studio_action" }.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) },
+                                             [["action": "saved"]])
+                XCTAssertEqual(usage.filter { $0.name == "effect_played" }.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) },
+                                             Array(repeating: ["effect_id": "custom", "trigger": "manual"],
+                                                         count: KinetiqTelemetry.maximumPendingUsageTasks - 1))
+                XCTAssertEqual(usage.filter { $0.name == "feature_used" }.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) },
+                                             [["feature": "privacy_settings"]])
+        await telemetry.shutdown()
+    }
+
+    func testRecordRejectsArbitraryEffectIDsWithoutConsumingThePendingSlot() async throws {
+        let (defaults, _) = try preferences()
+        let provider = RecordingHostAnalytics()
+        let telemetry = owner(defaults, provider: provider)
+        await telemetry.initialize()
+        await telemetry.setAnalyticsConsent(true)
+        for id in ["off", "random", "Private composition", UUID().uuidString, #filePath, "catalog:unknown"] {
+            telemetry.record(.effectPlayed(effectID: id, trigger: .manual))
+        }
+        telemetry.record(.screenSaver(.enabled))
+        await waitForUsage(provider)
+        let events = await provider.events
+        XCTAssertEqual(events.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) }, [["action": "enabled"]])
+        XCTAssertEqual(events.filter { FirebaseAnalyticsPolicy.parameters(for: $0) != nil }.map(\.name), ["screensaver_action"])
+        await telemetry.shutdown()
+    }
+
+    func testRealOwnerCorePreservesAllSixUsageNamesAndSharedPolicyStripsActualMetadata() async throws {
+        let id = try XCTUnwrap(LibraryEffect.all.first).id
+        let cases: [(KinetiqUsageEvent, String, [String: String])] = [
+            (.feature(.effectsLibrary), "feature_used", ["feature": "effects_library"]),
+            (.effectSelected(effectID: id, trigger: .close), "effect_selected", ["effect_id": id, "trigger": "close"]),
+            (.effectPlayed(effectID: id, trigger: .manual), "effect_played", ["effect_id": id, "trigger": "manual"]),
+            (.studio(.saved), "studio_action", ["action": "saved"]),
+            (.screenSaver(.disabled), "screensaver_action", ["action": "disabled"]),
+            (.quality(.balanced), "quality_changed", ["quality": "balanced"])
+        ]
+        for (action, name, parameters) in cases {
+            let (defaults, _) = try preferences()
+            let provider = RecordingHostAnalytics()
+            let telemetry = owner(defaults, provider: provider)
+            await telemetry.initialize()
+            await telemetry.setAnalyticsConsent(true)
+            telemetry.record(action)
+            await waitForUsage(provider)
+            let events = await provider.events
+            let usage = events.filter { FirebaseAnalyticsPolicy.parameters(for: $0) != nil }
+            XCTAssertEqual(usage.count, 1)
+            let event = try XCTUnwrap(usage.first)
+            XCTAssertEqual(event.name, name)
+            XCTAssertNotNil(event.properties["product_id"])
+            XCTAssertEqual(event.properties["platform"], .string("macOS"))
+            XCTAssertEqual(FirebaseAnalyticsPolicy.parameters(for: event), parameters)
+            for key in ["os_version", "hardware_model", "hardware_architecture", "window_title", "path", "content"] {
+                XCTAssertNil(event.properties[key], key)
+            }
+            await telemetry.shutdown()
+        }
+    }
+
+    /// Each operation gets its own real owner so the bounded submissions cannot hide an action.
+    func testActualStudioEditorHooksRecordSuccessfulLayerTrackAndKeyframeEdits() async throws {
+        let layer = StudioLayer(preset: EffectPreset(effect: .wobbly))
+        var trackedLayer = layer
+        trackedLayer.preset.tracks = [AnimationTrack(parameter: "amplitude", keyframes: [
+            AnimationKeyframe(time: 0, value: layer.preset.value("amplitude", at: 0)),
+            AnimationKeyframe(time: 1, value: layer.preset.value("amplitude", at: 1))
+        ])]
+        let cases: [(StudioDocument, String, (StudioEditorModel) -> Void)] = [
+            (StudioDocument(), "layer_added", { XCTAssertNotNil($0.addLayer(EffectPreset(effect: .wobbly))) }),
+            (StudioDocument(layers: [layer]), "layer_removed", { $0.removeLayer(layer.id) }),
+            (StudioDocument(layers: [layer]), "keyframe_added", { $0.addTrack(layer: layer.id, parameter: "amplitude") }),
+            (StudioDocument(layers: [trackedLayer]), "keyframe_added", {
+                $0.addKeyframe(layer: layer.id, parameter: "amplitude", time: 0.5)
+            })
+        ]
+        let previousOwner = KinetiqTelemetry.application
+        defer { KinetiqTelemetry.application = previousOwner }
+        for (document, action, edit) in cases {
+            let (defaults, _) = try preferences()
+            let provider = RecordingHostAnalytics()
+            let telemetry = owner(defaults, provider: provider)
+            await telemetry.initialize()
+            await telemetry.setAnalyticsConsent(true)
+            KinetiqTelemetry.application = telemetry
+            let editor = StudioEditorModel(document: try document.validated())
+            edit(editor)
+            XCTAssertNotEqual(editor.document, document)
+            XCTAssertNil(editor.errorMessage)
+            await waitForUsage(provider)
+            let events = await provider.events
+            let usage = events.filter { FirebaseAnalyticsPolicy.parameters(for: $0) != nil }
+            XCTAssertEqual(usage.map(\.name), ["studio_action"])
+            XCTAssertEqual(usage.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) }, [["action": action]])
+            XCTAssertEqual(editor.undoCount, 1)
+            await telemetry.shutdown()
+        }
+    }
+
+    func testActualStudioFailedCancelledDuplicateAndMissingTargetEditsDoNotCount() async throws {
+        var layer = StudioLayer(preset: EffectPreset(effect: .wobbly))
+        layer.preset.tracks = [AnimationTrack(parameter: "amplitude", keyframes: [
+            AnimationKeyframe(time: 0, value: layer.preset.value("amplitude", at: 0)),
+            AnimationKeyframe(time: 1, value: layer.preset.value("amplitude", at: 1))
+        ])]
+        let document = try StudioDocument(layers: [layer]).validated()
+        let edits: [(StudioEditorModel) -> Void] = [
+            { XCTAssertNil($0.addLayer(EffectPreset(effect: .wobbly), at: -1)) },
+            { $0.removeLayer(UUID()) },
+            { $0.addTrack(layer: layer.id, parameter: "amplitude") },
+            { $0.addTrack(layer: layer.id, parameter: "private_parameter") },
+            { $0.addTrack(layer: UUID(), parameter: "amplitude") },
+            { $0.addKeyframe(layer: layer.id, parameter: "amplitude", time: 0) },
+            { $0.addKeyframe(layer: layer.id, parameter: "amplitude", time: -0.5) },
+            { $0.addKeyframe(layer: layer.id, parameter: "missing_track", time: 0.5) },
+            { $0.addKeyframe(layer: UUID(), parameter: "amplitude", time: 0.5) },
+            { editor in XCTAssertFalse(editor.perform { _ in throw CancellationError() }) },
+            { editor in XCTAssertFalse(editor.perform { $0.duration = .nan }) },
+            { editor in XCTAssertTrue(editor.perform { _ in }) }
+        ]
+        let previousOwner = KinetiqTelemetry.application
+        defer { KinetiqTelemetry.application = previousOwner }
+        for edit in edits {
+            let (defaults, _) = try preferences()
+            let provider = RecordingHostAnalytics()
+            let telemetry = owner(defaults, provider: provider)
+            await telemetry.initialize()
+            await telemetry.setAnalyticsConsent(true)
+            KinetiqTelemetry.application = telemetry
+            let editor = StudioEditorModel(document: document)
+            edit(editor)
+            XCTAssertEqual(editor.document, document)
+            XCTAssertEqual(editor.undoCount, 0)
+            // A wrongly emitted action must not appear alongside this marker.
+            telemetry.record(.feature(.privacySettings))
+            await waitForUsage(provider)
+            let events = await provider.events
+            let usage = events.filter { FirebaseAnalyticsPolicy.parameters(for: $0) != nil }
+            XCTAssertEqual(usage.map(\.name), ["feature_used"])
+            XCTAssertEqual(usage.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) }, [["feature": "privacy_settings"]])
+            await telemetry.shutdown()
+        }
     }
 
     func testDeniedStartupNoProviderNoIdentityAndRepeatedInitialization() async throws {
@@ -305,14 +738,17 @@ final class KinetiqTelemetryTests: XCTestCase {
 
     func testGrantPersistsOnlyAfterSuccessfulStartAndSingleConcurrentInitialize() async throws {
         let (defaults, _) = try preferences()
+        defaults.removeObject(forKey: KinetiqTelemetry.usageConsentRevisionKey)
         let provider = RecordingHostAnalytics(block: .start)
         let telemetry = owner(defaults, provider: provider)
         await telemetry.initialize()
         let grant = Task { await telemetry.setAnalyticsConsent(true) }
         await provider.waitUntilBlocked()
         XCTAssertFalse(defaults.bool(forKey: KinetiqTelemetry.consentKey))
+        XCTAssertNil(defaults.object(forKey: KinetiqTelemetry.usageConsentRevisionKey))
         XCTAssertFalse(telemetry.analyticsConsent)
         XCTAssertTrue(telemetry.busy)
+        telemetry.record(.studio(.saved))
         let repeated = Task { await telemetry.initialize() }
         await telemetry.setAnalyticsConsent(true)
         await provider.release()
@@ -320,8 +756,12 @@ final class KinetiqTelemetryTests: XCTestCase {
         await repeated.value
         XCTAssertTrue(telemetry.analyticsConsent)
         XCTAssertTrue(defaults.bool(forKey: KinetiqTelemetry.consentKey))
+        XCTAssertEqual(defaults.object(forKey: KinetiqTelemetry.usageConsentRevisionKey) as? Int, 2)
         let calls = await provider.calls
         XCTAssertEqual(calls.filter { $0 == "start" }.count, 1)
+        let events = await provider.events
+        XCTAssertTrue(events.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) }.isEmpty,
+                  "Actions attempted during provider startup must never replay")
         await telemetry.shutdown()
     }
 
@@ -879,8 +1319,9 @@ private actor ContractIdentity: InstallationIdentityStore {
     func delete() { accesses += 1; identity = nil }
 }
 
-private actor RecordingHostAnalytics: AnalyticsProvider {
-    enum Stage { case start, purge }
+/// Internal to the test target so GA4 migration contracts reuse this real-core boundary.
+actor RecordingHostAnalytics: AnalyticsProvider {
+    enum Stage { case start, purge, capture }
     nonisolated let name = "Host contract recording boundary"
     private let block: Stage?
     private let failStart: Bool
@@ -900,10 +1341,11 @@ private actor RecordingHostAnalytics: AnalyticsProvider {
         await pause(.start)
         if failStart { throw ContractFailure.unavailable }
     }
-    func capture(_ event: TelemetryEvent) {
+    func capture(_ event: TelemetryEvent) async {
         events.append(event)
         calls.append("capture:" + event.name)
         if event.name == "feature_used" { featureProperties = event.properties }
+        if FirebaseAnalyticsPolicy.parameters(for: event) != nil { await pause(.capture) }
     }
     func flush() { calls.append("flush") }
     func stop(purge: Bool) async {

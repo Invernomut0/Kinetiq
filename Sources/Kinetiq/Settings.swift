@@ -129,8 +129,9 @@ final class Settings {
     static let closeSpeedRange: ClosedRange<Double> = 0.25...3
     static let chaosIdleRange = 1...60
     static let defaultCloseEffect = CloseEffectChoice.effect(.fire)
-    /// Kinetiq's own windows (the Setup window) start excluded, like before exclusions were configurable.
-    static let defaultExcludedApps = ["io.github.invernomut0.Kinetiq"]
+    /// Keep the management window usable even while other windows are animated.
+    static let protectedExclusionID = "io.github.invernomut0.Kinetiq"
+    static let defaultExcludedApps = [protectedExclusionID]
 
     private static let defaultTilesX = 16
     private static let defaultTilesY = 14
@@ -287,8 +288,13 @@ final class Settings {
 
     /// Bundle identifiers of the apps whose windows get no effect at all.
     var excludedApps: [String] {
-        get { defaults.stringArray(forKey: "excludedApps") ?? Self.defaultExcludedApps }
-        set { defaults.set(newValue, forKey: "excludedApps") }
+        get { Self.protectingOwnWindows(defaults.stringArray(forKey: "excludedApps") ?? Self.defaultExcludedApps) }
+        set { defaults.set(Self.protectingOwnWindows(newValue), forKey: "excludedApps") }
+    }
+
+    /// Also repairs legacy lists whose user-removable Kinetiq rule was deleted.
+    private static func protectingOwnWindows(_ apps: [String]) -> [String] {
+        apps.contains(protectedExclusionID) ? apps : defaultExcludedApps + apps
     }
 
     /// The screen saver that makes the desktop fall apart starts after `chaosIdleMinutes` without input.
@@ -369,7 +375,14 @@ final class Settings {
 /// Whether the app owning a window is on the exclusion list; read straight from the defaults so it is cheap in the event tap.
 enum AppExclusions {
     static func contains(pid: pid_t) -> Bool {
-        guard let id = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return false }
-        return (UserDefaults.standard.stringArray(forKey: "excludedApps") ?? Settings.defaultExcludedApps).contains(id)
+        if pid == ProcessInfo.processInfo.processIdentifier { return true }
+        return contains(bundleID: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier)
+    }
+
+    /// The mandatory rule applies even to externally edited or legacy preferences.
+    static func contains(bundleID: String?, defaults: UserDefaults = .standard) -> Bool {
+        guard let bundleID else { return false }
+        return bundleID == Settings.protectedExclusionID
+            || (defaults.stringArray(forKey: "excludedApps") ?? Settings.defaultExcludedApps).contains(bundleID)
     }
 }

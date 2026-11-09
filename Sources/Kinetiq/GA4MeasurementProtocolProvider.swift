@@ -165,6 +165,8 @@ final class GA4MeasurementProtocolProvider: AnalyticsProvider {
     nonisolated let name = "Google Analytics 4 Measurement Protocol"
     private let configuration: GA4MeasurementProtocolConfiguration
     private let statusChanged: (@MainActor (TransportStatus) -> Void)?
+    private let countrySource: @MainActor () -> GA4ConfiguredCountry?
+    private(set) var configuredCountry: GA4ConfiguredCountry?
     private(set) var transportStatus: TransportStatus = .stopped
     private var foregroundMeasurement = GA4ForegroundMeasurement()
     private var foregroundObservers: [NSObjectProtocol] = []
@@ -178,9 +180,11 @@ final class GA4MeasurementProtocolProvider: AnalyticsProvider {
     var inFlightRequests: Int { tasks.count }
 
     init(configuration: GA4MeasurementProtocolConfiguration,
-         statusChanged: (@MainActor (TransportStatus) -> Void)? = nil) {
+         statusChanged: (@MainActor (TransportStatus) -> Void)? = nil,
+         countrySource: @escaping @MainActor () -> GA4ConfiguredCountry? = { GA4ConfiguredCountry.current() }) {
         self.configuration = configuration
         self.statusChanged = statusChanged
+        self.countrySource = countrySource
     }
 
     /// Starting creates only local ephemeral state, never a request or a native SDK instance.
@@ -201,6 +205,7 @@ final class GA4MeasurementProtocolProvider: AnalyticsProvider {
         session = URLSession(configuration: transport, delegate: GA4NoRedirectDelegate(), delegateQueue: nil)
         clientID = installationID
         started = true
+        configuredCountry = countrySource()
         foregroundMeasurement.start(isForeground: NSApplication.shared.isActive)
         observeForeground()
         updateStatus(.ready)
@@ -222,7 +227,7 @@ final class GA4MeasurementProtocolProvider: AnalyticsProvider {
             return
         }
         guard let request = try? Self.makeRequest(configuration: configuration, clientID: clientID,
-                                                 event: event, timing: timing) else {
+                                                 event: event, timing: timing, country: configuredCountry) else {
             updateStatus(.droppedInvalidEvent)
             return
         }
@@ -255,6 +260,7 @@ final class GA4MeasurementProtocolProvider: AnalyticsProvider {
         started = false
         generation = UUID()
         clientID = nil
+        configuredCountry = nil
         for observer in foregroundObservers { NotificationCenter.default.removeObserver(observer) }
         foregroundObservers.removeAll()
         foregroundMeasurement.stop()
@@ -306,7 +312,8 @@ final class GA4MeasurementProtocolProvider: AnalyticsProvider {
     /// Optional timing comes only from local measurement, never from private event properties.
     nonisolated static func makeRequest(configuration: GA4MeasurementProtocolConfiguration,
                                         clientID: UUID, event: TelemetryEvent,
-                                        timing: GA4EventTiming? = nil) throws -> URLRequest? {
+                                        timing: GA4EventTiming? = nil,
+                                        country: GA4ConfiguredCountry? = nil) throws -> URLRequest? {
         guard event.installationID == clientID,
               let approved = FirebaseAnalyticsPolicy.parameters(for: event) else { return nil }
         var parameters: [String: Any] = approved
@@ -328,11 +335,14 @@ final class GA4MeasurementProtocolProvider: AnalyticsProvider {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
+        var payload: [String: Any] = [
             "client_id": webClientID(for: clientID),
             "consent": ["ad_user_data": "DENIED", "ad_personalization": "DENIED"],
-            "events": [["name": "feature_used", "params": parameters]]
-        ])
+            "events": [["name": event.name, "params": parameters]]
+        ]
+        // Standard GA4 geography, never an event parameter or inferred city/subdivision.
+        if let country { payload["user_location"] = ["country_id": country.code] }
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         return request
     }
 }

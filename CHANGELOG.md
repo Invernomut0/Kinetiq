@@ -5,6 +5,75 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — Build 44
+
+### Changed
+
+- Owner-authorized macOS configured country for GA4's standard **Country** dimension: only top-level JSON `user_location: {country_id: <ISO 3166-1 alpha-2>}`, not a custom country parameter/definition. Google's fields are optional; country alone is valid and its subdivision recommendation does not authorize an invented `region_id` or city.
+- GA4 requires fresh **consent revision 3**, default **Don't Share**; prior revision-2 grants stay off until a new disclosed choice. Native Firebase remains revision **2** with unchanged signing gates; existing mode-specific consent/identity namespaces are preserved.
+- Main-task source contract: typed optional `GA4ConfiguredCountry`, reading only `Locale.current.region?.identifier` inside consented provider start after `configuration.enabled && privacy.analyticsEnabled`. Snapshot only in memory until stop/revocation, then clear; refresh on next consented start. Static builder receives explicit country, default `nil`; nil/invalid country omits `user_location`.
+- Configured country is not citizenship or physical location and can override GA4 attribution/distort maps. No language/time-zone fallback, GPS, IP lookup, external geolocation service, new network permission, `ip_override`, fabricated city or subdivision. Existing six events/five custom keys, owner/core/transport bounds and saver isolation remain unchanged.
+- The closed catalog accepts only 249 assigned ISO country/territory codes, excluding macroregions/reserved/user-assigned values. Host privacy metadata conservatively declares non-tracking coarse-country analytics linked to the pseudonymous client ID, not physical location or a new permission.
+
+### Verification status
+
+- **Task 24 Done — Copilot**, implementation/local acceptance only. Final Release **414 = 230 app + 36 Effects + 148 Core**, zero failures/skips, includes **89 analytics contracts** and seven Country/manifest regressions (`/tmp/kinetiq-country-final-release.log`). Earlier 413-test full suite also passed; the initial focused compile's two incomplete negative test events were corrected before acceptance.
+- Matching LLVM **Lines**: country validator 85.71%, GA4 77.30%, owner 97.24%, privacy UI 89.69%, taxonomy 100%, native adapter 20% (`/tmp/kinetiq-country-coverage.txt`, `/tmp/kinetiq-country-final-release.profdata`). Actual user-region getter/default closures and live delivery remain unexecuted; not exhaustive, Debug or Metal coverage.
+- Actual universal app/saver **0.5.1/44**, x86_64 + arm64, strict signatures, bundle and signed disabled smoke passed (`/tmp/kinetiq-country-build.log`; direct checks). No normal app restart, real consent/preferences change or live event.
+- Owner-requested **task 25 Done — Copilot**: [GitHub v0.5.1 Latest release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.1) published from verified local DMG, with uploaded DMG/checksum states, sizes and server SHA-256 digests matching local bytes. PR #7 merged normally at `2a8d3f4d937111f5602d1a50424cec53a37a4d30`; annotated tag targets that exact commit. Repository remains private and requires authorized login. Installation docs explain source archives, permissions, menu-bar launch/quit, non-notarized/ad-hoc signatures, preferred Open Anyway and targeted `xattr -dr com.apple.quarantine` versus broad `xattr -cr`; no global Gatekeeper disablement. G2/F2 owner review remains open.
+- Final post-documentation **90 passed = 89 analytics + 1 actual captured-README optics**, zero failures/skips (`/tmp/kinetiq-country-postdocs.log`, actual optics 2.672 seconds). DMG integrity/read-only byte comparison, app/saver signatures and universal 0.5.1/44 metadata passed; checksum reports OK (`/tmp/kinetiq-country-dmg.log`). Exact tag/asset digests are recorded in `docs/telemetry.md`; publication-record documentation does not move the tag or change assets.
+- Hosted tag `Release` and `Telemetry host gates` workflows report failure, not a hosted pass. Local verified artifacts were published independently; no billing settings/checks/protections were changed.
+- Final private-download/publication README clarification rechecked with actual capture-to-Metal optics: **1 test, zero failures/skips, exit 0, 2.867 seconds** (`/tmp/kinetiq-country-publication-readme.log`), unchanged assertions.
+- Current PR **#7** hosted `host` job did not start because of GitHub account billing/spending limits; no hosted tests/build ran. Owner Billing & plans review/rerun remains open. Local acceptance is separate; no account settings or branch protections were changed.
+
+## [0.5.0] — Build 43
+
+### Added
+
+- Owner-authorized product-usage scope with a fresh **revision-2**, default-off opt-in in each transport mode. Older grants do not silently extend: an updated disclosed choice is required, with **Don't Share** default and legacy mode-specific consent/identity preserved.
+- Typed closed custom events `feature_used`, `effect_played`, `effect_selected`, `studio_action`, `screensaver_action` and `quality_changed`; only `feature`, `effect_id`, `trigger`, `action`, `quality`. IDs use the real 66-entry library plus `custom`/`wobbly_classic`; `off`/`random` are selection-only. No user content, custom names, app IDs, window metadata, precise location, hardware metadata or free-form properties.
+- Successful playback starts separated from selections and manual/native/layout triggers; automatic preview loops excluded. Actual Studio/Lab visits and validated edits/save/import/export, app-side saver enable/disable/preview (not OS host runs), and explicit quality choices (not automatic adaptation).
+- Practical manual GA4 custom-definition/Explore instructions, reporting latency and geography limitations. No external geolocation service, GPS/IP lookup or location overrides; MP-only City/Country may remain `(not set)`. Native fallback may derive geography only if actually enabled behind unchanged gates.
+
+### Boundaries and verification
+
+- Reuse the single AppDelegate owner through a weak static hook and unchanged generic SDK core. At most four immediate product-event tasks, no disk queue/retry/replay; existing four-request GA4 cap retained. Best-effort/drop-prone counters are not an exact usage census. Native signing gates unchanged; no saver SDK.
+- Complete final Release: **407 passed = 223 app + 36 Effects + 148 Core, zero failures/skips**, including **82 analytics contracts** and same-turn save/assignment and layer/import regressions (`/tmp/kinetiq-usage-final-acceptance.log`). Earlier native capture/window-origin failures remain documented; all 15 runtime tests passed in isolation, then the full suite passed unchanged assertions. No runtime fix or exclusion bypass was made to obtain the rerun.
+- After the final README update, **83 passed = 82 analytics + 1 actual captured-README optics**, zero failures/skips, exit 0 (`/tmp/kinetiq-usage-postdocs.log`).
+- Hosted PR #6 `host` CI was blocked before job startup by GitHub account billing/spending limits. No hosted tests ran; owner review/rerun is required. No account settings or branch protections were changed.
+- LLVM **Lines**: taxonomy **100.00%**, owner **97.56%**, GA4 provider **77.09%**, native adapter **20.00%**, privacy UI **89.69%** (`/tmp/kinetiq-usage-coverage.txt`, matching `/tmp/kinetiq-usage-final-acceptance.profdata`). Not exhaustive, live-delivery or Metal branch coverage.
+- Universal app/saver **0.5.0/build 43**, each x86_64 + arm64, strict signatures, bundle verifier and signed disabled smoke passed (`/tmp/kinetiq-usage-build.log`; direct artifact checks). No normal user-app restart, real consent/preferences change, live probe or console automation. HTTP 2xx is not ingestion proof; G2/F2 remain owner Review. No new DMG/tag/release or hosted CI success is claimed. Historical acceptance below is retained, not recertified for the broader scope.
+
+## [0.4.2] — Build 42
+
+### Fixed
+
+- Layouts capture admission now includes ScreenCaptureKit's 100-point shadow room on every side. Previously an additional capture could pass the opaque-window estimate, exceed the total 32 MP after allocation, and abort the entire overview even at Low/Auto and nominal thermal pressure. Extra windows that do not fit are skipped, retaining already prepared captures; the primary window still fails explicitly if too large. Native pixels, the 32 MP total and eight-window maximum are preserved.
+- Separate capture-memory, texture-allocation, renderer-busy, invalid-resource and critical-thermal errors instead of claiming every failure is a quality-disabled effect. Layouts displays the admitted window count.
+- Clear previous operation errors when stopping, retrying, editing a Studio document or opening another effect page. A quality update that reopens the thermal gate clears only the thermal refusal; unrelated failures remain visible until a new operation.
+
+### Verification
+
+- A native regression with four real, test-owned README windows reproduced the exact former message in both Low and Auto before the fix: one test, six assertion failures (`/tmp/kinetiq-layout-red.log`). The test restricts selection to its helper PID, never capturing user windows.
+- Complete Release: **380 passed — 196 app + 36 Effects + 148 Core; zero failures/skips** (`/tmp/kinetiq-layout-final-release.log`). Actual desktop Ripple → Incinerate runs at Low/Auto, clears the previous failure, renders overlapping layers, restores the exact helper-window origin and retains a specific critical-thermal refusal. Real captures also verify shadow estimation, bounded overview admission and selective thermal-error recovery. Initial focused suites: 55 passed (`/tmp/kinetiq-layout-focused.log`).
+- Universal app/saver **0.4.2 / 42**, both x86_64 + arm64 and strict signatures passed; bundle verifier and signed disabled smoke passed (`/tmp/kinetiq-layout-build.log`). No normal app restart, consent change or live analytics was automated.
+- LLVM **Lines**: runtime **75.74%**, capture **75.00%**, compositor **96.47%**, Studio UI **59.15%**, library UI **67.31%** (`/tmp/kinetiq-layout-final-coverage.txt`, profile `/tmp/kinetiq-layout-final-release.profdata`). Not exhaustive integration, all display configurations or Metal shader branch coverage.
+- After the README update, all 15 runtime tests and the real captured-README optics regression passed again: **16 tests, zero failures/skips, exit 0** (`/tmp/kinetiq-layout-postdocs.log`).
+
+## [0.4.1] — Build 41
+
+### Fixed
+
+- Low quality and the entire Auto ladder now reduce resource use without disabling expensive effects. The former final Auto gate could prevent further GPU work and thus the samples needed to recover, leaving effects unavailable. Adaptation now has 12 resource-only steps; the existing GPU thresholds and memory/capture limits are unchanged.
+- Serious thermal pressure still caps quality at Low but permits effects. Critical thermal pressure retains the expensive-effects block and 15 Hz secondary ceiling, including for manual Ultra; cooling below critical reopens the gate without needing a GPU sample.
+- Kinetiq's own Settings/management windows are permanently excluded. The Rules entry is locked, model removal is rejected, settings reads/writes preserve the mandatory rule, and runtime checks protect Kinetiq even with legacy or externally edited exclusion lists. Other app rules and internal previews remain available.
+
+### Verification
+
+- Complete Release suite: **376 passed — 192 app + 36 Effects + 148 Core; zero failures/skips**, with real capture/Metal playback, Low-quality heavy-effect previews, critical thermal refusals, recovery and isolated persisted exclusion tests. Log: `/tmp/kinetiq-budget-release.log`.
+- Universal app and embedded saver: **x86_64 + arm64**, version **0.4.1 / 41**, both deep/strict signatures passed. Bundle verification and signed disabled smoke passed; no normal consented app launch or live analytics probe. Build log: `/tmp/kinetiq-budget-build.log`.
+- LLVM **Lines**: quality policy **98.75%**, Settings **94.09%**, SetupWindow **78.61%**, PerformanceView **96.46%** (`/tmp/kinetiq-budget-coverage.txt`). Not exhaustive integration or Metal shader branch coverage.
+
 ## [0.4.0] — Build 40
 
 ### Added

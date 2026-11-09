@@ -2,7 +2,118 @@
 
 Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (implementation).
 
-**Current GA4 Web transport — v0.3.4 / build 39:** **G1 Done (Copilot)** for verified
+**Published release — v0.5.1 / build 44:** task **25 Done**, owner **Copilot**.
+README installation/first-launch instructions, final captured-README optics and
+DMG/checksum verification are complete; PR #7 normal merge, annotated tag and
+[GitHub Latest release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.1)
+with matching server asset digests are verified. Repository stays private; login required.
+Prefer Open Anyway; targeted quarantine removal only for a trusted, verified copy,
+not broad `xattr -cr`, global Gatekeeper disablement or damaged/malware-warning bypass.
+
+**Configured-country GA4 — task 24 Done**, owner **Copilot**, implementation/local acceptance only.
+Use only consented `Locale.current.region?.identifier`, valid ISO 3166-1 alpha-2,
+as top-level `user_location.country_id` for standard Country, never a custom country
+event parameter/definition. Read inside provider start after configuration enablement
+and analytics consent, snapshot only in memory until stop/revocation, clear and
+refresh on next consented start. Typed optional `GA4ConfiguredCountry`; static builder
+takes explicit country defaulting to nil. Nil/invalid omits `user_location`, without
+language/time-zone fallback, GPS, IP lookup, external service, new network permission,
+`ip_override`, invented city or `region_id`. Country alone is valid; Google's region
+recommendation does not authorize fabrication. Configured country is not citizenship
+or physical location and can override GA4 attribution/distort maps.
+
+GA4 revision **3** requires a new disclosed explicit choice; prior revision-2 grants
+stay off, default **Don't Share**. Native revision **2**, signing gates, all existing
+consent/identity namespaces and six-event/five-key schema remain unchanged; no saver SDK.
+
+- **Done — Copilot:** complete Release **414 = 230 app + 36 Effects + 148 Core**, zero
+	failures/skips; **89 analytics contracts** with seven Country/manifest regressions.
+	Universal 0.5.1/44 app/saver, signatures/bundle/disabled smoke passed. Matching LLVM
+	Lines country 85.71%, provider 77.30%, owner 97.24%, privacy 89.69%, taxonomy 100%,
+	native 20%; actual Mac region getter/live delivery unexecuted. Exact logs/profile
+	in [task 24](docs/telemetry.md#local-acceptance--task-24).
+- **Done — Copilot (task 25 local):** final post-doc **90 passed**, zero failures/skips,
+	including real README optics (2.672 seconds); DMG integrity, read-only byte comparison,
+	universal 0.5.1/44 metadata and app/saver signatures passed, SHA-256 checksum OK.
+	Logs `/tmp/kinetiq-country-postdocs.log`, `/tmp/kinetiq-country-dmg.log`.
+- **Done — Copilot:** final private-download/publication README optical recheck:
+	**1 actual capture-to-Metal test passed**, zero failures/skips, exit 0, 2.867 seconds
+	(`/tmp/kinetiq-country-publication-readme.log`), unchanged assertions.
+- **Done — Copilot (task 25 remote):** PR #7 normal merge at `2a8d3f4`, annotated
+	`v0.5.1` on that exact commit, Latest published/non-draft/non-prerelease verified.
+	DMG/checksum uploaded states, sizes and SHA-256 match local bytes; exact evidence
+	in [task 25](docs/telemetry.md#release-publication--task-25). Tag/assets unchanged.
+- **Review — Lorenzo:** current PR **#7** `host` CI did not start due to account
+	billing/spending limits; no hosted build/tests. Review Billing & plans and rerun
+	Actions; local verification is separate and no protections/account settings change.
+- **Review — Lorenzo (G2/F2):** live ingestion/privacy/distribution/native signing
+	gates remain open. PR #6 is merged; its hosted job never started due to account
+	billing/spending limits. Review Billing & plans and rerun Actions; no hosted pass
+	or new PR number is implied. No normal app start, live probe, real consent change
+	or account/protection changes are authorized by release preparation.
+
+**Historical product analytics — v0.5.0 / build 43:** task **23 Done**, owner **Copilot**, implementation/local acceptance only; not build-44 acceptance.
+Implemented: revision-2 opt-in separately for GA4/native modes, old grants off until
+an updated explicit choice, default Don't Share; preserved legacy consent/identities.
+Six typed events cover actual visits, successful playback starts, separate selections,
+validated Studio edits/save/import/export, app-side saver actions (not OS host runs)
+and explicit quality choices (not auto adaptation). Closed five-property allowlist,
+66 library IDs plus custom/classic sentinels, selection-only off/random, no user
+content/app IDs/custom names/window metadata/hardware/precise location/free-form data.
+Single retained owner/weak hook, four immediate tasks/no disk queue, retry or replay, existing
+four-request cap, best-effort drops rather than exact census; core and native gates
+unchanged, no saver SDK. That historical version used no external geolocation service or location overrides;
+City/Country may be `(not set)`. Report setup is documented, not automated.
+
+- **Done — Copilot:** complete final Release **407 passed** (223 app + 36 Effects +
+	148 Core), zero failures/skips, including **82 analytics contracts** and same-turn
+	compound-action regressions (`/tmp/kinetiq-usage-final-acceptance.log`). Earlier native
+	capture/window-origin failures are retained in the telemetry guide; all 15 runtime
+	tests and the final full suite passed unchanged assertions, without stopping the app.
+- **Done — Copilot:** matching LLVM **Lines** taxonomy 100%, owner 97.56%, GA4 77.09%,
+	native adapter 20.00%, privacy UI 89.69% (`/tmp/kinetiq-usage-coverage.txt`, profile
+	`/tmp/kinetiq-usage-final-acceptance.profdata`); not exhaustive/live/Metal coverage.
+- **Done — Copilot:** universal app/saver 0.5.0/43, strict signatures, bundle verifier
+	and signed disabled smoke passed (`/tmp/kinetiq-usage-build.log`; direct checks).
+	No normal user-app restart, real consent change, live probe or console automation;
+	G2/F2 remain owner Review, not ingestion/distribution acceptance.
+- **Done — Copilot:** post-documentation **83 passed** (82 analytics + 1 actual
+	captured-README optics), zero failures/skips (`/tmp/kinetiq-usage-postdocs.log`).
+	Publication is tracked separately in Git/PR history, on a dedicated firebase branch
+	followed by a normal merge; no new DMG/tag/release is requested.
+- **Review — Lorenzo:** hosted `host` CI on PR #6 was blocked before job startup by
+	GitHub account billing/spending limits. Review Billing & plans and rerun Actions;
+	this is not a hosted test pass. No account settings or protections were changed.
+
+**Layouts capture admission — v0.4.2 / build 42:** task 22 Done (Copilot, implementation/local acceptance).
+Reproduced the exact quality-budget error at nominal thermal pressure with four
+real helper-owned README windows, in both Low and Auto (six pre-fix assertion
+failures, `/tmp/kinetiq-layout-red.log`). Include shadow buffers in admission,
+skip extra captures rather than cancel the overview, distinguish failure causes
+and clear stale errors. The 32 MP total/eight-window maximum remain unchanged.
+Complete Release: **380 passed** (196 app + 36 Effects + 148 Core), zero failures/skips,
+including actual Low/Auto desktop Ripple → Incinerate playback and exact restoration.
+Universal app/saver, strict signatures, bundle verification and disabled smoke passed.
+Logs: `/tmp/kinetiq-layout-final-release.log`, `/tmp/kinetiq-layout-build.log`.
+LLVM Lines: runtime 75.74%, capture 75.00%, compositor 96.47%, Studio UI 59.15%,
+library UI 67.31% (`/tmp/kinetiq-layout-final-coverage.txt`), not exhaustive/Metal coverage.
+Publication is tracked separately in Git/PR history; no new DMG or normal app restart.
+
+**Budget and protected Settings — v0.4.1 / build 41:** task 21 Done (Copilot).
+Low/Auto keep expensive effects available with bounded reduced resources; only
+critical thermal pressure closes the gate. Kinetiq's exclusion is mandatory in
+UI, settings and runtime, including legacy lists. Focused policy/exclusion tests:
+20 passed; rendering/window suites: 55 executed, zero failures, one optional
+screenshot skip. Complete Release: **376 passed** (192 app + 36 Effects + 148 Core),
+zero failures/skips with native UI captures enabled. Universal app/saver both
+x86_64 + arm64, deep/strict signatures, bundle verification and signed disabled
+smoke passed. Logs: `/tmp/kinetiq-budget-release.log`, `/tmp/kinetiq-budget-build.log`.
+LLVM Lines: quality 98.75%, Settings 94.09%, SetupWindow 78.61%, Performance 96.46%
+(`/tmp/kinetiq-budget-coverage.txt`), not exhaustive integration/Metal coverage.
+
+**Historical privacy-settings-only GA4 Web transport — v0.3.4 / build 39:**
+The following G1 evidence is not acceptance of task 23 or the broader revision-2 scope.
+**G1 Done (Copilot)** for verified
 implementation and offline/local acceptance only; **G2 Review (Lorenzo)** for actual
 Web-stream ingestion and distribution/privacy.
 GA4 takes precedence with fresh default-off consent and separate app-local identity;
@@ -72,6 +183,11 @@ pin, without SDK source edits.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
+| 25 | GitHub v0.5.1 release and safe first-launch instructions | Done | Owner: Copilot. README installation, checksum, Gatekeeper and targeted quarantine guidance implemented; post-doc90 including real optics, DMG integrity/read-only byte comparison/universal metadata/signatures and checksum passed. PR #7 normal merge 2a8d3f4, annotated v0.5.1 and Latest publication with matching uploaded asset digests verified. Private repository requires authorized login; no visibility, real consent/live analytics, normal app lifecycle or billing/protection changes. Hosted CI failures remain separate owner Review. |
+| 24 | Consented macOS configured country for standard GA4 Country | Done | Owner: Copilot, implementation/local acceptance only. v0.5.1/build 44; GA4 revision 3/native 2, country-only top-level user_location, closed ISO249, no custom country key or fabricated location. Final Release414, 89 analytics; matching Lines and universal package/signatures/bundle/disabled smoke verified in docs/telemetry.md. Actual Mac-region getter/live delivery unexecuted. Final post-edit README optics and publication tracked in task25; G2/F2 remain owner Review. |
+| 23 | Revision-2 opt-in product analytics and practical GA4 reporting | Done | Owner: Copilot, implementation/local acceptance only. v0.5.0/build 43; six typed events/five-property allowlist, finite IDs, actual starts vs selections, Studio actions, app-side saver actions and manual quality; old grants require updated consent. Complete Release 407 passed, 82 analytics contracts; post-documentation 83 passed including actual README optics. Universal package/signatures/bundle/disabled smoke and matching Lines verified above. Earlier native capture failures documented, final suite passed unchanged assertions. Publication tracked separately in Git/PR history. G2/F2 owner gates stay Review. |
+| 22 | Fix false quality blocks caused by capture accounting and stale errors | Done | Owner: Copilot, implementation/local acceptance. v0.4.2/build 42; real four-window pre-fix regression reproduces failure at Low/Auto. Include shadow allocation, skip over-budget additional windows, retain hard memory limits and mandatory own exclusions; separate error causes and clear stale messages. Complete Release 380 passed (196 app + 36 Effects + 148 Core), zero failures/skips, including actual desktop Ripple/Incinerate and restoration. Universal app/saver, signatures, bundle and disabled smoke passed; exact logs/coverage above. |
+| 21 | Relax effect quality gate and protect Settings exclusion | Done | Owner: Copilot. 12-step resource-only Auto ladder, expensive effects allowed at Low/serious thermal pressure, critical thermal and memory/capture safety retained; protected Kinetiq rule enforced in UI, settings and runtime. Complete Release 376 passed (192 app + 36 Effects + 148 Core), zero failures/skips, including actual captured-README rendering and protected rule persistence. Universal app/saver, strict signatures, bundle and disabled smoke passed. Exact logs/Lines coverage above. |
 | 20 | v0.4.0 Studio built-ins, My Effects, complete Try menu, interactive Layouts | Done | Owner: Copilot. Built-in close/open/minimize engines as Studio layers through `LayerCompositor`, reverse playback, saved compositions owning Open/Close/Minimize, Try menu with every effect, animated hover/keyboard/scroll overview with ⌃⌥↑ and five-window demos. See CHANGELOG 0.4.0 for verification. |
 | G1 | Owner-authorized GA4 Web transport and current offline/local acceptance | Done | Owner: Copilot. Implementation and offline/local acceptance only, 0.3.4/build 39. Single retained owner/core, fresh consent/identity, GA4 precedence, native fallback unchanged. Ready/enabled/consent-keyed cancellable 100 ms actual Settings task, not busy state; real denied mount/grant while visible without navigation/exactly one event/revoke exercised with retained owner and recording boundary. GA4 disclosure tested, no normal consented app GUI launch/live collection automated. Complete Release/Debug each 361 (179 app + 36 Effects + 146 Core), 0 failures/skips, exit 0; Debug app completed in ~1928 seconds. Focused 55 (21 GA4 Swift + 34 native), 0 failures. Python GA4 26 passed/0 failures/errors/skips; parser 19 passed/0 skips; signing 5 ran/4 passed/1 real-Team skip. Current session-aware debug probe 0 messages/exit 0, structure only; probe timing is not app engagement. Universal app+saver arm64+x86_64 build exit 0; both deep/strict signatures, resource verifier and signed disabled smoke verified 0 directly. Lines and exact artifacts above; live data tasks/response/cancellation/30-minute session boundary unexecuted at runtime, not ingestion/exhaustive coverage. Full suites include README optics; focused post-doc slash-filter rerun verified 1 test, 0 failures/skips, exit 0, actual Test Case passed in 2.618 seconds (/tmp/kinetiq-ga4-fix-postdocs.log). |
 | G2 | GA4 Web ingestion, consented transport and distribution/privacy review | Review | Owner: Lorenzo. Actual Web-stream credentials/console ingestion, IP/location/retention/access/erasure/privacy, extractable-secret spam risk, terms, notarization and release provisioning remain open; hosted CI unverified. Root .env two ignored keys are local only, not uploaded/provisioned in GitHub CI; builds without owner .env use safe native blocked-off fallback, not a configured GA4 release app. Reopen actual build/Kinetiq.app containing owner configuration, then manually visit Settings → Privacy & Analytics with explicit consent and check Reports → Realtime. Home November 1–7 excludes Today November 8. HTTP acceptance/204 and debug validation do not prove authentication/ingestion. Use Web G- measurement ID and its own ingestion secret, not numeric/native app IDs; tagging banner alone is not MP failure. Consented cold/relaunch/live cancellation/offline/revocation remain owner review; no fake engagement/realtime guarantee. KINETIQ_FIREBASE_SIGNING_BLOCKED_OFF is native fallback status, not GA4 unavailability; no Keychain in configured GA4. Publication follows the standing workflow above. |

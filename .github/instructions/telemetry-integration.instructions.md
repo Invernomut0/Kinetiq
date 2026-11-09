@@ -5,7 +5,7 @@ applyTo: "**/*.swift"
 
 # Kinetiq Firebase Analytics host integration
 
-## Current owner-authorized GA4 follow-up (0.3.4)
+## Current owner-authorized GA4 follow-up (0.5.1 / build 44)
 
 - Owner explicitly requests direct Web GA4 Measurement Protocol with the ingestion
   secret embedded in the app; the extractable secret allows event spam. This is not
@@ -23,7 +23,39 @@ applyTo: "**/*.swift"
   `kinetiq.telemetry.ga4.analytics` / `analyticsDecision` and separate local identity;
   no transfer of previous Firebase/PostHog consent or UUID. Default Don't Share.
 - Use Web `measurement_id` / `client_id`; never invent a Firebase `app_instance_id`.
-  Only actual `feature_used` / `feature=privacy_settings`. Deny ads consent, omit
+  The owner's newer v0.5.0 scope supersedes the former privacy-settings-only
+  restriction: use only the six typed `KinetiqUsageEvent` names `feature_used`,
+  `effect_played`, `effect_selected`, `studio_action`, `screensaver_action`,
+  `quality_changed`, with `feature`/`effect_id`/`trigger`/`action`/`quality` only.
+  Require GA4 consent revision **3** and native revision **2** at their existing
+  mode-specific `usageConsentRevision` keys. Prior GA4 revision-2 grants stay off
+  until a new disclosed explicit choice, default Don't Share; preserve all existing
+  consent/decision/identity namespaces and identity retention, no cross-mode migration.
+  Count successful playback starts, not attempts/selections/automatic preview loops;
+  separate manual/native/layout triggers. Use 66 library IDs plus custom/classic
+  sentinels, off/random only for selection. Studio actions require validated success,
+  saver actions are app enable/disable/preview, not OS host runs; quality is manual,
+  not auto-budget changes. No custom names/content/app IDs/window metadata/free-form
+  properties. Keep the existing single owner/weak hook, at most four immediate tasks with
+  no disk queue/retry/replay and four-request GA4 cap; drops are not an exact usage census.
+  No new saver SDK or external geolocation service. The owner's explicit configured-
+  country authorization is the **only exception** to the earlier no-user_location/
+  no-Locale-inference rule: read only `Locale.current.region?.identifier` inside
+  consented `provider.start`, after `configuration.enabled && privacy.analyticsEnabled`.
+  Use typed optional `GA4ConfiguredCountry` validated as ISO 3166-1 alpha-2 (not arbitrary
+  two-letter input); snapshot in memory until stop/revocation, clear then, refresh on
+  next consented start. Never read country at construction/prompt/denied startup or
+  in the static builder; pass country explicitly, with builder default `nil`.
+  Send only top-level JSON `user_location: {country_id: <ISO 3166-1 alpha-2>}`; nil/invalid
+  omits the whole object. Use standard Country, **no custom country event parameter,
+  user property or definition**; six events/five keys unchanged. Google's fields are
+  optional: country alone is valid, region recommendation is not permission to invent
+  `region_id` or city. No language/time-zone fallback, GPS, IP lookup, new network
+  permission, `ip_override` or other geography. Disclose configured country, not
+  citizenship/physical position: this can override GA4 country and distort maps.
+  Do not promise City/real position/ingestion. Without override, MP-only geography
+  can remain (not set) without tagging history; native geography remains conditional
+  on actual gated enablement, not enabled by this scope. Deny ads consent, omit
   automatic native events/device metadata and invented engagement time. Web session
   ID uses actual Date; measure real foreground intervals with ContinuousClock only
   after consent, omit zero engagement, stop observers on withdrawal. Disclose actual
@@ -34,6 +66,22 @@ applyTo: "**/*.swift"
   Filtering core installation events is expected, not a failed transport request.
 - Ephemeral HTTPS transport: no cookies/cache/credentials/redirect/retry, bounded
   requests/timeouts, cancel on withdrawal; no recall or remote-erasure guarantee.
+- Task 24/build 44 local acceptance is verified: Release 414 (230 app + 36 Effects +
+  148 Core), 89 analytics contracts, zero failures/skips; universal app/saver,
+  signatures, bundle and disabled smoke passed. Matching LLVM Lines and exclusions
+  are in docs/telemetry.md; actual Locale.current and live delivery are unexecuted.
+  The host conservatively declares non-tracking CoarseLocation analytics linked to
+  the pseudonymous client ID for configured Country, not physical-location measurement.
+  Rerun real captured-README optics after final documentation edits; build-43
+  evidence remains historical. G2/F2 stay owner
+  Review; merged PR #6 hosted CI never started because of account billing/spending
+  limits, not a pass. No normal app start, real consent change or live probe is
+  authorized by the configured-country exception or by documentation work.
+- Owner subsequently requests GitHub release publication and documented first launch
+  (task 25). This authorizes a version tag/DMG release, superseding the prior no-release
+  scope only for publication. It does not authorize live analytics, billing/protection
+  changes or normal user-app lifecycle. State non-notarized/ad-hoc limitations; prefer
+  Open Anyway and targeted quarantine removal over clearing all attributes/Gatekeeper.
 - Owner requested a validation probe: explicit `configure-ga4.py --validate` may
   call only `/debug/mp/collect` without manipulating app consent. It does not collect
   report events or authenticate credentials. Ordinary tests/smoke remain offline.
@@ -80,7 +128,9 @@ supersedes provider/configuration/identity guidance in the historical copied
   ad user data/personalization, IDFV, ad-network registration, automatic screen reporting,
   delegate proxy. After consent, Firebase may collect device/OS, app-instance/session
   and IP/location/network metadata. Never promise no OS/hardware or network anonymity.
-  Forward only actual `feature_used` / `feature=privacy_settings`, no custom content.
+  The newer owner-authorized revision-2 typed usage scope above replaces the former
+  privacy-settings-only restriction here too, without weakening native signing or
+  consent gates. No custom content or arbitrary metadata is forwarded.
 - Serialize and await existing initialization/control gates; kill switch is not consent.
   Persist grant after successful startup and local false before cleanup. Revoke with
   collection false, all consent denied and best-effort `resetAnalyticsData()` (no callback).
@@ -91,8 +141,8 @@ supersedes provider/configuration/identity guidance in the historical copied
   The macOS Analytics ZIP has no privacy bundle/terms file: invent neither and do not
   call Analytics binaries Apache/open source. Remove old PostHog/PLCrashReporter/libwebp/
   Sentry symbols/resources/vendor licenses from bundles, preserving core notices.
-- Record actual tests/build/signing-state logs/coverage only when proven; F1 remains
-  Doing and F2 owner Review until evidence/approval. Historical 328/330/334 results
-  and intended 33 contracts are not Firebase pass counts. Real console, consented
+- Record actual tests/build/signing-state logs/coverage only when proven; F1 is
+  historical Done for native implementation/local acceptance only, F2 owner Review.
+  Historical 328/330/334 results are not Firebase or build-44 pass counts. Real console, consented
   lifecycle/offline/in-flight delivery and notarization require owner review; disabled
   smoke/counters are not ingestion receipts. Never automate consent or live probes.

@@ -69,7 +69,7 @@ final class LiquidEffectPlayer: NSObject, OverlayContent {
     /// callers must keep their native minimize/close fallback in that case.
     /// At most two captures (up to 1500 particles/display each) may remain alive.
     @discardableResult
-    func play(_ frame: CapturedFrame, windowFrame: CGRect, durationScale: Double) -> Bool {
+    func play(_ frame: CapturedFrame, windowFrame: CGRect, durationScale: Double, trigger: EffectTrigger? = nil) -> Bool {
         RenderQualityManager.shared.refreshEnvironment()
         let budget = RenderQualityManager.shared.budget
         guard budget.allowsExpensive else { return false }
@@ -111,6 +111,7 @@ final class LiquidEffectPlayer: NSObject, OverlayContent {
         }
         overlays.forEach { $0.render() }
         overlays.forEach { $0.show() }
+        KinetiqTelemetry.emit((trigger ?? .close).usageEvent(effectID: LibraryEffect.liquid.id))
         return true
     }
 

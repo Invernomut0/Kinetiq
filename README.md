@@ -6,6 +6,95 @@ Kinetiq is a native menu bar app, forked from [Wobbly](https://github.com/jsgrrc
 
 https://github.com/user-attachments/assets/40bc5530-d253-4d47-bc57-3eccdac83d70
 
+## Current: v0.5.1 · build 44 — consented configured country for GA4
+
+**Task 24 Done — Copilot; implementation and verified local acceptance.**
+The owner explicitly authorized the macOS configured country for GA4's standard
+**Country** dimension. GA4 requires fresh **consent revision 3**; a prior revision-2
+grant stays off until a new disclosed choice. Native Firebase remains at **revision 2**
+with unchanged signing gates. **Don't Share** remains default. Existing mode-specific
+consent/identity namespaces are preserved, not transferred.
+
+The closed vocabulary in `KinetiqUsageEvent.swift` permits only these custom events:
+
+| Event | Approved meaning / custom properties |
+|---|---|
+| `feature_used` | Actual visits to Privacy & Analytics, Effects, Animation Studio, Layouts, Performance, Rules or Screen Saver; `feature`. |
+| `effect_played` | Actual successful playback starts, not attempts or completion counts; `effect_id`, `trigger`. Manual runs remain distinct from native window triggers and explicit layouts. |
+| `effect_selected` | Explicit assignment/selection, not playback; `effect_id`, `trigger`. |
+| `studio_action` | Validated layer/keyframe edits, save, import and export; `action`. |
+| `screensaver_action` | Actual app-side enable/disable or in-app preview start; `action`. Not macOS saver-host runs. |
+| `quality_changed` | Explicit quality choice; `quality`. Not automatic resource-budget adaptation. |
+
+The only custom property keys are `feature`, `effect_id`, `trigger`, `action` and
+`quality`. Effect IDs come from the **66 real library entries**, plus `custom` for
+all user compositions and `wobbly_classic`; `off`/`random` are selection-only values.
+Automatic preview loops are not counted. No user content, application identifiers,
+custom names, window metadata, precise location, hardware metadata or free-form
+properties enter this custom schema. No automatic startup/Overview events are added.
+
+The single existing AppDelegate owner exposes a weak static emission hook, retaining
+the unchanged generic SDK core. At most **four immediate product-event tasks** are
+retained, without a disk queue, retry or replay, and the existing GA4 **four-request** network cap remains.
+Busy/denied/overflow actions can be dropped: counters are best-effort, not an exact
+usage census. Native fallback signing gates are unchanged; no saver SDK is added.
+
+The authorized GA4 contract reads only `Locale.current.region?.identifier`, inside
+consented `provider.start` after `configuration.enabled && privacy.analyticsEnabled`.
+A country from the closed **249 assigned ISO 3166-1 alpha-2** codes is snapshotted in memory until stop/withdrawal,
+then cleared and refreshed on the next consented start. It enters JSON only as
+top-level `user_location: {country_id: <ISO 3166-1 alpha-2>}`, never an event parameter
+or custom definition. Missing/invalid country omits `user_location`; no language/
+time-zone fallback, GPS, IP lookup, external geolocation service or new network
+permission. No `ip_override`, fabricated city or `region_id` is sent. Google's fields
+are optional: country alone is valid; its region recommendation does not authorize
+invention. This is a **configured country, not citizenship or physical location**:
+it can override GA4's country and distort maps. City is not supplied or promised;
+without the override, MP-only geography can remain `(not set)`. Native geography
+remains conditional on actual gated enablement, not enabled by this change. The six
+events/five custom keys above are unchanged.
+
+The host privacy manifest conservatively declares non-tracking coarse-country
+analytics linked to the pseudonymous client identifier; this does not add physical
+location measurement, a location permission or an App Store compliance guarantee.
+
+For usable reports, manually create **Event-scoped** custom definitions for the five
+keys above in **GA4 Admin → Custom definitions**, then use Explore with
+`event_name=effect_played`, rows `effect_id`, breakdown `trigger` and Event count.
+Exclude `trigger=manual` to rank non-manual usage, and separate `layout` from native
+window triggers when needed. Selection counts are not play counts. Allow **24–48 h**
+after definitions are created and data is sent; no retroactive reporting guarantee.
+City/Country are built-in dimensions, not custom definitions. See the
+[complete report setup and geography limitations](docs/telemetry.md#practical-ga4-report-setup).
+HTTP 2xx is receipt of the request, **not proof of ingestion**.
+
+**v0.5.1/build 44 local acceptance:** **414 Release tests passed = 230 app +
+36 Effects + 148 Core**, zero failures/skips, including **89 analytics contracts**
+(`/tmp/kinetiq-country-final-release.log`). Universal app/saver, strict signatures,
+bundle verification and signed disabled smoke passed (`/tmp/kinetiq-country-build.log`).
+LLVM **Lines**: country validator **85.71%**, provider **77.30%**, owner **97.24%**,
+privacy UI **89.69%**, taxonomy **100%**, native adapter **20%**. The actual Mac region
+getter and live delivery remain unexecuted; this is not ingestion or exhaustive coverage.
+No normal app restart, real consent change or live event was automated. See
+[task 24 evidence](docs/telemetry.md#local-acceptance--task-24). The published
+v0.5.1 release and post-edit README optics verification are tracked as task 25.
+
+**Historical v0.5.0/build 43 local acceptance (2026-11-09): 407 Release tests passed** — 223 app +
+36 Effects + 148 Core, zero failures/skips (`/tmp/kinetiq-usage-final-acceptance.log`).
+This includes **82 analytics contracts** and same-turn save/assignment and layer/import
+regressions. Earlier runs encountered native capture/window-origin failures; all 15
+runtime tests passed in isolation and the final full suite passed unchanged assertions.
+LLVM **Lines**: event taxonomy **100%**, owner **97.56%**, GA4 provider **77.09%**,
+native adapter **20.00%**, privacy UI **89.69%**; not live-delivery or exhaustive coverage.
+Universal **x86_64 + arm64** app/saver **0.5.0/build 43**, strict signatures, bundle
+verification and signed disabled smoke passed (`/tmp/kinetiq-usage-build.log`).
+No normal user-app restart, real consent change or live probe was automated.
+See [detailed evidence and remaining owner gates](docs/telemetry.md#local-acceptance--task-23).
+Those checks do not certify build 44. PR #6 is merged; its hosted job never started
+because of account billing/spending limits. G2/F2 remain **Review — Lorenzo** for
+live ingestion/privacy/distribution and account review/rerun, not a hosted CI pass.
+All release verification below belongs to its stated historical version.
+
 **v0.3.1 · build 36** fixes the management sidebar and Animation Studio controls disappearing outside the window. Navigation columns now use their actual viewport; after **Add Layer**, the inspector, transport and timeline stay in the editor. The startup guide remains inline for an empty document and is available from **?** without covering the populated editor. Event-based discovery and all 65 effects are unchanged.
 
 **v0.3.2 · build 37** replaces Liquid's final fade with slow physical drainage off the bottom edges. The pooled material stays opaque while the outlets open gradually from the lower corners towards the center. The preview now includes the complete ending.
@@ -16,11 +105,118 @@ https://github.com/user-attachments/assets/40bc5530-d253-4d47-bc57-3eccdac83d70
 
 **v0.4.0 · build 40** makes the Animation Studio a real effect maker and Layouts a real feature. Studio layers can now be any of the **45 built-in effects** (close shaders like Incinerate, spring entrances, Dock morphs) next to the 19 Studio effects, played forwards or in reverse; a composition saved to **My Effects** can be used when a window opens, closes or is minimized, from the Studio, the Effects library or the menu bar. **Try an Effect** covers every effect, Liquid and Window Destruction included. **Layouts** (Exposé 3D, Orbit, Cube) now animate windows in and out, react to hover, clicks, arrows and scrolling, and open anywhere with **⌃⌥↑**. See the [Studio guide](docs/animation-studio.md) and the [original-effects guide](docs/original-effects.md).
 
+**v0.4.1 · build 41** keeps expensive effects available at Low quality and throughout
+Auto adaptation, reducing fidelity instead of disabling playback. Critical thermal
+pressure still blocks expensive effects; allocation/capture limits are unchanged.
+Kinetiq's own Settings/management windows are now permanently excluded from effects,
+including when loading older exclusion lists that removed Kinetiq.
+
+Local verification: **376 Release tests passed** (192 app + 36 Effects + 148 Core),
+zero failures/skips, including real captured-README rendering at Low and critical
+thermal refusals. Universal app/saver signatures, bundle checks and disabled smoke
+passed. Logs: `/tmp/kinetiq-budget-release.log`, `/tmp/kinetiq-budget-build.log`.
+No live analytics or user-window mutations were automated.
+
+**v0.4.2 · build 42** fixes a separate cause of the same apparent block: Layouts
+under-counted native capture memory by omitting the shadow room, then aborted the
+entire overview if an additional window exceeded the total. Admission now includes
+the shadow buffer and skips only additional windows that do not fit; the **32 MP
+total, eight-window maximum and native capture resolution are unchanged**. Layouts
+reports the number of admitted windows. Memory/allocation/busy errors are distinct
+from an actual critical-thermal refusal. Stopping, retrying or changing pages clears
+previous-operation errors; a recovered thermal gate clears its own refusal, without
+hiding unrelated failures. No user assignments or mandatory Kinetiq exclusion change.
+
+Local verification: **380 Release tests passed** (196 app + 36 Effects + 148 Core),
+zero failures/skips. Real owned README windows verify Low/Auto overview admission,
+shadow-buffer accounting, thermal recovery and desktop Ripple → Incinerate playback
+with exact-origin restoration. The four-window case failed before the fix. Logs:
+`/tmp/kinetiq-layout-final-release.log`, `/tmp/kinetiq-layout-red.log`.
+Universal **x86_64 + arm64** app/saver, strict signatures, bundle verification and
+signed disabled smoke passed (`/tmp/kinetiq-layout-build.log`). LLVM **Lines**:
+runtime **75.74%**, capture **75.00%**, compositor **96.47%**, Studio UI **59.15%**,
+library UI **67.31%** (`/tmp/kinetiq-layout-final-coverage.txt`); not exhaustive
+integration or Metal shader branch coverage. No normal app restart or live analytics
+was automated. This is historical **0.4.2/build 42** evidence, not verification of
+the current source version or a request to restart the user's app.
+
 ## Installing
 
-Requires macOS 14 or later, on Apple Silicon or Intel.
+Requires **macOS 14 or later**, on Apple Silicon or Intel. The universal DMG contains
+both architectures; no Xcode, Python or terminal build is needed to run it.
 
-Download the DMG from Releases and drag Kinetiq to `/Applications`. The app is not notarized, so the first time you open it macOS will block it: go to **System Settings → Privacy & Security** and click **Open Anyway**.
+### Download, install and launch
+
+1. Download `Kinetiq-0.5.1.dmg` and `SHA256SUMS.txt` from the project's
+	[v0.5.1 GitHub release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.1).
+	The repository is currently **private**: sign in to GitHub with an authorized
+	account. Without access, GitHub returns 404; publication does not change visibility.
+	Choose the DMG asset, **not** GitHub's **Source code** ZIP/TAR, which has no ready-to-run app.
+2. Optionally verify the download in Terminal from the folder containing both files:
+
+	```sh
+	cd ~/Downloads
+	shasum -a 256 -c SHA256SUMS.txt
+	```
+
+	The DMG must report **OK**. Stop and download it again if verification fails.
+	A checksum detects changed/corrupted bytes; it is not a malware-free certification.
+3. Open the DMG, drag **Kinetiq.app** onto **Applications**, then eject the disk image.
+	Run the installed copy, not the app inside the mounted DMG.
+4. Double-click `/Applications/Kinetiq.app`. If macOS cannot verify its developer,
+	follow the first-launch steps below. Once approved, you can also launch it with:
+
+	```sh
+	open "/Applications/Kinetiq.app"
+	```
+
+5. Grant **Accessibility** and **Screen Recording** in **System Settings → Privacy &
+	Security** when requested. Accessibility lets Kinetiq watch drags and restore/move
+	windows; Screen Recording supplies the captured pixels for effects. macOS may
+	require you to quit and reopen Kinetiq after granting them. The app lives in the
+	menu bar; closing its management window does not quit it. Reopen Settings from
+	the menu bar, and quit from **Kinetiq → Quit**.
+
+Analytics is optional and off by default. Build 44 asks for updated **GA4 revision-3
+consent** before reading/sending the configured country. Declining does not disable
+effects. Installing the app does **not** enable or install the system screen saver;
+that remains a separate explicit opt-in.
+
+### First launch: why macOS may block the app
+
+This release is **not notarized by Apple**. Its app and embedded saver have verified
+local signatures, but an **ad-hoc signature is not an Apple Developer ID or notarization**.
+macOS can therefore show “developer cannot be verified” or “Apple cannot check it
+for malicious software”. Downloaded apps are marked with `com.apple.quarantine`,
+which tells Gatekeeper to perform first-launch checks. A warning is not proof that
+the app is safe—or that it is malicious.
+
+**Recommended:** after trying to open the installed copy, go to **System Settings →
+Privacy & Security**, find Kinetiq under Security and select **Open Anyway**, then
+confirm **Open**. Only do this for the original release you intentionally downloaded
+and verified. See [Apple's first-launch guidance](https://support.apple.com/en-us/102445).
+No `xattr` command is normally necessary when this route works.
+
+**Terminal alternative, only for that trusted copy:** if the quarantine warning still
+prevents opening it, remove **only the quarantine attribute**, recursively within
+this app bundle, and then open it:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Kinetiq.app"
+open "/Applications/Kinetiq.app"
+```
+
+Here `-d` deletes the named attribute and `-r` includes bundled files. The often-shared
+`xattr -cr` command instead clears **all** extended attributes recursively; that is
+broader than needed and can discard unrelated metadata, so it is not recommended.
+Neither command notarizes the app, verifies its origin, grants Accessibility/Screen
+Recording or fixes an invalid signature. An absent quarantine attribute means no
+removal is needed. Do not apply these commands to `/Applications` as a whole, disable
+Gatekeeper globally, or use them to ignore “will damage your computer”, revoked
+authorization or a genuinely damaged/tampered app: stop and verify/re-download instead.
+On managed Macs, follow your administrator's policy. If the installed copy is not
+writable, use a writable app folder such as `~/Applications` and adjust the quoted
+path; do not blindly run commands with elevated privileges.
 
 ## Usage
 
@@ -56,7 +252,7 @@ analytics or unlock effects.
 | **Diagnostics** | Actual Metal renderer and event-tap state, permission grants, physics preset, mesh, rule counts, OS and app version. |
 | **Settings** | Enable state, title-bar drag, shortcut modifier, permissions, default-off Privacy & Analytics and confirmed reset of effect settings. Reset preserves the enable state and drag controls. |
 
-The **Exclusions** list under Rules holds apps whose windows get no effects. Kinetiq's own management window is excluded by default; remove that exclusion to let it wobble. Catalog targets always exclude Kinetiq itself. Window titles may be unavailable without Screen Recording. Permission checks refresh when the app becomes active or when you press Refresh; macOS may require restarting the app after a grant. The existing launch-time permission prompts are unchanged. Navigation does not start or stop the engine.
+The **Exclusions** list under Rules holds apps whose windows get no effects. Kinetiq's own Settings/management windows are **always excluded**: the locked rule cannot be removed, even through settings writes or older saved lists without Kinetiq. Other app exclusions remain editable. Catalog targets also always exclude Kinetiq itself. Window titles may be unavailable without Screen Recording. Permission checks refresh when the app becomes active or when you press Refresh; macOS may require restarting the app after a grant. The existing launch-time permission prompts are unchanged. Navigation does not start or stop the engine.
 
 ### Effects library: 66 effects, organized by what you do
 
@@ -112,14 +308,14 @@ Choose **Auto**, **Low**, **Balanced**, **High** or **Ultra** in the menu or Per
 
 | Quality | Intermediate scale | Particle cap | Blur sampling rings | Mesh cap/axis | Secondary rate ceiling | Expensive effects |
 |---|---:|---:|---:|---:|---:|---|
-| Low | 0.50× | 400 | 0 | 16 | 30 Hz | Refused |
+| Low | 0.50× | 400 | 0 | 16 | 30 Hz | Allowed |
 | Balanced | 0.75× | 1000 | 1 | 32 | 60 Hz | Allowed |
 | High / Auto start | 1.00× | 1500 | 2 | 48 | 90 Hz | Allowed |
 | Ultra | 1.00× | 1500 | 3 | 64 | 120 Hz | Allowed |
 
-Auto starts at High and reduces one resource at a time across **13 steps**: texture scale 0.75→0.5; particles 1000→700→400; blur rings 1→0; mesh 32→24→16; secondary rate 60→30; then expensive effects off. Recovery reverses the ladder, at most back to High; Ultra is manual opt-in. Smoothed successful GPU command-buffer durations above 12 ms for at least 0.5 s/8 samples reduce quality (3 s cooldown); below 6 ms for 5 s/30 samples recover it (8 s cooldown). Idle gaps break evidence streaks. These are actual completed GPU timings, **not GPU utilization or inferred FPS**; the last sample remains visible while idle.
+Auto starts at High and reduces one resource at a time across **12 steps**: texture scale 0.75→0.5; particles 1000→700→400; blur rings 1→0; mesh 32→24→16; secondary rate 60→30. Effects stay available at every step: disabling them could also stop the GPU completions needed for recovery. Recovery reverses the ladder, at most back to High; Ultra is manual opt-in. Smoothed successful GPU command-buffer durations above 12 ms for at least 0.5 s/8 samples reduce quality (3 s cooldown); below 6 ms for 5 s/30 samples recover it (8 s cooldown). Idle gaps break evidence streaks. These are actual completed GPU timings, **not GPU utilization or inferred FPS**; the last sample remains visible while idle.
 
-Thermal/power safety caps also apply to manual choices: fair thermal pressure or Low Power Mode caps at Balanced, serious/critical at Low, with a 15 Hz secondary ceiling at critical. Budget fields, not the summary quality label, are authoritative. Original captures and desktop output remain native resolution. Studio preview/composition intermediates follow `textureScale`, with at most 8,000,000 pixels and 8192 pixels per dimension per target texture, two ping-pong targets and at most two in-flight compositions. Liquid's separate cropped geometry field is capped at 1280 pixels on its longest edge before quality scaling. Its original particle cap remains 1500 per source/display (Balanced 1000, Low budget 400); Low refuses new expensive Liquid playback. The UI label “Blur passes” means concentric eight-tap shader sampling rings for catalog DOF, **not multiple full-screen render passes**.
+Thermal/power safety caps also apply to manual choices: fair thermal pressure or Low Power Mode caps at Balanced, serious/critical at Low. **Only critical thermal pressure closes the expensive-effects gate**, with a 15 Hz secondary ceiling, even for manual Ultra. Cooling below critical reopens the gate without requiring a GPU sample. In **Performance**, check the reason under **Resolved quality** and **Expensive effects → Allowed/Limited**. Budget fields, not the summary quality label, are authoritative. Original captures and desktop output remain native resolution. Studio preview/composition intermediates follow `textureScale`, with at most 8,000,000 pixels and 8192 pixels per dimension per target texture, two ping-pong targets and at most two in-flight compositions. Liquid's separate cropped geometry field is capped at 1280 pixels on its longest edge before quality scaling. Its original particle cap remains 1500 per source/display (Balanced 1000, Low budget 400); Low permits playback with these reduced resources. The UI label “Blur passes” means concentric eight-tap shader sampling rings for catalog DOF, **not multiple full-screen render passes**.
 
 ### Glide and bounce
 
@@ -213,20 +409,27 @@ features usable.
 
 GA4 uses Boolean preferences `kinetiq.telemetry.ga4.analytics` and
 `kinetiq.telemetry.ga4.analyticsDecision`. Previous Firebase/PostHog consent and UUIDs
-are untouched and **not carried over**. The separate pseudonymous UUID is created
+are untouched and **not carried over**. Revision **3** is required at
+`kinetiq.telemetry.ga4.usageConsentRevision`; native mode retains revision **2** at
+`kinetiq.telemetry.firebase.usageConsentRevision`.
+An old grant without the current revision leaves analytics off and requires the
+updated prompt; it is not extended silently. The separate pseudonymous UUID is created
 only on consented startup and stored in app-local UserDefaults at
 `kinetiq.ga4.telemetry.installationID`; it persists across launches and withdrawal.
 No legacy Keychain item is read, migrated or deleted; no password or authorization
 dialog is needed. Preference identity is not credential-grade storage or anonymity.
 
-The only forwarded custom action is the actual Settings visit: `feature_used`,
-`feature=privacy_settings`. The former one-shot SwiftUI task could run before consent
-was granted and never submit the visit. It is now keyed by readiness, runtime
-enablement and consent (not busy state), waits 100 ms, and is cancellable when the
-actual section is no longer visible. GA4 sends that action and the separate `client_id`, not
-window titles, screenshots, documents, crash reports, OS/hardware metadata or automatic
-native/core lifecycle events. Google receives connection IP and network metadata and
-may derive location; this is not network anonymity. Advertising user data and
+The current six-event scope is listed at the top of this README, not limited to
+Privacy & Analytics. That section's actual visit still uses the readiness/enabled/
+consent-keyed cancellable 100 ms task, not busy state. GA4 sends only allowlisted
+actions and the separate `client_id`, not window titles, screenshots, documents,
+crash reports, OS/hardware metadata or automatic native/core lifecycle events.
+Google receives connection IP and network metadata. After fresh revision-3 consent,
+the configured-country-only override above targets standard Country, not actual
+position or City; invalid/missing country omits it without fallback. Its memory
+snapshot clears on stop/withdrawal and refreshes on the next consented start. Reports
+can remain incomplete and configured country can distort maps. This is not network
+anonymity. Advertising user data and
 personalization are explicitly denied. A positive `session_id` uses the actual `Date`
 and refreshes after 30 minutes without approved actions. `ContinuousClock` measures
 actual foreground time only after consent, using NSApp activation notifications;
@@ -237,11 +440,9 @@ Usage/session/realtime reports may still be partial, with no realtime promise.
 Settings' sanitized `transportStatus` distinguishes readiness, submitted count,
 in-flight requests, HTTP acceptance and categorical failure, without URLs or secrets.
 HTTP acceptance is **not confirmed GA4 ingestion**; filtered core installation events
-are not transport failures. For an owner check, reopen **`build/Kinetiq.app`**, not
-an older installed copy, open **Reports → Realtime**, then
-make an actual **Settings → Privacy & Analytics** visit with explicit consent.
-The reported Home screenshot covers **November 1–7**, excluding Today (November 8).
-See the [GA4 troubleshooting FAQ](docs/telemetry.md#owner-check-and-troubleshooting-faq).
+are not transport failures. Manual console review and report setup remain owner
+actions, not automated checks. See the
+[current GA4 report setup](docs/telemetry.md#practical-ga4-report-setup).
 
 Withdrawal persists off before cleanup, suppresses new submissions, cancels pending
 requests and clears ephemeral transport memory. There is no disk queue or retry, and
@@ -294,7 +495,8 @@ The two root `.env` keys are ignored and local only: credentials have **not been
 uploaded or provisioned in GitHub CI**. A workflow build without the owner's `.env`
 uses the safe native fallback, currently `KINETIQ_FIREBASE_SIGNING_BLOCKED_OFF`; it
 does **not** produce a configured GA4 release app. Hosted CI execution is unverified.
-Local packaging is not publication of a new DMG.
+The owner-requested v0.5.1 DMG was instead published from the verified local package;
+tag and uploaded SHA-256 digests are recorded in [task 25](docs/telemetry.md#release-publication--task-25).
 
 **Deployment risk, explicitly authorized by the owner:** bundling the ingestion
 secret makes it extractable and enables forged/spam events. This direct desktop
@@ -315,7 +517,8 @@ Google debug probe returned **0 validation messages, exit 0**. It uses a real po
 Web session ID and optionally measured probe-preparation time, **not app engagement**.
 Ordinary tests and the disabled smoke remain offline.
 
-**Current GA4 acceptance — VERIFIED LOCAL, G1 Done (Copilot), G2 Review (Lorenzo):**
+**Historical privacy-settings-only GA4 acceptance — v0.3.4/build 39, VERIFIED LOCAL,
+G1 Done (Copilot), G2 Review (Lorenzo); not v0.5.0 acceptance:**
 
 - Complete **Release and Debug each passed 361 tests = 179 app + 36 Effects +
 	146 Core; 0 failures, 0 skips, exit 0**. Logs:
@@ -435,8 +638,8 @@ checks; the final serial run passed unchanged assertions. A separate compilation
 when the sibling TelemetrySDK disappeared from disk; a clean clone restored the same
 approved `c5e275421fa03c242c9c53b5431d919fdd18547a` pin, without SDK source edits.
 
-Historical version **0.3.3 / build 38** was preserved in that migration; current source
-version is **0.3.4 / build 39**. F2 still requires actual Apple identity/private
+Historical version **0.3.3 / build 38** was preserved in that migration; the later
+GA4 follow-up was **0.3.4 / build 39**. F2 still requires actual Apple identity/private
 scope, native backend ingestion review (console Analytics active per owner), live/native,
 offline/revocation, terms/retention, notarization and hosted CI verification. The owner
 requires commit/push for completed tasks on `firebase`, then a reviewed PR merge into `main`.
@@ -517,7 +720,7 @@ Liquid physics lives in `Sources/KinetiqCore/LiquidWorld.swift`; `KinetiqEffects
 
 Native-resolution optical tests compare transported text edges against the actual captured pixels, isolate refraction/reflection without changing coverage, and compare the manual float32 filter to hardware filtering when supported. Set `KINETIQ_LIQUID_BENCHMARK=1` to print GPU timings for 40 warmed frames at three fluid states (simulation and readback excluded). With the temporary dump directory above, `KINETIQ_LIQUID_TEST_DUMP_FRAMES=1` also saves individual native-resolution test-document PNGs. Timings depend on GPU, display and current load; they are diagnostics, not fixed CI performance thresholds.
 
-The graphical Liquid test displays this actual README in a disposable native text window; it requires more than 32 coherent edge samples at 1.5 s, a contrast ratio above 0.65 and material RGB error below 0.18. Text/layout changes can affect this real-capture regression and should be rechecked, not worked around with a fabricated image.
+The graphical Liquid test displays this actual README in a disposable native text window; it requires more than 32 coherent edge samples at 1.5 s, a contrast ratio above 0.65 and material RGB error below 0.18. Text/layout changes can affect this real-capture regression and must be rechecked after documentation changes, not worked around with a fabricated image. The post-edit release-preparation recheck is recorded in `docs/telemetry.md`, separately from historical results.
 
 ### Source map and API reference
 

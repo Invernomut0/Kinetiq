@@ -14,14 +14,19 @@ import XCTest
 final class CatalogRuntimeTests: XCTestCase {
     @MainActor private static var preparedApplication = false
 
-    @MainActor private func runtime(enabled: Bool = true, quality: RenderQuality = .high) throws -> CatalogRuntime {
+    @MainActor private func runtime(enabled: Bool = true, quality: RenderQuality = .high,
+                                    thermalState: RenderQualityPolicy.ThermalState = .nominal,
+                                    windowFilter: @escaping @MainActor (WindowInfo) -> Bool = { _ in true }) throws -> CatalogRuntime {
         let suite = "io.github.invernomut0.Kinetiq.catalog-tests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let settings = Settings(defaults: defaults)
         settings.enabled = enabled
-        return CatalogRuntime(settings: settings, budget: { .forQuality(quality) },
-                      qualityManager: RenderQualityManager(defaults: defaults))
+        var policy = RenderQualityPolicy(selection: quality)
+        policy.refreshEnvironment(thermalState: thermalState, lowPowerMode: false)
+        let budget = policy.budget
+        return CatalogRuntime(settings: settings, budget: { budget },
+                      qualityManager: RenderQualityManager(defaults: defaults), windowFilter: windowFilter)
     }
 
     @MainActor func testDisabledAndExplicitMissingWindowNeverFallbackOrMoveAnything() async throws {
@@ -196,6 +201,57 @@ final class CatalogRuntimeTests: XCTestCase {
         }
     }
 
+    @MainActor func testCaptureEstimateIncludesTheActualREADMEWindowShadowBuffer() async throws {
+        let window = try documentWindow(); defer { window.close() }
+        let (frame, rect) = try await captured(window)
+        let scale = frame.windowRect.width / frame.pointSize.width
+        let estimated = WindowCapture.estimatedPixelCount(windowSize: rect.size, scale: scale)
+        let actual = CVPixelBufferGetWidth(frame.pixelBuffer) * CVPixelBufferGetHeight(frame.pixelBuffer)
+        XCTAssertEqual(estimated, Double(actual))
+        XCTAssertGreaterThan(estimated, Double(frame.windowRect.width * frame.windowRect.height))
+        XCTAssertLessThanOrEqual(actual, WindowCapture.maximumPixelCount)
+        for scale in [CGFloat.nan, .infinity, -1, 0] {
+            XCTAssertEqual(WindowCapture.estimatedPixelCount(windowSize: rect.size, scale: scale), .infinity)
+        }
+        XCTAssertEqual(WindowCapture.estimatedPixelCount(windowSize: .zero, scale: 2), .infinity)
+    }
+
+    /// Drive the pure thermal policy while using actual preferences, capture and Metal completion.
+    @MainActor func testRecoveredThermalErrorClearsButUnrelatedErrorsSurviveQualityChanges() async throws {
+        guard ProcessInfo.processInfo.thermalState != .critical else {
+            throw XCTSkip("Real critical thermal pressure prevents the manager recovery signal")
+        }
+        let window = try documentWindow(); defer { window.close() }
+        let original = window.frame
+        let (frame, rect) = try await captured(window)
+        let suite = "io.github.invernomut0.Kinetiq.catalog-recovery-tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = Settings(defaults: defaults)
+        let manager = RenderQualityManager(defaults: defaults)
+        var policy = RenderQualityPolicy()
+        policy.refreshEnvironment(thermalState: .critical, lowPowerMode: false)
+        let runtime = CatalogRuntime(settings: settings, budget: { policy.budget }, qualityManager: manager)
+        defer { runtime.stop() }
+        XCTAssertFalse(runtime.playCaptured(frame, windowFrame: rect, preset: EffectPreset(effect: .shatter)))
+        XCTAssertTrue(try XCTUnwrap(runtime.errorMessage).contains("critical thermal pressure"))
+        policy.refreshEnvironment(thermalState: .nominal, lowPowerMode: false)
+        policy.select(.low)
+        manager.selection = .low
+        XCTAssertNil(runtime.errorMessage, "A recovered thermal refusal must not keep claiming the effect is disabled")
+        XCTAssertTrue(runtime.playCaptured(frame, windowFrame: rect, preset: EffectPreset(effect: .shatter)))
+        XCTAssertNil(runtime.errorMessage)
+        runtime.stop()
+        await runtime.play(EffectPreset(effect: .fold), windowID: .max)
+        let missingWindowError = try XCTUnwrap(runtime.errorMessage)
+        XCTAssertTrue(missingWindowError.contains("No eligible"))
+        manager.selection = .high
+        XCTAssertEqual(runtime.errorMessage, missingWindowError, "A quality change must not hide an unrelated failure")
+        runtime.stop()
+        XCTAssertNil(runtime.errorMessage, "Stopping or starting a new operation clears old failures")
+        XCTAssertEqual(window.frame, original)
+    }
+
     @MainActor func testCapturedPlaybackStopsSynchronouslyOnSpaceSleepAndNeverResurrects() async throws {
         let window = try documentWindow(); defer { window.close() }
         let original = window.frame
@@ -214,11 +270,25 @@ final class CatalogRuntimeTests: XCTestCase {
         XCTAssertEqual(window.frame, original)
     }
 
-    @MainActor func testLowBudgetRejectsExpensiveCaptureWithoutChangingLiveDocument() async throws {
+    @MainActor func testLowBudgetPlaysExpensiveCaptureWithoutChangingLiveDocument() async throws {
         let window = try documentWindow(); defer { window.close() }
         let original = window.frame
         let (frame, rect) = try await captured(window)
         let runtime = try runtime(quality: .low); defer { runtime.stop() }
+        XCTAssertTrue(runtime.playCaptured(frame, windowFrame: rect, preset: EffectPreset(effect: .shatter)))
+        XCTAssertTrue(runtime.isPlaying)
+        XCTAssertTrue(runtime.hasScene)
+        XCTAssertNil(runtime.errorMessage)
+        try await Task.sleep(for: .milliseconds(60))
+        runtime.stop()
+        XCTAssertEqual(window.frame, original)
+    }
+
+    @MainActor func testCriticalThermalBudgetRejectsExpensiveCaptureWithoutChangingLiveDocument() async throws {
+        let window = try documentWindow(); defer { window.close() }
+        let original = window.frame
+        let (frame, rect) = try await captured(window)
+        let runtime = try runtime(quality: .ultra, thermalState: .critical); defer { runtime.stop() }
         XCTAssertFalse(runtime.playCaptured(frame, windowFrame: rect, preset: EffectPreset(effect: .shatter)))
         XCTAssertFalse(runtime.isPlaying)
         XCTAssertFalse(runtime.hasScene)
@@ -226,13 +296,14 @@ final class CatalogRuntimeTests: XCTestCase {
         XCTAssertEqual(window.frame, original)
     }
 
-    @MainActor private func helperWindow() async throws -> (Process, CGWindowID) {
+    @MainActor private func helperWindow(overview: Bool = false) async throws -> (Process, CGWindowID) {
         let permissionWindow = try documentWindow()
         permissionWindow.close()
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let process = Process(), input = Pipe(), output = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/swift")
-        process.arguments = ["-e", Self.helperProgram, root.appendingPathComponent("README.md").path]
+        process.arguments = ["-e", Self.helperProgram, root.appendingPathComponent("README.md").path,
+                     overview ? "overview" : "single"]
         process.standardInput = input; process.standardOutput = output; process.standardError = FileHandle.standardError
         try process.run()
         addTeardownBlock {
@@ -271,6 +342,77 @@ final class CatalogRuntimeTests: XCTestCase {
         XCTAssertEqual(output.size, original.size)
         XCTAssertEqual(WindowLocator.frame(of: id), original)
         XCTAssertFalse(runtime.isPlaying)
+    }
+
+    /// Multi-window admission must skip extra captures, never abort an otherwise valid layout.
+    @MainActor func testLowAndAutoOverviewAdmitOwnedWindowsWithoutAbortingAtCaptureLimit() async throws {
+        guard AXIsProcessTrusted() else { throw XCTSkip("Accessibility permission required; no prompt") }
+        let (process, id) = try await helperWindow(overview: true)
+        let pid = process.processIdentifier
+        for quality in [RenderQuality.low, .auto] {
+            let runtime = try runtime(quality: quality, windowFilter: { $0.pid == pid })
+            defer { runtime.stop() }
+            let windows = runtime.availableWindows()
+            XCTAssertEqual(windows.count, 4, "Only the four real README helper windows may be captured")
+            let origins = Dictionary(uniqueKeysWithValues: windows.compactMap { window in
+                WindowLocator.frame(of: window.id).map { (window.id, $0) }
+            })
+            await runtime.play(EffectPreset(effect: .workspaceCube), windowID: id)
+            XCTAssertTrue(runtime.isPlaying, runtime.errorMessage ?? "The overview must start")
+            XCTAssertTrue(runtime.hasScene)
+            XCTAssertNil(runtime.errorMessage)
+            XCTAssertGreaterThan(runtime.capturedWindowCount, 0)
+            XCTAssertLessThanOrEqual(runtime.capturedWindowCount, windows.count)
+            XCTAssertLessThanOrEqual(runtime.capturedPixelCount, WindowCapture.maximumPixelCount)
+            let screen = try XCTUnwrap(NSScreen.screens.first)
+            let estimatedTotal = origins.values.reduce(0.0) {
+                $0 + WindowCapture.estimatedPixelCount(windowSize: $1.size, scale: screen.backingScaleFactor)
+            }
+            if estimatedTotal > Double(WindowCapture.maximumPixelCount) {
+                XCTAssertLessThan(runtime.capturedWindowCount, windows.count, "Extra captures must be skipped, not the memory cap raised")
+            }
+            runtime.stop()
+            XCTAssertNil(runtime.errorMessage)
+            for (windowID, original) in origins {
+                XCTAssertEqual(WindowLocator.frame(of: windowID), original, "An overview never moves real windows")
+            }
+        }
+    }
+
+    /// Exercise Studio's actual Run-on-Window path, including AX parking and offscreen composition.
+    @MainActor func testLowAndAutoRunRippleThenIncinerateAndRestoreTheOwnedWindow() async throws {
+        guard AXIsProcessTrusted() else { throw XCTSkip("Accessibility permission required; no prompt") }
+        let (_, id) = try await helperWindow()
+        let original = try XCTUnwrap(WindowLocator.frame(of: id))
+        var ripple = EffectPreset(effect: .ripple)
+        ripple.duration = 1.2
+        let incinerate = BuiltinLayer.close(.incinerate).makeLayer(start: 0.3)
+        let document = StudioDocument(name: "Ripple, then Incinerate", duration: incinerate.end + 0.2,
+                                      layers: [StudioLayer(preset: ripple), incinerate])
+        for quality in [RenderQuality.low, .auto] {
+            let runtime = try runtime(quality: quality, windowFilter: { $0.id == id })
+            defer { runtime.stop() }
+            await runtime.play(EffectPreset(effect: .fold), windowID: .max)
+            XCTAssertNotNil(runtime.errorMessage)
+            await runtime.playDocument(document, windowID: id)
+            XCTAssertTrue(runtime.isPlaying, runtime.errorMessage ?? "Studio's real desktop run must start")
+            XCTAssertNil(runtime.errorMessage)
+            try await Task.sleep(for: .milliseconds(450))
+            XCTAssertTrue(runtime.isPlaying, runtime.errorMessage ?? "Overlapping Ripple and Incinerate must keep playing")
+            XCTAssertNil(runtime.errorMessage)
+            runtime.stop()
+            let deadline = CACurrentMediaTime() + 2
+            while WindowLocator.frame(of: id) != original, CACurrentMediaTime() < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertEqual(WindowLocator.frame(of: id), original)
+        }
+        let critical = try runtime(thermalState: .critical, windowFilter: { $0.id == id })
+        defer { critical.stop() }
+        await critical.playDocument(document, windowID: id)
+        XCTAssertFalse(critical.isPlaying)
+        XCTAssertTrue(try XCTUnwrap(critical.errorMessage).contains("critical thermal pressure"))
+        XCTAssertEqual(WindowLocator.frame(of: id), original)
     }
 
     /// Only this child may be parked. AX never mutates self-process AppKit from
@@ -370,6 +512,27 @@ final class CatalogRuntimeTests: XCTestCase {
     let visible = screen.visibleFrame
     let window = NSWindow(contentRect: NSRect(x: visible.minX + 60, y: visible.minY + 90, width: 420, height: 240),
         styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+    var additionalWindows: [NSWindow] = []
+    if CommandLine.arguments.last == "overview" {
+        for index in 0..<3 {
+            let extra = NSWindow(contentRect: visible, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            extra.isReleasedWhenClosed = false
+            extra.animationBehavior = .none
+            var frame = visible
+            if index == 0 { frame.size.width *= 0.55 }
+            extra.setFrame(frame, display: false)
+            let text = NSTextView(frame: extra.contentView!.bounds)
+            text.autoresizingMask = [.width, .height]
+            text.string = try String(contentsOfFile: CommandLine.arguments[1], encoding: .utf8)
+            text.isEditable = false
+            text.drawsBackground = true
+            extra.contentView = text
+            extra.orderFrontRegardless()
+            extra.displayIfNeeded()
+            additionalWindows.append(extra)
+        }
+        window.setFrame(visible, display: false)
+    }
     window.isReleasedWhenClosed = false
     window.animationBehavior = .none
     window.title = "Catalog runtime helper — README.md"

@@ -391,7 +391,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller?.cancelAll()
         let layer = builtin.makeLayer()
         let document = StudioDocument(name: builtin.effect.title, duration: layer.end, layers: [layer])
-        Task { await CatalogRuntime.shared.playDocument(document) }
+        Task { await CatalogRuntime.shared.playDocument(document, effect: builtin.effect) }
     }
 
     @objc private func runCustomEffect(_ sender: NSMenuItem) {
@@ -414,7 +414,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         controller?.cancelAll()
         let preset = CatalogStore.shared.preset(settings.overviewLayout)
-        Task { await CatalogRuntime.shared.play(preset) }
+        Task { await CatalogRuntime.shared.play(preset, trigger: .overview) }
     }
 
     @objc nonisolated private func preferencesChanged() {
@@ -435,7 +435,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func selectQuality(_ sender: NSMenuItem) {
         if let raw = sender.representedObject as? String, let choice = RenderQuality(rawValue: raw) {
+            guard RenderQualityManager.shared.selection != choice else { return }
             RenderQualityManager.shared.selection = choice
+            telemetry.record(.quality(choice))
         }
     }
 

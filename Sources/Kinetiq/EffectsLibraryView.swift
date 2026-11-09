@@ -256,7 +256,7 @@ struct EffectDetailView: View {
             }
             .padding(20)
         }
-        .onAppear { editing = saved }
+        .onAppear { editing = saved; runtime.clearError() }
         .onChange(of: store.presets) { _, _ in if editing == nil { editing = saved } }
         .onDisappear { runTask?.cancel(); runtime.stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
@@ -538,6 +538,7 @@ struct CustomEffectDetailView: View {
                     model.closeEffectChangedPublic()
                 }
             } message: { Text("It is removed from My Effects and stops playing on any event. This cannot be undone.") }
+            .onAppear { runtime.clearError() }
             .onDisappear { runTask?.cancel(); runtime.stop() }
         } else {
             ContentUnavailableView("Effect deleted", systemImage: "star.slash")
@@ -664,12 +665,14 @@ enum CatalogFilePanels {
         return try Data(contentsOf: url, options: .mappedIfSafe)
     }
 
-    static func write(_ data: Data, name: String) throws {
+    /// Completion is synchronous and runs only after a successful atomic write, never on cancellation.
+    static func write(_ data: Data, name: String, onSuccess: () -> Void = {}) throws {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = name
         guard panel.runModal() == .OK, let url = panel.url else { return }
         try data.write(to: url, options: .atomic)
+        onSuccess()
     }
 }
 
@@ -724,12 +727,17 @@ struct CatalogArrangementView: View {
                 header
                 ForEach(Settings.overviewLayouts, id: \.self) { id in card(id) }
                 if let error = runtime.errorMessage { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+                if runtime.isPlaying {
+                    Text("Showing \(runtime.capturedWindowCount) windows within the 32-megapixel capture limit.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Text("Uses captures of up to eight windows on the current Space. Windows are never moved: they are put back exactly where they were, and the one you click is brought to the front. Kinetiq does not switch native Spaces.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             .padding(24)
         }
-        .onDisappear { runTask?.cancel() }
+        .onAppear { runtime.clearError() }
+        .onDisappear { runTask?.cancel(); runtime.stop() }
     }
 
     private var header: some View {
@@ -750,7 +758,11 @@ struct CatalogArrangementView: View {
                 Toggle(isOn: model.binding({ settings.overviewShortcut }, { settings.overviewShortcut = $0 })) {
                     Text("Shortcut \(GlobalHotKey.overviewTitle) anywhere")
                 }
-                Picker("Opens", selection: model.binding({ settings.overviewLayout }, { settings.overviewLayout = $0 })) {
+                Picker("Opens", selection: model.binding({ settings.overviewLayout }, { id in
+                    guard settings.overviewLayout != id else { return }
+                    settings.overviewLayout = id
+                    model.telemetry?.record(.effectSelected(effectID: LibraryEffect.catalog(id).id, trigger: .layout))
+                })) {
                     ForEach(Settings.overviewLayouts, id: \.self) { Text(EffectCatalog.descriptor($0).title).tag($0) }
                 }
                 .pickerStyle(.segmented).frame(maxWidth: 320)
@@ -804,7 +816,10 @@ struct CatalogArrangementView: View {
                     HStack {
                         Button("Start", systemImage: "play.fill") { start(id) }
                             .buttonStyle(.borderedProminent).disabled(runtime.isPlaying)
-                        Button("Use for Shortcut") { settings.overviewLayout = id; model.refresh() }.disabled(isDefault)
+                        Button("Use for Shortcut") {
+                            settings.overviewLayout = id; model.refresh()
+                            model.telemetry?.record(.effectSelected(effectID: LibraryEffect.catalog(id).id, trigger: .layout))
+                        }.disabled(isDefault)
                         Button("Defaults") { store.reset(id) }.disabled(store.preset(id) == EffectPreset(effect: id))
                     }
                 }
@@ -824,6 +839,6 @@ struct CatalogArrangementView: View {
 
     private func start(_ id: EffectID) {
         runTask?.cancel()
-        runTask = Task { await runtime.play(store.preset(id)) }
+        runTask = Task { await runtime.play(store.preset(id), trigger: .overview) }
     }
 }
