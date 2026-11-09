@@ -41,3 +41,15 @@ The MP3 itself is not stored in this repository. To remux with it:
 The 720p `Kinetiq-promo-web.mp4` (under GitHub's 10 MB attachment limit) is a two-pass x264 encode at 1450 kb/s with 128 kb/s AAC; the README embeds its GitHub user-attachments upload.
 
 `kinetiq_score.py` still produces the original synthesized score as a royalty-free alternative.
+
+## Demo montage
+
+`Kinetiq-demo.mp4` (56 s) intercuts a live screen recording of Kinetiq with scenes from the promo and the
+marketing stills, cut on the bar lines of "Eternity" (161.5 BPM, music from 91.033 s so the lift lands on the
+first live shot):
+
+    KINETIQ_FRAMES=/tmp/kinetiq-frames python3 kinetiq_demo.py <recording.mov> ../Kinetiq-promo.mp4 .. \
+        ../Kinetiq-demo.mp4 "Pufino - Eternity (freetouse.com).mp3"
+
+Set `KINETIQ_STILL="t1,t2"` to write PNG stills instead of a video. `Kinetiq-demo-web.mp4` is a 720p two-pass
+x264 encode at 1180 kb/s with 128 kb/s AAC (under 10 MB).
