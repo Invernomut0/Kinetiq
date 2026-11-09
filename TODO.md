@@ -2,7 +2,7 @@
 
 Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (implementation).
 
-**New release — v0.5.2 / build 45: task 27 Doing**, owner **Copilot**.
+**Published release — v0.5.2 / build 45: task 27 Done**, owner **Copilot**.
 Package the normally merged PR #9 wobbly fix; telemetry, consent, dependencies and
 runtime sources/tests are unchanged. README/install/release records updated.
 
@@ -30,9 +30,26 @@ runtime sources/tests are unchanged. README/install/release records updated.
 	`SHA256SUMS.txt`: 84 bytes; file SHA-256
 	`c59eeeb464b15ced2797739ff4065ac338251391b0d05eeb70ae05437f8b93ad`.
 	Existing v0.5.1 DMG hash is unchanged.
-- **Doing — Copilot (remote publication):** normal exact-head PR merge, new annotated
-	tag and GitHub asset verification pending. Repository visibility, hosted CI and
-	owner G2/F2 review remain separate. User launch settings, `.serena` and audio excluded.
+- **Done — Copilot (remote publication):** PR #10 merged normally from exact release
+	head `f0cd7d0ea87df77e81b8525e3f546301a6551c77` at
+	`e28f22dfa2adaea24d07a99d87399d41cfa5c611`. Annotated `v0.5.2` tag object
+	`629bd4e2060bac762f84f16951ac6df87884acd2` peels to that exact merge commit.
+	[GitHub v0.5.2 release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.2)
+	is verified published, non-draft, non-prerelease and Latest; both assets' uploaded
+	states, sizes and server SHA-256 digests match the local bytes recorded above.
+	Repository metadata reports PUBLIC and anonymous webpage access was confirmed;
+	we did not change visibility. Initial release notes inherited the historical private
+	assumption; only release/PR descriptions were corrected to public downloads,
+	without changing the tag or assets.
+- **Done — Copilot (historical release preservation):** v0.5.1 annotated tag object
+	`0677bd429ad88876a95eef1986804ac879248a6c` and target
+	`2a8d3f4d937111f5602d1a50424cec53a37a4d30` are unchanged. Local and remote
+	old DMG SHA-256 both remain
+	`2c5a8074501d4af32d52643731fb6a7997e015e75e97590eed63e697a2ba040f`.
+- **Review — Lorenzo:** the new tagged `Release` workflow was observed IN_PROGRESS,
+	not passed. No checks, protections or billing settings changed. G2/F2 privacy,
+	live ingestion, distribution and native signing gates remain Review; not notarized.
+	User launch settings, `.serena` and audio excluded.
 
 **Wobbly window compatibility — task 26 Done**, owner **Copilot**
 (implementation and local acceptance; publication tracked in PR #9).
@@ -88,11 +105,12 @@ movement keeps normal IPC timeouts. No analytics/schema/consent/version changes.
 	User launch settings, `.serena` and untracked marketing audio remain excluded;
 	concurrent main documentation/video retained. Hosted CI is not claimed green.
 
-**Published release — v0.5.1 / build 44:** task **25 Done**, owner **Copilot**.
+**Historical published release — v0.5.1 / build 44:** task **25 Done**, owner **Copilot**.
 README installation/first-launch instructions, final captured-README optics and
 DMG/checksum verification are complete; PR #7 normal merge, annotated tag and
 [GitHub Latest release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.1)
-with matching server asset digests are verified. Repository stays private; login required.
+with matching server asset digests are verified. At publication, the repository was
+private and required authorized login; this is historical access evidence.
 Prefer Open Anyway; targeted quarantine removal only for a trusted, verified copy,
 not broad `xattr -cr`, global Gatekeeper disablement or damaged/malware-warning bypass.
 
@@ -269,7 +287,7 @@ pin, without SDK source edits.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 27 | Publish v0.5.2/build 45 with the wobbly compatibility fix | Doing | Owner: Copilot. Local acceptance Done: final Release421, zero failures/skips, actual README optics and seven real wobbly cases; matching Lines, universal app/saver, strict signatures, bundle/disabled smoke and new read-only byte-verified DMG/checksum passed. Initial failed native attempts retained above. Remote exact-head PR/tag/GitHub publication pending; old v0.5.1/user files and G2/F2 gates preserved. |
+| 27 | Publish v0.5.2/build 45 with the wobbly compatibility fix | Done | Owner: Copilot. Final Release421, zero failures/skips, actual README optics and seven real wobbly cases; matching Lines, universal app/saver, strict signatures, bundle/disabled smoke and read-only byte-verified DMG/checksum passed. Initial failed attempts retained above. PR #10 normal exact-head merge, annotated tag on e28f22dfa2adaea24d07a99d87399d41cfa5c611 and Latest non-draft/non-prerelease release with matching uploaded asset sizes/server digests verified. Public access confirmed without visibility changes; only release/PR descriptions corrected. Old v0.5.1 tag/assets and user files preserved. Tagged Release CI observed IN_PROGRESS, not passed; G2/F2 remain Review, not notarized. |
 | 26 | Broaden safe wobbly window compatibility | Done | Owner: Copilot, implementation/local acceptance. Unlocked complete Release421 (237 app + 36 Effects + 148 Core), zero failures/skips; all seven real native regressions pass. Final README optics + wobbly8 passed; universal app/saver, strict signatures, bundle/disabled smoke and matching Lines verified above. Historical loginwindow failures and incorrect-smoke incident retained. PR #9 normal publication tracked in Git history. No named third-party app certification, exclusion/security bypass or new release. |
 | 25 | GitHub v0.5.1 release and safe first-launch instructions | Done | Owner: Copilot. README installation, checksum, Gatekeeper and targeted quarantine guidance implemented; post-doc90 including real optics, DMG integrity/read-only byte comparison/universal metadata/signatures and checksum passed. PR #7 normal merge 2a8d3f4, annotated v0.5.1 and Latest publication with matching uploaded asset digests verified. Private repository requires authorized login; no visibility, real consent/live analytics, normal app lifecycle or billing/protection changes. Hosted CI failures remain separate owner Review. |
 | 24 | Consented macOS configured country for standard GA4 Country | Done | Owner: Copilot, implementation/local acceptance only. v0.5.1/build 44; GA4 revision 3/native 2, country-only top-level user_location, closed ISO249, no custom country key or fabricated location. Final Release414, 89 analytics; matching Lines and universal package/signatures/bundle/disabled smoke verified in docs/telemetry.md. Actual Mac-region getter/live delivery unexecuted. Final post-edit README optics and publication tracked in task25; G2/F2 remain owner Review. |

@@ -14,8 +14,8 @@ their target's level; AX lookup is bounded without shortening movement timeouts.
 PR #9 merged normally. Seven disposable real-AppKit regressions exercise actual
 capture, Metal deformation, parking and exact restoration; named Telegram/TextEdit/
 Teams versions have not been directly certified. The implementation acceptance is
-recorded in [CHANGELOG](../CHANGELOG.md#052--build-45); new package/publication
-verification is tracked as task 27 in [TODO](../TODO.md). Telemetry, consent revisions,
+recorded in [CHANGELOG](../CHANGELOG.md#052--build-45); completed package/publication
+verification is recorded as task 27 Done in [TODO](../TODO.md). Telemetry, consent revisions,
 SDK pin and privacy gates are unchanged. This release is not notarized.
 
 **Build 45 local acceptance:** final complete Release **421 = 237 app + 36 Effects +
@@ -25,8 +25,22 @@ passing final run are recorded in task 27. Universal arm64/x86_64 app/saver, str
 signatures, bundle verifier, disabled CLI smoke, DMG integrity and read-only mounted
 bundle byte equality passed. DMG SHA-256:
 `4662ed5dd0616a6a1d90d8fa9cdfe003fd7531cdbac598b7b752d4bd38725997`.
-Existing v0.5.1 assets remain unchanged; remote publication is separate from local
-acceptance. No normal user-app lifecycle, real consent automation or live probe.
+No normal user-app lifecycle, real consent automation or live probe in this acceptance.
+
+**Verified publication:** [v0.5.2 GitHub Latest release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.2)
+is published, non-draft and non-prerelease. PR #10 merged normally from exact release
+head `f0cd7d0ea87df77e81b8525e3f546301a6551c77` at
+`e28f22dfa2adaea24d07a99d87399d41cfa5c611`; annotated tag object
+`629bd4e2060bac762f84f16951ac6df87884acd2` peels to that exact merge commit.
+DMG/checksum uploaded states, sizes and server SHA-256 digests match local bytes
+recorded in task 27. Repository metadata reports PUBLIC and anonymous webpage access
+was confirmed; we did not change visibility. Only release/PR descriptions corrected
+the initial inherited private-download assumption; tag and assets were unchanged.
+v0.5.1 was private at its publication; its historical evidence, annotated tag/target
+and local/remote DMG hash remain unchanged. The new tagged `Release` workflow was
+observed IN_PROGRESS, not passed; no checks, protections or billing settings changed.
+G2/F2 privacy/live ingestion/distribution/native signing gates remain **Review — Lorenzo**;
+publication does not establish those gates or notarization.
 
 ## v0.5.1 · build 44 — consented configured country for GA4
 
