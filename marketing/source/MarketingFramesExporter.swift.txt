@@ -1,0 +1,262 @@
+// Temporary marketing exporter: renders Kinetiq effects on fictional sample windows.
+import AppKit
+import CoreVideo
+import KinetiqCore
+import KinetiqEffects
+import Metal
+import XCTest
+@testable import Kinetiq
+
+@MainActor
+private enum DemoWindow: String, CaseIterable {
+    case gallery, music, dashboard, notes
+
+    static let size = CGSize(width: 680, height: 440)
+    static let room: CGFloat = 60
+    static let scale: CGFloat = 2
+
+    func frame() throws -> CapturedFrame {
+        let room = (Self.room * Self.scale).rounded()
+        let width = Int(Self.size.width * Self.scale + 2 * room), height = Int(Self.size.height * Self.scale + 2 * room)
+        var buffer: CVPixelBuffer?
+        let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary, kCVPixelBufferMetalCompatibilityKey: true]
+        guard CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, attributes as CFDictionary, &buffer) == kCVReturnSuccess,
+              let buffer else { throw CaptureError.emptySample }
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        let context = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: width, height: height, bitsPerComponent: 8,
+                                bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: WindowCapture.colorSpace,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+        context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: Self.scale, y: -Self.scale)
+        let rect = CGRect(x: Self.room, y: Self.room, width: Self.size.width, height: Self.size.height)
+        draw(context, rect)
+        return CapturedFrame(windowID: CGWindowID(1000 + (DemoWindow.allCases.firstIndex(of: self) ?? 0)), pixelBuffer: buffer,
+                             pointSize: Self.size, windowRect: CGRect(x: room, y: room, width: Self.size.width * Self.scale, height: Self.size.height * Self.scale),
+                             shadow: ShadowInsets(left: 40, top: 28, right: 40, bottom: 56), capturedAt: CACurrentMediaTime())
+    }
+
+    private var dark: Bool { self == .music }
+
+    private func color(_ r: Double, _ g: Double, _ b: Double, _ a: Double = 1) -> CGColor { CGColor(red: r, green: g, blue: b, alpha: a) }
+
+    private func rounded(_ c: CGContext, _ r: CGRect, _ radius: CGFloat, _ fill: CGColor) {
+        c.addPath(CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)); c.setFillColor(fill); c.fillPath()
+    }
+
+    private func gradient(_ c: CGContext, _ r: CGRect, _ radius: CGFloat, _ colors: [CGColor], vertical: Bool = false) {
+        c.saveGState()
+        c.addPath(CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)); c.clip()
+        let g = CGGradient(colorsSpace: WindowCapture.colorSpace, colors: colors as CFArray, locations: nil)!
+        c.drawLinearGradient(g, start: r.origin, end: vertical ? CGPoint(x: r.minX, y: r.maxY) : CGPoint(x: r.maxX, y: r.maxY), options: [])
+        c.restoreGState()
+    }
+
+    private func text(_ c: CGContext, _ s: String, _ p: CGPoint, size: CGFloat, weight: NSFont.Weight = .semibold, color: NSColor) {
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: c, flipped: true)
+        (s as NSString).draw(at: p, withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color])
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private func draw(_ c: CGContext, _ f: CGRect) {
+        let path = CGPath(roundedRect: f, cornerWidth: 12, cornerHeight: 12, transform: nil)
+        c.saveGState()
+        c.setShadow(offset: CGSize(width: 0, height: 24), blur: 40, color: color(0, 0, 0, 0.45))
+        c.setFillColor(dark ? color(0.11, 0.11, 0.14) : color(1, 1, 1)); c.addPath(path); c.fillPath()
+        c.restoreGState()
+        c.saveGState(); c.addPath(path); c.clip()
+        let bg = dark ? color(0.10, 0.10, 0.13) : (self == .notes ? color(0.99, 0.98, 0.95) : color(0.975, 0.977, 0.985))
+        c.setFillColor(bg); c.fill(f)
+        // Title bar
+        c.setFillColor(dark ? color(0.15, 0.15, 0.19) : color(0.94, 0.94, 0.955)); c.fill(CGRect(x: f.minX, y: f.minY, width: f.width, height: 40))
+        for (i, k) in [(0.99, 0.37, 0.34), (0.99, 0.74, 0.18), (0.26, 0.78, 0.29)].enumerated() {
+            c.setFillColor(color(k.0, k.1, k.2)); c.fillEllipse(in: CGRect(x: f.minX + 15 + CGFloat(i) * 20, y: f.minY + 14, width: 12, height: 12))
+        }
+        let titles: [DemoWindow: String] = [.gallery: "Moodboard", .music: "Now Playing", .dashboard: "Overview", .notes: "Ideas"]
+        text(c, titles[self]!, CGPoint(x: f.midX - 40, y: f.minY + 11), size: 13, color: dark ? .init(white: 0.85, alpha: 1) : .init(white: 0.3, alpha: 1))
+        let body = CGRect(x: f.minX, y: f.minY + 40, width: f.width, height: f.height - 40)
+        switch self {
+        case .gallery:
+            let palettes: [[CGColor]] = [
+                [color(0.98, 0.55, 0.35), color(0.86, 0.25, 0.48)], [color(0.30, 0.62, 0.98), color(0.42, 0.26, 0.86)],
+                [color(0.20, 0.80, 0.66), color(0.10, 0.45, 0.62)], [color(0.99, 0.80, 0.30), color(0.98, 0.45, 0.25)],
+                [color(0.62, 0.40, 0.95), color(0.95, 0.45, 0.70)], [color(0.16, 0.22, 0.42), color(0.35, 0.70, 0.90)]]
+            let w = (body.width - 4 * 18) / 3, h = (body.height - 3 * 18 - 30) / 2
+            text(c, "Spring collection", CGPoint(x: body.minX + 18, y: body.minY + 10), size: 15, color: .init(white: 0.15, alpha: 1))
+            for i in 0..<6 {
+                let r = CGRect(x: body.minX + 18 + CGFloat(i % 3) * (w + 18), y: body.minY + 40 + CGFloat(i / 3) * (h + 18), width: w, height: h)
+                gradient(c, r, 12, palettes[i])
+                // Abstract hills
+                c.saveGState(); c.addPath(CGPath(roundedRect: r, cornerWidth: 12, cornerHeight: 12, transform: nil)); c.clip()
+                c.setFillColor(color(1, 1, 1, 0.18))
+                c.move(to: CGPoint(x: r.minX, y: r.maxY)); c.addCurve(to: CGPoint(x: r.maxX, y: r.maxY - r.height * 0.3),
+                    control1: CGPoint(x: r.minX + r.width * 0.3, y: r.maxY - r.height * 0.7), control2: CGPoint(x: r.minX + r.width * 0.6, y: r.maxY))
+                c.addLine(to: CGPoint(x: r.maxX, y: r.maxY)); c.fillPath()
+                c.setFillColor(color(1, 1, 1, 0.55)); c.fillEllipse(in: CGRect(x: r.maxX - 44, y: r.minY + 16, width: 22, height: 22))
+                c.restoreGState()
+            }
+        case .music:
+            let art = CGRect(x: body.minX + 28, y: body.minY + 28, width: 250, height: 250)
+            gradient(c, art, 16, [color(0.98, 0.35, 0.55), color(0.45, 0.25, 0.95), color(0.15, 0.75, 0.95)])
+            c.setFillColor(color(1, 1, 1, 0.22)); c.fillEllipse(in: art.insetBy(dx: 60, dy: 60))
+            c.setFillColor(color(0.10, 0.10, 0.13)); c.fillEllipse(in: art.insetBy(dx: 112, dy: 112))
+            text(c, "Neon Tides", CGPoint(x: art.maxX + 30, y: art.minY + 10), size: 26, weight: .bold, color: .white)
+            text(c, "Aurora Ensemble", CGPoint(x: art.maxX + 30, y: art.minY + 46), size: 15, weight: .medium, color: .init(white: 0.65, alpha: 1))
+            for i in 0..<34 {
+                let hgt: CGFloat = CGFloat(18 + 50 * abs(sin(Double(i) * 0.7) * cos(Double(i) * 0.23)))
+                rounded(c, CGRect(x: art.maxX + 30 + CGFloat(i) * 9.5, y: art.minY + 150 - hgt / 2, width: 5, height: hgt), 2.5,
+                        i < 20 ? color(0.55, 0.45, 1) : color(1, 1, 1, 0.22))
+            }
+            rounded(c, CGRect(x: art.maxX + 30, y: art.minY + 215, width: 320, height: 4), 2, color(1, 1, 1, 0.18))
+            rounded(c, CGRect(x: art.maxX + 30, y: art.minY + 215, width: 190, height: 4), 2, color(0.95, 0.45, 0.70))
+            for (i, d) in [30.0, 44.0, 30.0].enumerated() {
+                c.setFillColor(i == 1 ? color(1, 1, 1) : color(1, 1, 1, 0.5))
+                c.fillEllipse(in: CGRect(x: art.maxX + 90 + CGFloat(i) * 70 - d / 2, y: art.maxY + 40 - d / 2, width: d, height: d))
+            }
+            c.setFillColor(color(0.10, 0.10, 0.13))
+            c.move(to: CGPoint(x: art.maxX + 154, y: art.maxY + 30)); c.addLine(to: CGPoint(x: art.maxX + 154, y: art.maxY + 50))
+            c.addLine(to: CGPoint(x: art.maxX + 170, y: art.maxY + 40)); c.fillPath()
+        case .dashboard:
+            text(c, "Weekly activity", CGPoint(x: body.minX + 22, y: body.minY + 12), size: 15, color: .init(white: 0.15, alpha: 1))
+            let card1 = CGRect(x: body.minX + 20, y: body.minY + 42, width: 400, height: 220)
+            rounded(c, card1, 14, color(1, 1, 1)); c.setStrokeColor(color(0, 0, 0, 0.06)); c.setLineWidth(1)
+            c.addPath(CGPath(roundedRect: card1, cornerWidth: 14, cornerHeight: 14, transform: nil)); c.strokePath()
+            var pts: [CGPoint] = []
+            for i in 0...10 {
+                let wave: Double = 60 + 70 * sin(Double(i) * 0.65) + Double(i) * 6
+                let x: CGFloat = card1.minX + 20 + CGFloat(i) * 36
+                pts.append(CGPoint(x: x, y: card1.maxY - 30 - CGFloat(wave)))
+            }
+            c.saveGState()
+            c.move(to: CGPoint(x: pts[0].x, y: card1.maxY - 20)); pts.forEach { c.addLine(to: $0) }
+            c.addLine(to: CGPoint(x: pts.last!.x, y: card1.maxY - 20)); c.closePath(); c.clip()
+            let g = CGGradient(colorsSpace: WindowCapture.colorSpace, colors: [color(0.35, 0.45, 1, 0.45), color(0.35, 0.45, 1, 0)] as CFArray, locations: nil)!
+            c.drawLinearGradient(g, start: CGPoint(x: 0, y: card1.minY), end: CGPoint(x: 0, y: card1.maxY), options: [])
+            c.restoreGState()
+            c.setStrokeColor(color(0.33, 0.42, 1)); c.setLineWidth(3); c.setLineJoin(.round)
+            c.move(to: pts[0]); pts.dropFirst().forEach { c.addLine(to: $0) }; c.strokePath()
+            let card2 = CGRect(x: card1.maxX + 18, y: card1.minY, width: body.maxX - card1.maxX - 38, height: 220)
+            rounded(c, card2, 14, color(1, 1, 1))
+            let center = CGPoint(x: card2.midX, y: card2.midY), radius: CGFloat = 70
+            let parts: [(Double, CGColor)] = [(0.42, color(0.98, 0.45, 0.35)), (0.33, color(0.30, 0.75, 0.62)), (0.25, color(0.60, 0.45, 0.98))]
+            var start = -Double.pi / 2
+            for (share, col) in parts {
+                let end = start + share * 2 * .pi
+                c.setStrokeColor(col); c.setLineWidth(22); c.setLineCap(.round)
+                c.addArc(center: center, radius: radius, startAngle: start + 0.08, endAngle: end - 0.08, clockwise: false); c.strokePath()
+                start = end
+            }
+            for i in 0..<4 {
+                let r = CGRect(x: body.minX + 20 + CGFloat(i) * 158, y: card1.maxY + 18, width: 142, height: 100)
+                rounded(c, r, 14, color(1, 1, 1))
+                rounded(c, CGRect(x: r.minX + 16, y: r.minY + 18, width: 60, height: 8), 4, color(0, 0, 0, 0.12))
+                rounded(c, CGRect(x: r.minX + 16, y: r.minY + 42, width: 90, height: 22), 6,
+                        [color(0.33, 0.42, 1), color(0.98, 0.45, 0.35), color(0.30, 0.75, 0.62), color(0.60, 0.45, 0.98)][i])
+            }
+        case .notes:
+            c.setFillColor(color(0.96, 0.94, 0.89)); c.fill(CGRect(x: f.minX, y: body.minY, width: 190, height: body.height))
+            for i in 0..<7 {
+                let y = body.minY + 22 + CGFloat(i) * 46
+                if i == 1 { rounded(c, CGRect(x: f.minX + 10, y: y - 8, width: 170, height: 40), 8, color(0.99, 0.82, 0.35, 0.55)) }
+                rounded(c, CGRect(x: f.minX + 22, y: y, width: 110 - CGFloat((i * 29) % 50), height: 9), 4, color(0.25, 0.22, 0.18, 0.75))
+                rounded(c, CGRect(x: f.minX + 22, y: y + 15, width: 140 - CGFloat((i * 17) % 40), height: 6), 3, color(0.25, 0.22, 0.18, 0.3))
+            }
+            text(c, "Weekend in the mountains", CGPoint(x: f.minX + 220, y: body.minY + 22), size: 24, weight: .bold, color: .init(white: 0.12, alpha: 1))
+            for line in 0..<11 {
+                rounded(c, CGRect(x: f.minX + 220, y: body.minY + 78 + CGFloat(line) * 24, width: 420 - CGFloat((line * 61) % 130), height: 8), 4,
+                        color(0.2, 0.18, 0.15, 0.32))
+            }
+            rounded(c, CGRect(x: f.minX + 220, y: body.minY + 78 + 5 * 24 - 6, width: 120, height: 20), 5, color(0.99, 0.82, 0.35, 0.5))
+        }
+        c.restoreGState()
+    }
+}
+
+final class ZZMarketingFramesTests: XCTestCase {
+    @MainActor func testExportMarketingFrames() async throws {
+        guard let out = ProcessInfo.processInfo.environment["KINETIQ_MARKETING"] else { throw XCTSkip("marketing export only") }
+        _ = NSApplication.shared
+        NSApp.appearance = NSAppearance(named: .aqua)
+        let defaults = UserDefaults(suiteName: "marketing.\(UUID().uuidString)")!
+        let settings = Kinetiq.Settings(defaults: defaults)
+        let renderer = OriginalPreviewRenderer(budget: { .forQuality(.ultra) })
+        let fps = 30.0
+        func save(_ image: NSImage, _ dir: URL, _ index: Int) throws {
+            var proposed = CGRect(origin: .zero, size: image.size)
+            let cg = try XCTUnwrap(image.cgImage(forProposedRect: &proposed, context: nil, hints: nil))
+            try NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])!
+                .write(to: dir.appendingPathComponent(String(format: "%04d.png", index)))
+        }
+        func dir(_ name: String) throws -> URL {
+            let url = URL(fileURLWithPath: out).appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        }
+        let windowFrame = CGRect(origin: CGPoint(x: 400, y: 300), size: DemoWindow.size)
+        // Window effects: (sequence name, effect, demo window, duration multiplier, seconds shown)
+        let shots: [(String, LibraryEffect, DemoWindow, Double, Double)] = [
+            ("wobbly", .catalog(.wobbly), .gallery, 1, 3.0),
+            ("incinerate", .close(.incinerate), .notes, 2.0, 3.4),
+            ("snap", .close(.snapOfDisintegration), .dashboard, 1.6, 2.5),
+            ("fire", .close(.fire), .music, 1.4, 2.2),
+            ("glass", .close(.brokenGlass), .gallery, 1.6, 1.7),
+            ("rocket", .close(.teamRocket), .dashboard, 1.2, 1.9),
+            ("matrix", .close(.matrix), .notes, 1.2, 1.9),
+            ("wisps", .close(.wisps), .music, 1.2, 1.9),
+            ("genie", .minimize(.genie), .gallery, 1.6, 1.0),
+            ("whirlpool", .minimize(.whirlpool), .music, 1.5, 1.25),
+            ("liquid", .liquid, .dashboard, 1, 4.6),
+            ("destruction", .destruction, .notes, 1, 3.2),
+            ("pop", .entrance(.wobblePop), .music, 1, 1.6),
+        ]
+        let only = ProcessInfo.processInfo.environment["KINETIQ_MARKETING_ONLY"].map { Set($0.split(separator: ",").map(String.init)) }
+        for (name, effect, window, scale, seconds) in shots where only?.contains(name) ?? true {
+            settings.closeDuration = scale
+            let target = try dir(name)
+            let frame = try window.frame()
+            let total = OriginalPreviewRenderer.timelineSeconds(effect: effect, preset: nil, settings: settings)
+            let count = Int(seconds * fps)
+            for index in 0...count {
+                let progress = min(1, Double(index) / fps / total)
+                let image = try await renderer.previewCaptured(effect: effect, frame: frame, windowFrame: windowFrame,
+                                                               progress: progress, settings: settings)
+                try save(image, target, index)
+            }
+            print("MARKETING \(name) \(count + 1) frames")
+        }
+        settings.closeDuration = 1
+        // Studio composition and overview demos use the built-in sample window.
+        if only?.contains("studio") ?? true {
+            var ripple = EffectPreset(effect: .ripple); ripple.duration = 1.2
+            let incinerate = BuiltinLayer.close(.incinerate).makeLayer(start: 0.9)
+            let document = StudioDocument(name: "Ripple, then Incinerate", duration: incinerate.end,
+                                          layers: [StudioLayer(preset: ripple), incinerate])
+            let target = try dir("studio")
+            let count = Int(document.duration * fps)
+            for index in 0...count {
+                try save(try await renderer.preview(document: document, time: min(document.duration, Double(index) / fps),
+                                                    source: .sample, settings: settings), target, index)
+            }
+        }
+        for (name, id) in [("orbit", EffectID.orbit), ("expose", .expose3D), ("cube", .workspaceCube)] where only?.contains(name) ?? true {
+            let target = try dir(name)
+            let count = Int(OriginalPreviewRenderer.overviewPreviewSeconds * fps)
+            for index in 0...count {
+                try save(try await renderer.previewOverview(EffectPreset(effect: id), progress: Double(index) / Double(count),
+                                                            settings: settings), target, index)
+            }
+        }
+        // Stills of each demo window for the posters.
+        let stills = try dir("windows")
+        for window in DemoWindow.allCases {
+            let image = try await renderer.previewCaptured(effect: .minimize(.morph), frame: window.frame(), windowFrame: windowFrame,
+                                                           progress: 0, settings: settings)
+            var proposed = CGRect(origin: .zero, size: image.size)
+            let cg = try XCTUnwrap(image.cgImage(forProposedRect: &proposed, context: nil, hints: nil))
+            try NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])!
+                .write(to: stills.appendingPathComponent("\(window.rawValue).png"))
+        }
+    }
+}
