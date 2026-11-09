@@ -72,7 +72,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `Kinetiq-0.5.2.dmg` integrity, read-only mounted bundle byte comparison,
   metadata/signatures and checksum passed (`/tmp/kinetiq-v052-dmg.log`). SHA-256:
   `4662ed5dd0616a6a1d90d8fa9cdfe003fd7531cdbac598b7b752d4bd38725997`.
-  Existing v0.5.1 DMG unchanged. Remote publication remains tracked separately.
+  Existing v0.5.1 DMG unchanged.
+- Verified [v0.5.2 Latest release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.2),
+  non-draft/non-prerelease, after PR #10's normal exact-head merge of release head
+  `f0cd7d0ea87df77e81b8525e3f546301a6551c77` at
+  `e28f22dfa2adaea24d07a99d87399d41cfa5c611`. Annotated tag object
+  `629bd4e2060bac762f84f16951ac6df87884acd2` peels to that exact merge commit;
+  uploaded DMG/checksum states, sizes and server SHA-256 digests match local bytes.
+  Repository metadata reports PUBLIC and anonymous access was confirmed, without
+  changing visibility. Only release/PR descriptions corrected an inherited private
+  assumption to actual public downloads; tags/assets, including v0.5.1, are unchanged.
+  The new tagged `Release` workflow was observed IN_PROGRESS, not passed;
+  no checks, protections or billing settings changed.
 - No normal user-app startup, real consent automation or live analytics in this
   verification. No telemetry/schema/SDK change, named third-party app certification,
   hosted CI success or notarization claim. G2/F2 owner review stays open.
