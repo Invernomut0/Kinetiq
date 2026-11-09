@@ -79,10 +79,15 @@ struct TelemetryHostConfiguration {
     }
 }
 
-/// One retained application owner; only categorical privacy-page actions cross this boundary.
+/// One retained application owner; only approved categorical product actions cross this boundary.
 /// Test constructors inject real core clients' storage/provider contracts, never a vendor singleton.
 @MainActor
 final class KinetiqTelemetry: ObservableObject {
+    static weak var application: KinetiqTelemetry?
+    nonisolated static let maximumPendingUsageTasks = 4
+    nonisolated static let usageConsentRevision = 2
+    nonisolated static let usageConsentRevisionKey = "kinetiq.telemetry.firebase.usageConsentRevision"
+    nonisolated static let ga4UsageConsentRevisionKey = "kinetiq.telemetry.ga4.usageConsentRevision"
     nonisolated static let consentKey = "kinetiq.telemetry.firebase.analytics"
     nonisolated static let consentDecisionKey = "kinetiq.telemetry.firebase.analyticsDecision"
     nonisolated static let ga4ConsentKey = "kinetiq.telemetry.ga4.analytics"
@@ -91,6 +96,7 @@ final class KinetiqTelemetry: ObservableObject {
     let mode: Mode
     private var activeConsentKey: String { mode == .ga4 ? Self.ga4ConsentKey : Self.consentKey }
     private var activeDecisionKey: String { mode == .ga4 ? Self.ga4ConsentDecisionKey : Self.consentDecisionKey }
+    private var activeRevisionKey: String { mode == .ga4 ? Self.ga4UsageConsentRevisionKey : Self.usageConsentRevisionKey }
     @Published private(set) var ready = false
     @Published private(set) var busy = false
     @Published private(set) var analyticsConsent = false
@@ -112,12 +118,16 @@ final class KinetiqTelemetry: ObservableObject {
     private var idleWaiters: [CheckedContinuation<Void, Never>] = []
     private var shutdownTask: Task<Void, Never>?
     private var startupPromptPresented = false
+    private var needsUpdatedConsent = false
+    private var usageTasks: [UUID: Task<Void, Never>] = [:]
+    private var usageGeneration = UUID()
 
     var canChangeConsent: Bool { ready && !busy && !closing && (enabled || analyticsConsent) && provider != nil }
 
     /// Configuration failures are not a user decision; prompt once when analytics becomes available.
     var shouldRequestConsentAtStartup: Bool {
         guard canChangeConsent, enabled, !analyticsConsent, !startupPromptPresented else { return false }
+        if needsUpdatedConsent { return true }
         guard let decision = defaults.object(forKey: activeDecisionKey) as? NSNumber,
               CFGetTypeID(decision) == CFBooleanGetTypeID() else { return true }
         return !decision.boolValue
@@ -152,13 +162,43 @@ final class KinetiqTelemetry: ObservableObject {
         // UserDefaults.bool accepts strings/numbers. Consent must be an actual plist Boolean.
         if let stored = defaults.object(forKey: activeConsentKey) as? NSNumber,
            CFGetTypeID(stored) == CFBooleanGetTypeID() {
-            analyticsConsent = stored.boolValue
+            needsUpdatedConsent = stored.boolValue && (defaults.object(forKey: activeRevisionKey) as? Int) != Self.usageConsentRevision
+            analyticsConsent = stored.boolValue && !needsUpdatedConsent
         }
     }
 
     static func forApplication() -> KinetiqTelemetry {
-        KinetiqTelemetry(defaults: .standard,
-                         configuration: Result { try TelemetryHostConfiguration.load() })
+        let owner = KinetiqTelemetry(defaults: .standard,
+                                    configuration: Result { try TelemetryHostConfiguration.load() })
+        application = owner
+        return owner
+    }
+
+    /// Product hooks never construct a client or enable analytics as a side effect.
+    static func emit(_ event: KinetiqUsageEvent) { application?.record(event) }
+
+    /// At most four immediate core submissions; denied/busy/overflow actions are never queued or replayed.
+    func record(_ event: KinetiqUsageEvent) {
+        guard ready, !busy, !closing, enabled, analyticsConsent,
+              usageTasks.count < Self.maximumPendingUsageTasks, let client else { return }
+        let properties: EventProperties = event.parameters.mapValues { .string($0) }
+        guard KinetiqUsageEvent.approvedParameters(name: event.name, properties: properties) != nil else { return }
+        let generation = usageGeneration
+        let taskID = UUID()
+        // MainActor isolation registers the task before its body can execute.
+        usageTasks[taskID] = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.usageGeneration == generation { self.usageTasks.removeValue(forKey: taskID) } }
+            guard !Task.isCancelled, self.usageGeneration == generation,
+                  !self.closing, self.enabled, self.analyticsConsent else { return }
+            await client.track(event.name, properties: properties)
+        }
+    }
+
+    private func cancelPendingUsage() {
+        usageGeneration = UUID()
+        for task in usageTasks.values { task.cancel() }
+        usageTasks.removeAll()
     }
 
     /// Reserve initialization before suspension; repeated callers wait without making another client.
@@ -189,7 +229,7 @@ final class KinetiqTelemetry: ObservableObject {
                 environment: host.environment, enabled: enabled,
                 privacy: PrivacySettings(analyticsEnabled: analyticsConsent && provider != nil,
                     crashReportingEnabled: false, collectOSVersion: false, collectHardwareInfo: false,
-                    allowedPropertyKeys: ["feature"]),
+                    allowedPropertyKeys: KinetiqUsageEvent.propertyKeys),
                 lifecycleTrackingEnabled: false, allowProductionInDebugBuild: false)
             let owned = TelemetryClient(configuration: config, analyticsProvider: provider,
                                         identityStore: identityStore)
@@ -199,13 +239,15 @@ final class KinetiqTelemetry: ObservableObject {
             guard !analyticsConsent || diagnostics.analyticsAvailable else { throw TelemetryHostConfiguration.Invalid.configuration }
             ready = true
             status = provider == nil ? "Analytics unavailable: configuration required" :
-                (analyticsConsent ? "Analytics consent granted" : "Analytics off: consent required")
+                (analyticsConsent ? "Analytics consent granted" :
+                    needsUpdatedConsent ? "Analytics off: updated product-usage consent required" : "Analytics off: consent required")
         } catch { await failClosed() }
     }
 
     /// Persist withdrawal before vendor cleanup, grants only after successful provider startup.
     func setAnalyticsConsent(_ granted: Bool) async {
         guard canChangeConsent, !granted || enabled, let client else { return }
+        cancelPendingUsage()
         defaults.set(true, forKey: activeDecisionKey)
         busy = true
         defer { finish() }
@@ -215,6 +257,8 @@ final class KinetiqTelemetry: ObservableObject {
             if !granted, await hasPurgeFailure() { await failClosed(); return }
             let diagnostics = await client.diagnostics()
             guard !granted || diagnostics.analyticsAvailable else { throw TelemetryHostConfiguration.Invalid.configuration }
+            defaults.set(Self.usageConsentRevision, forKey: activeRevisionKey)
+            needsUpdatedConsent = false
             analyticsConsent = granted
             defaults.set(granted, forKey: activeConsentKey)
             status = granted ? "Analytics consent granted" : "Analytics consent withdrawn"
@@ -232,6 +276,7 @@ final class KinetiqTelemetry: ObservableObject {
     /// Independent runtime kill switch; re-enabling never invents persisted consent.
     func setEnabled(_ value: Bool) async {
         guard ready, !busy, !closing, let client else { return }
+        cancelPendingUsage()
         busy = true
         defer { finish() }
         enabled = value
@@ -252,6 +297,7 @@ final class KinetiqTelemetry: ObservableObject {
     }
 
     private func failClosed() async {
+        cancelPendingUsage()
         denyConsent()
         closing = true
         ready = false
@@ -277,6 +323,7 @@ final class KinetiqTelemetry: ObservableObject {
     /// Single serialized shutdown. The AppKit delegate supplies a best-effort external deadline.
     func shutdown() async {
         if let shutdownTask { await shutdownTask.value; return }
+        cancelPendingUsage()
         closing = true
         let task = Task { @MainActor in
             await waitUntilIdle()

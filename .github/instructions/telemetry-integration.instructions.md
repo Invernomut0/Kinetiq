@@ -23,7 +23,23 @@ applyTo: "**/*.swift"
   `kinetiq.telemetry.ga4.analytics` / `analyticsDecision` and separate local identity;
   no transfer of previous Firebase/PostHog consent or UUID. Default Don't Share.
 - Use Web `measurement_id` / `client_id`; never invent a Firebase `app_instance_id`.
-  Only actual `feature_used` / `feature=privacy_settings`. Deny ads consent, omit
+  The owner's newer v0.5.0 scope supersedes the former privacy-settings-only
+  restriction: use only the six typed `KinetiqUsageEvent` names `feature_used`,
+  `effect_played`, `effect_selected`, `studio_action`, `screensaver_action`,
+  `quality_changed`, with `feature`/`effect_id`/`trigger`/`action`/`quality` only.
+  Require consent revision 2 separately per GA4/native mode; an old grant stays off
+  until updated explicit consent, default Don't Share; preserve legacy namespaces.
+  Count successful playback starts, not attempts/selections/automatic preview loops;
+  separate manual/native/layout triggers. Use 66 library IDs plus custom/classic
+  sentinels, off/random only for selection. Studio actions require validated success,
+  saver actions are app enable/disable/preview, not OS host runs; quality is manual,
+  not auto-budget changes. No custom names/content/app IDs/window metadata/free-form
+  properties. Keep the existing single owner/weak hook, at most four immediate tasks with
+  no disk queue/retry/replay and four-request GA4 cap; drops are not an exact usage census.
+  No new saver SDK or external geolocation service; no GPS/IP lookup, user_location,
+  ip_override or Locale/time-zone location inference. MP-only geography can remain
+  (not set) without tagging history; native geography is conditional on actual gated
+  enablement, not enabled by this scope. Deny ads consent, omit
   automatic native events/device metadata and invented engagement time. Web session
   ID uses actual Date; measure real foreground intervals with ContinuousClock only
   after consent, omit zero engagement, stop observers on withdrawal. Disclose actual
@@ -80,7 +96,9 @@ supersedes provider/configuration/identity guidance in the historical copied
   ad user data/personalization, IDFV, ad-network registration, automatic screen reporting,
   delegate proxy. After consent, Firebase may collect device/OS, app-instance/session
   and IP/location/network metadata. Never promise no OS/hardware or network anonymity.
-  Forward only actual `feature_used` / `feature=privacy_settings`, no custom content.
+  The newer owner-authorized revision-2 typed usage scope above replaces the former
+  privacy-settings-only restriction here too, without weakening native signing or
+  consent gates. No custom content or arbitrary metadata is forwarded.
 - Serialize and await existing initialization/control gates; kill switch is not consent.
   Persist grant after successful startup and local false before cleanup. Revoke with
   collection false, all consent denied and best-effort `resetAnalyticsData()` (no callback).

@@ -130,6 +130,15 @@ struct SetupView: View {
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didTerminateApplicationNotification)) { _ in model.refreshWindows() }
         .onChange(of: selection) { _, page in
             if page == .windows { model.refreshWindows() } else { model.refresh() }
+            switch page {
+            case .animationStudio: model.telemetry?.record(.feature(.animationStudio))
+            case .effects: model.telemetry?.record(.feature(.effectsLibrary))
+            case .layouts: model.telemetry?.record(.feature(.layouts))
+            case .screenSaver: model.telemetry?.record(.feature(.screenSaver))
+            case .performance: model.telemetry?.record(.feature(.performance))
+            case .rules: model.telemetry?.record(.feature(.rules))
+            default: break
+            }
         }
     }
 

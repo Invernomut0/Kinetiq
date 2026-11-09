@@ -6,6 +6,70 @@ Kinetiq is a native menu bar app, forked from [Wobbly](https://github.com/jsgrrc
 
 https://github.com/user-attachments/assets/40bc5530-d253-4d47-bc57-3eccdac83d70
 
+## Current: v0.5.0 · build 43 — renewed opt-in product analytics
+
+The implemented product-usage scope requires **consent revision 2**, separately for
+GA4 and native Firebase modes. An older grant does **not** silently authorize the
+broader scope: analytics stays off until a new explicit choice in the disclosed
+prompt or Settings. **Don't Share** remains the default. Legacy consent/identity
+namespaces are preserved, not transferred between modes.
+
+The closed vocabulary in `KinetiqUsageEvent.swift` permits only these custom events:
+
+| Event | Approved meaning / custom properties |
+|---|---|
+| `feature_used` | Actual visits to Privacy & Analytics, Effects, Animation Studio, Layouts, Performance, Rules or Screen Saver; `feature`. |
+| `effect_played` | Actual successful playback starts, not attempts or completion counts; `effect_id`, `trigger`. Manual runs remain distinct from native window triggers and explicit layouts. |
+| `effect_selected` | Explicit assignment/selection, not playback; `effect_id`, `trigger`. |
+| `studio_action` | Validated layer/keyframe edits, save, import and export; `action`. |
+| `screensaver_action` | Actual app-side enable/disable or in-app preview start; `action`. Not macOS saver-host runs. |
+| `quality_changed` | Explicit quality choice; `quality`. Not automatic resource-budget adaptation. |
+
+The only custom property keys are `feature`, `effect_id`, `trigger`, `action` and
+`quality`. Effect IDs come from the **66 real library entries**, plus `custom` for
+all user compositions and `wobbly_classic`; `off`/`random` are selection-only values.
+Automatic preview loops are not counted. No user content, application identifiers,
+custom names, window metadata, precise location, hardware metadata or free-form
+properties enter this custom schema. No automatic startup/Overview events are added.
+
+The single existing AppDelegate owner exposes a weak static emission hook, retaining
+the unchanged generic SDK core. At most **four immediate product-event tasks** are
+retained, without a disk queue, retry or replay, and the existing GA4 **four-request** network cap remains.
+Busy/denied/overflow actions can be dropped: counters are best-effort, not an exact
+usage census. Native fallback signing gates are unchanged; no saver SDK is added.
+
+No external geolocation service is introduced: the owner was unavailable when asked,
+so the least-collection option was retained. No GPS, IP lookup, `ip_override` or
+`user_location` is sent, and Locale/time zone is not treated as location. Google
+documents MP geography from tagging history when overrides are absent; **City/Country
+may remain `(not set)`** for this MP-only identity. Native Firebase may derive
+geography **if actually enabled** behind its existing gates; this release does not
+claim to have enabled it.
+
+For usable reports, manually create **Event-scoped** custom definitions for the five
+keys above in **GA4 Admin → Custom definitions**, then use Explore with
+`event_name=effect_played`, rows `effect_id`, breakdown `trigger` and Event count.
+Exclude `trigger=manual` to rank non-manual usage, and separate `layout` from native
+window triggers when needed. Selection counts are not play counts. Allow **24–48 h**
+after definitions are created and data is sent; no retroactive reporting guarantee.
+City/Country are built-in dimensions, not custom definitions. See the
+[complete report setup and geography limitations](docs/telemetry.md#practical-ga4-report-setup).
+HTTP 2xx is receipt of the request, **not proof of ingestion**.
+
+**Verified local acceptance (2026-11-09): 407 Release tests passed** — 223 app +
+36 Effects + 148 Core, zero failures/skips (`/tmp/kinetiq-usage-final-acceptance.log`).
+This includes **82 analytics contracts** and same-turn save/assignment and layer/import
+regressions. Earlier runs encountered native capture/window-origin failures; all 15
+runtime tests passed in isolation and the final full suite passed unchanged assertions.
+LLVM **Lines**: event taxonomy **100%**, owner **97.56%**, GA4 provider **77.09%**,
+native adapter **20.00%**, privacy UI **89.69%**; not live-delivery or exhaustive coverage.
+Universal **x86_64 + arm64** app/saver **0.5.0/build 43**, strict signatures, bundle
+verification and signed disabled smoke passed (`/tmp/kinetiq-usage-build.log`).
+No normal user-app restart, real consent change or live probe was automated.
+See [detailed evidence and remaining owner gates](docs/telemetry.md#local-acceptance--task-23).
+Reopen `build/Kinetiq.app` manually to use build 43 and make the updated consent choice.
+All release verification below belongs to its stated historical version.
+
 **v0.3.1 · build 36** fixes the management sidebar and Animation Studio controls disappearing outside the window. Navigation columns now use their actual viewport; after **Add Layer**, the inspector, transport and timeline stay in the editor. The startup guide remains inline for an empty document and is available from **?** without covering the populated editor. Event-based discovery and all 65 effects are unchanged.
 
 **v0.3.2 · build 37** replaces Liquid's final fade with slow physical drainage off the bottom edges. The pooled material stays opaque while the outlets open gradually from the lower corners towards the center. The preview now includes the complete ending.
@@ -48,7 +112,8 @@ signed disabled smoke passed (`/tmp/kinetiq-layout-build.log`). LLVM **Lines**:
 runtime **75.74%**, capture **75.00%**, compositor **96.47%**, Studio UI **59.15%**,
 library UI **67.31%** (`/tmp/kinetiq-layout-final-coverage.txt`); not exhaustive
 integration or Metal shader branch coverage. No normal app restart or live analytics
-was automated. Quit and reopen **`build/Kinetiq.app`** to run **0.4.2/build 42**.
+was automated. This is historical **0.4.2/build 42** evidence, not verification of
+the current source version or a request to restart the user's app.
 
 ## Installing
 
@@ -247,20 +312,23 @@ features usable.
 
 GA4 uses Boolean preferences `kinetiq.telemetry.ga4.analytics` and
 `kinetiq.telemetry.ga4.analyticsDecision`. Previous Firebase/PostHog consent and UUIDs
-are untouched and **not carried over**. The separate pseudonymous UUID is created
+are untouched and **not carried over**. Revision **2** is additionally required at
+`kinetiq.telemetry.ga4.usageConsentRevision` (native mode has its own revision key).
+An old grant without the current revision leaves analytics off and requires the
+updated prompt; it is not extended silently. The separate pseudonymous UUID is created
 only on consented startup and stored in app-local UserDefaults at
 `kinetiq.ga4.telemetry.installationID`; it persists across launches and withdrawal.
 No legacy Keychain item is read, migrated or deleted; no password or authorization
 dialog is needed. Preference identity is not credential-grade storage or anonymity.
 
-The only forwarded custom action is the actual Settings visit: `feature_used`,
-`feature=privacy_settings`. The former one-shot SwiftUI task could run before consent
-was granted and never submit the visit. It is now keyed by readiness, runtime
-enablement and consent (not busy state), waits 100 ms, and is cancellable when the
-actual section is no longer visible. GA4 sends that action and the separate `client_id`, not
-window titles, screenshots, documents, crash reports, OS/hardware metadata or automatic
-native/core lifecycle events. Google receives connection IP and network metadata and
-may derive location; this is not network anonymity. Advertising user data and
+The current six-event scope is listed at the top of this README, not limited to
+Privacy & Analytics. That section's actual visit still uses the readiness/enabled/
+consent-keyed cancellable 100 ms task, not busy state. GA4 sends only allowlisted
+actions and the separate `client_id`, not window titles, screenshots, documents,
+crash reports, OS/hardware metadata or automatic native/core lifecycle events.
+Google receives connection IP and network metadata, but MP-only City/Country is
+not guaranteed without tagging history; no location override is sent. This is not
+network anonymity. Advertising user data and
 personalization are explicitly denied. A positive `session_id` uses the actual `Date`
 and refreshes after 30 minutes without approved actions. `ContinuousClock` measures
 actual foreground time only after consent, using NSApp activation notifications;
@@ -271,11 +339,9 @@ Usage/session/realtime reports may still be partial, with no realtime promise.
 Settings' sanitized `transportStatus` distinguishes readiness, submitted count,
 in-flight requests, HTTP acceptance and categorical failure, without URLs or secrets.
 HTTP acceptance is **not confirmed GA4 ingestion**; filtered core installation events
-are not transport failures. For an owner check, reopen **`build/Kinetiq.app`**, not
-an older installed copy, open **Reports → Realtime**, then
-make an actual **Settings → Privacy & Analytics** visit with explicit consent.
-The reported Home screenshot covers **November 1–7**, excluding Today (November 8).
-See the [GA4 troubleshooting FAQ](docs/telemetry.md#owner-check-and-troubleshooting-faq).
+are not transport failures. Manual console review and report setup remain owner
+actions, not automated checks. See the
+[current GA4 report setup](docs/telemetry.md#practical-ga4-report-setup).
 
 Withdrawal persists off before cleanup, suppresses new submissions, cancels pending
 requests and clears ephemeral transport memory. There is no disk queue or retry, and
@@ -349,7 +415,8 @@ Google debug probe returned **0 validation messages, exit 0**. It uses a real po
 Web session ID and optionally measured probe-preparation time, **not app engagement**.
 Ordinary tests and the disabled smoke remain offline.
 
-**Current GA4 acceptance — VERIFIED LOCAL, G1 Done (Copilot), G2 Review (Lorenzo):**
+**Historical privacy-settings-only GA4 acceptance — v0.3.4/build 39, VERIFIED LOCAL,
+G1 Done (Copilot), G2 Review (Lorenzo); not v0.5.0 acceptance:**
 
 - Complete **Release and Debug each passed 361 tests = 179 app + 36 Effects +
 	146 Core; 0 failures, 0 skips, exit 0**. Logs:
@@ -469,8 +536,8 @@ checks; the final serial run passed unchanged assertions. A separate compilation
 when the sibling TelemetrySDK disappeared from disk; a clean clone restored the same
 approved `c5e275421fa03c242c9c53b5431d919fdd18547a` pin, without SDK source edits.
 
-Historical version **0.3.3 / build 38** was preserved in that migration; current source
-version is **0.3.4 / build 39**. F2 still requires actual Apple identity/private
+Historical version **0.3.3 / build 38** was preserved in that migration; the later
+GA4 follow-up was **0.3.4 / build 39**. F2 still requires actual Apple identity/private
 scope, native backend ingestion review (console Analytics active per owner), live/native,
 offline/revocation, terms/retention, notarization and hosted CI verification. The owner
 requires commit/push for completed tasks on `firebase`, then a reviewed PR merge into `main`.

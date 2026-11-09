@@ -62,13 +62,19 @@ final class StudioEditorModel: ObservableObject {
     @discardableResult
     func addLayer(_ preset: EffectPreset, at start: Double = 0) -> UUID? {
         let layer = StudioLayer(preset: preset, start: start)
-        return perform {
+        guard perform({
             $0.layers.append(layer)
             $0.duration = max($0.duration, start + preset.duration)
-        } ? layer.id : nil
+        }) else { return nil }
+        KinetiqTelemetry.emit(.studio(.layerAdded))
+        return layer.id
     }
 
-    func removeLayer(_ id: UUID) { perform { $0.layers.removeAll { $0.id == id } } }
+    func removeLayer(_ id: UUID) {
+        guard document.layers.contains(where: { $0.id == id }),
+              perform({ $0.layers.removeAll { $0.id == id } }) else { return }
+        KinetiqTelemetry.emit(.studio(.layerRemoved))
+    }
 
     func updateLayer(_ id: UUID, _ edit: (inout StudioLayer) throws -> Void) {
         perform { document in
@@ -81,6 +87,7 @@ final class StudioEditorModel: ObservableObject {
     }
 
     func addTrack(layer id: UUID, parameter: String) {
+        let previous = document
         updateLayer(id) { layer in
             guard !layer.preset.tracks.contains(where: { $0.parameter == parameter }) else {
                 throw StudioUIError.message("A track for this parameter already exists.")
@@ -90,6 +97,7 @@ final class StudioEditorModel: ObservableObject {
                 AnimationKeyframe(time: 0, value: value), AnimationKeyframe(time: 1, value: value)
             ]))
         }
+        if document != previous { KinetiqTelemetry.emit(.studio(.keyframeAdded)) }
     }
 
     func removeTrack(layer id: UUID, parameter: String) {
@@ -109,6 +117,7 @@ final class StudioEditorModel: ObservableObject {
     /// Key times are normalized inside a layer, not document seconds.
     func addKeyframe(layer id: UUID, parameter: String, time: Double) {
         guard let layer = document.layers.first(where: { $0.id == id }) else { return }
+        let previous = document
         let value = layer.preset.value(parameter, at: time * layer.preset.duration)
         updateTrack(layer: id, parameter: parameter) { track in
             guard !track.keyframes.contains(where: { abs($0.time - time) < 0.000001 }) else {
@@ -116,6 +125,7 @@ final class StudioEditorModel: ObservableObject {
             }
             track.keyframes.append(AnimationKeyframe(time: time, value: value))
         }
+        if document != previous { KinetiqTelemetry.emit(.studio(.keyframeAdded)) }
     }
 
     private func publishHistory() { undoCount = past.count; redoCount = future.count }
@@ -292,11 +302,13 @@ struct AnimationStudioView: View {
         notice = "Example loaded: a Studio Ripple followed by the built-in Incinerate. Save it, then use it when a window closes."
     }
 
-    private func newDocument(_ document: StudioDocument) {
-        editor.perform { $0 = document }
+    @discardableResult
+    private func newDocument(_ document: StudioDocument) -> Bool {
+        guard editor.perform({ $0 = document }) else { return false }
         editingRaw = ""
         selectedLayer = document.layers.first?.id
         time = 0
+        return true
     }
 
     private func open(_ custom: CustomEffect) {
@@ -353,7 +365,11 @@ struct AnimationStudioView: View {
             Menu("File") {
                 Button("Import Document JSON…") { importDocument() }
                 Button("Export Document JSON…") {
-                    attempt { try CatalogFilePanels.write(editor.document.encoded(), name: "\(editor.document.name).json") }
+                    attempt {
+                        try CatalogFilePanels.write(editor.document.encoded(), name: "\(editor.document.name).json") {
+                            model.telemetry?.record(.studio(.exported))
+                        }
+                    }
                 }
                 Divider()
                 Button("Import Effect Preset as Layer…") { importPreset() }
@@ -406,6 +422,7 @@ struct AnimationStudioView: View {
             error = nil
             notice = trigger == .manual ? "Saved to My Effects. Choose Use when… to play it automatically." : "Saved."
             model.closeEffectChangedPublic()
+            model.telemetry?.record(.studio(.saved))
             return id
         } catch {
             self.error = error.localizedDescription
@@ -535,12 +552,17 @@ struct AnimationStudioView: View {
                         var preset = layer.preset
                         preset.trigger = store.preset(layer.preset.effect).trigger
                         try store.save(preset); notice = "Preset saved for the Effects library."
+                        model.telemetry?.record(.studio(.saved))
                     }
                 }
                 Menu("Copy / Paste / Export") {
                     Button("Load Saved Effect Preset") { editor.updateLayer(layer.id) { $0.preset = store.preset(layer.preset.effect) } }
                     Button("Export Layer Preset…") {
-                        attempt { try CatalogFilePanels.write(layer.preset.encoded(), name: "\(layer.preset.effect.rawValue).json") }
+                        attempt {
+                            try CatalogFilePanels.write(layer.preset.encoded(), name: "\(layer.preset.effect.rawValue).json") {
+                                model.telemetry?.record(.studio(.exported))
+                            }
+                        }
                     }
                     Button("Copy Parameters") { attempt { try PresetClipboard.copy(layer.preset) } }
                     Button("Paste Parameters") {
@@ -652,7 +674,8 @@ struct AnimationStudioView: View {
     }
 
     /// New layers start where the previous ones end, so adding several builds a sequence.
-    private func addLayer(_ new: StudioLayer) {
+    @discardableResult
+    private func addLayer(_ new: StudioLayer) -> Bool {
         var layer = new
         let after = editor.document.layers.map(\.end).max() ?? 0
         layer.start = min(max(0, StudioDocument.maximumDuration - layer.duration), after)
@@ -661,7 +684,11 @@ struct AnimationStudioView: View {
             $0.layers.append(added)
             $0.duration = max($0.duration, added.end)
         }
-        if ok { selectedLayer = layer.id; tab = .edit }
+        if ok {
+            selectedLayer = layer.id; tab = .edit
+            model.telemetry?.record(.studio(.layerAdded))
+        }
+        return ok
     }
 
     private var timeline: some View {
@@ -785,14 +812,18 @@ struct AnimationStudioView: View {
     private func importDocument() {
         attempt {
             guard let data = try CatalogFilePanels.read() else { return }
-            newDocument(try StudioDocument.decode(data))
+            if newDocument(try StudioDocument.decode(data)) {
+                model.telemetry?.record(.studio(.imported))
+            }
         }
     }
 
     private func importPreset() {
         attempt {
             guard let data = try CatalogFilePanels.read() else { return }
-            addLayer(StudioLayer(preset: try EffectPreset.decode(data)))
+            if addLayer(StudioLayer(preset: try EffectPreset.decode(data))) {
+                model.telemetry?.record(.studio(.imported))
+            }
         }
     }
 }

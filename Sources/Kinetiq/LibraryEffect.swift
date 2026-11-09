@@ -189,6 +189,20 @@ enum LibraryEffect: Hashable, Identifiable {
 
 /// User-facing wording for the window events an effect can react to.
 extension EffectTrigger {
+    /// Maps product triggers to the closed analytics taxonomy; never forwards document metadata.
+    func usageEvent(effectID: String, selected: Bool = false) -> KinetiqUsageEvent {
+        let trigger: KinetiqUsageEvent.Trigger
+        switch self {
+        case .drag: trigger = .drag
+        case .open: trigger = .open
+        case .close: trigger = .close
+        case .minimize: trigger = .minimize
+        case .overview: trigger = .layout
+        case .manual: trigger = .manual
+        }
+        return selected ? .effectSelected(effectID: effectID, trigger: trigger) : .effectPlayed(effectID: effectID, trigger: trigger)
+    }
+
     /// Sidebar / menu heading, phrased as the user action.
     var eventTitle: String {
         switch self {
@@ -287,6 +301,17 @@ enum TriggerAssignment: Equatable {
     case custom(UUID, String)
     /// Drag always wobbles; the classic spring model is the default when no Studio preset owns it.
     case classicWobble
+
+    /// Closed product identifiers only: custom identity and names never leave the app.
+    var usageEffectID: String {
+        switch self {
+        case .off: return "off"
+        case .random: return "random"
+        case .effect(let effect): return effect.id
+        case .custom: return "custom"
+        case .classicWobble: return "wobbly_classic"
+        }
+    }
 
     @MainActor
     static func current(_ trigger: EffectTrigger, settings: Settings, store: CatalogStore) -> TriggerAssignment {

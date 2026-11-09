@@ -5,6 +5,24 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — Build 43
+
+### Added
+
+- Owner-authorized product-usage scope with a fresh **revision-2**, default-off opt-in in each transport mode. Older grants do not silently extend: an updated disclosed choice is required, with **Don't Share** default and legacy mode-specific consent/identity preserved.
+- Typed closed custom events `feature_used`, `effect_played`, `effect_selected`, `studio_action`, `screensaver_action` and `quality_changed`; only `feature`, `effect_id`, `trigger`, `action`, `quality`. IDs use the real 66-entry library plus `custom`/`wobbly_classic`; `off`/`random` are selection-only. No user content, custom names, app IDs, window metadata, precise location, hardware metadata or free-form properties.
+- Successful playback starts separated from selections and manual/native/layout triggers; automatic preview loops excluded. Actual Studio/Lab visits and validated edits/save/import/export, app-side saver enable/disable/preview (not OS host runs), and explicit quality choices (not automatic adaptation).
+- Practical manual GA4 custom-definition/Explore instructions, reporting latency and geography limitations. No external geolocation service, GPS/IP lookup or location overrides; MP-only City/Country may remain `(not set)`. Native fallback may derive geography only if actually enabled behind unchanged gates.
+
+### Boundaries and verification
+
+- Reuse the single AppDelegate owner through a weak static hook and unchanged generic SDK core. At most four immediate product-event tasks, no disk queue/retry/replay; existing four-request GA4 cap retained. Best-effort/drop-prone counters are not an exact usage census. Native signing gates unchanged; no saver SDK.
+- Complete final Release: **407 passed = 223 app + 36 Effects + 148 Core, zero failures/skips**, including **82 analytics contracts** and same-turn save/assignment and layer/import regressions (`/tmp/kinetiq-usage-final-acceptance.log`). Earlier native capture/window-origin failures remain documented; all 15 runtime tests passed in isolation, then the full suite passed unchanged assertions. No runtime fix or exclusion bypass was made to obtain the rerun.
+- After the final README update, **83 passed = 82 analytics + 1 actual captured-README optics**, zero failures/skips, exit 0 (`/tmp/kinetiq-usage-postdocs.log`).
+- Hosted PR #6 `host` CI was blocked before job startup by GitHub account billing/spending limits. No hosted tests ran; owner review/rerun is required. No account settings or branch protections were changed.
+- LLVM **Lines**: taxonomy **100.00%**, owner **97.56%**, GA4 provider **77.09%**, native adapter **20.00%**, privacy UI **89.69%** (`/tmp/kinetiq-usage-coverage.txt`, matching `/tmp/kinetiq-usage-final-acceptance.profdata`). Not exhaustive, live-delivery or Metal branch coverage.
+- Universal app/saver **0.5.0/build 43**, each x86_64 + arm64, strict signatures, bundle verifier and signed disabled smoke passed (`/tmp/kinetiq-usage-build.log`; direct artifact checks). No normal user-app restart, real consent/preferences change, live probe or console automation. HTTP 2xx is not ingestion proof; G2/F2 remain owner Review. No new DMG/tag/release or hosted CI success is claimed. Historical acceptance below is retained, not recertified for the broader scope.
+
 ## [0.4.2] — Build 42
 
 ### Fixed

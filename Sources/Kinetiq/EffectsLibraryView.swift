@@ -665,12 +665,14 @@ enum CatalogFilePanels {
         return try Data(contentsOf: url, options: .mappedIfSafe)
     }
 
-    static func write(_ data: Data, name: String) throws {
+    /// Completion is synchronous and runs only after a successful atomic write, never on cancellation.
+    static func write(_ data: Data, name: String, onSuccess: () -> Void = {}) throws {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = name
         guard panel.runModal() == .OK, let url = panel.url else { return }
         try data.write(to: url, options: .atomic)
+        onSuccess()
     }
 }
 
@@ -756,7 +758,11 @@ struct CatalogArrangementView: View {
                 Toggle(isOn: model.binding({ settings.overviewShortcut }, { settings.overviewShortcut = $0 })) {
                     Text("Shortcut \(GlobalHotKey.overviewTitle) anywhere")
                 }
-                Picker("Opens", selection: model.binding({ settings.overviewLayout }, { settings.overviewLayout = $0 })) {
+                Picker("Opens", selection: model.binding({ settings.overviewLayout }, { id in
+                    guard settings.overviewLayout != id else { return }
+                    settings.overviewLayout = id
+                    model.telemetry?.record(.effectSelected(effectID: LibraryEffect.catalog(id).id, trigger: .layout))
+                })) {
                     ForEach(Settings.overviewLayouts, id: \.self) { Text(EffectCatalog.descriptor($0).title).tag($0) }
                 }
                 .pickerStyle(.segmented).frame(maxWidth: 320)
@@ -810,7 +816,10 @@ struct CatalogArrangementView: View {
                     HStack {
                         Button("Start", systemImage: "play.fill") { start(id) }
                             .buttonStyle(.borderedProminent).disabled(runtime.isPlaying)
-                        Button("Use for Shortcut") { settings.overviewLayout = id; model.refresh() }.disabled(isDefault)
+                        Button("Use for Shortcut") {
+                            settings.overviewLayout = id; model.refresh()
+                            model.telemetry?.record(.effectSelected(effectID: LibraryEffect.catalog(id).id, trigger: .layout))
+                        }.disabled(isDefault)
                         Button("Defaults") { store.reset(id) }.disabled(store.preset(id) == EffectPreset(effect: id))
                     }
                 }
@@ -830,6 +839,6 @@ struct CatalogArrangementView: View {
 
     private func start(_ id: EffectID) {
         runTask?.cancel()
-        runTask = Task { await runtime.play(store.preset(id)) }
+        runTask = Task { await runtime.play(store.preset(id), trigger: .overview) }
     }
 }

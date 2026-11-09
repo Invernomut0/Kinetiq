@@ -2,6 +2,39 @@
 
 Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (implementation).
 
+**Current product analytics — v0.5.0 / build 43:** task **23 Done**, owner **Copilot**, implementation/local acceptance only.
+Implemented: revision-2 opt-in separately for GA4/native modes, old grants off until
+an updated explicit choice, default Don't Share; preserved legacy consent/identities.
+Six typed events cover actual visits, successful playback starts, separate selections,
+validated Studio edits/save/import/export, app-side saver actions (not OS host runs)
+and explicit quality choices (not auto adaptation). Closed five-property allowlist,
+66 library IDs plus custom/classic sentinels, selection-only off/random, no user
+content/app IDs/custom names/window metadata/hardware/precise location/free-form data.
+Single retained owner/weak hook, four immediate tasks/no disk queue, retry or replay, existing
+four-request cap, best-effort drops rather than exact census; core and native gates
+unchanged, no saver SDK. No external geolocation service or location overrides;
+City/Country may be `(not set)`. Report setup is documented, not automated.
+
+- **Done — Copilot:** complete final Release **407 passed** (223 app + 36 Effects +
+	148 Core), zero failures/skips, including **82 analytics contracts** and same-turn
+	compound-action regressions (`/tmp/kinetiq-usage-final-acceptance.log`). Earlier native
+	capture/window-origin failures are retained in the telemetry guide; all 15 runtime
+	tests and the final full suite passed unchanged assertions, without stopping the app.
+- **Done — Copilot:** matching LLVM **Lines** taxonomy 100%, owner 97.56%, GA4 77.09%,
+	native adapter 20.00%, privacy UI 89.69% (`/tmp/kinetiq-usage-coverage.txt`, profile
+	`/tmp/kinetiq-usage-final-acceptance.profdata`); not exhaustive/live/Metal coverage.
+- **Done — Copilot:** universal app/saver 0.5.0/43, strict signatures, bundle verifier
+	and signed disabled smoke passed (`/tmp/kinetiq-usage-build.log`; direct checks).
+	No normal user-app restart, real consent change, live probe or console automation;
+	G2/F2 remain owner Review, not ingestion/distribution acceptance.
+- **Done — Copilot:** post-documentation **83 passed** (82 analytics + 1 actual
+	captured-README optics), zero failures/skips (`/tmp/kinetiq-usage-postdocs.log`).
+	Publication is tracked separately in Git/PR history, on a dedicated firebase branch
+	followed by a normal merge; no new DMG/tag/release is requested.
+- **Review — Lorenzo:** hosted `host` CI on PR #6 was blocked before job startup by
+	GitHub account billing/spending limits. Review Billing & plans and rerun Actions;
+	this is not a hosted test pass. No account settings or protections were changed.
+
 **Layouts capture admission — v0.4.2 / build 42:** task 22 Done (Copilot, implementation/local acceptance).
 Reproduced the exact quality-budget error at nominal thermal pressure with four
 real helper-owned README windows, in both Low and Auto (six pre-fix assertion
@@ -28,7 +61,9 @@ smoke passed. Logs: `/tmp/kinetiq-budget-release.log`, `/tmp/kinetiq-budget-buil
 LLVM Lines: quality 98.75%, Settings 94.09%, SetupWindow 78.61%, Performance 96.46%
 (`/tmp/kinetiq-budget-coverage.txt`), not exhaustive integration/Metal coverage.
 
-**Current GA4 Web transport — v0.3.4 / build 39:** **G1 Done (Copilot)** for verified
+**Historical privacy-settings-only GA4 Web transport — v0.3.4 / build 39:**
+The following G1 evidence is not acceptance of task 23 or the broader revision-2 scope.
+**G1 Done (Copilot)** for verified
 implementation and offline/local acceptance only; **G2 Review (Lorenzo)** for actual
 Web-stream ingestion and distribution/privacy.
 GA4 takes precedence with fresh default-off consent and separate app-local identity;
@@ -98,6 +133,7 @@ pin, without SDK source edits.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
+| 23 | Revision-2 opt-in product analytics and practical GA4 reporting | Done | Owner: Copilot, implementation/local acceptance only. v0.5.0/build 43; six typed events/five-property allowlist, finite IDs, actual starts vs selections, Studio actions, app-side saver actions and manual quality; old grants require updated consent. Complete Release 407 passed, 82 analytics contracts; post-documentation 83 passed including actual README optics. Universal package/signatures/bundle/disabled smoke and matching Lines verified above. Earlier native capture failures documented, final suite passed unchanged assertions. Publication tracked separately in Git/PR history. G2/F2 owner gates stay Review. |
 | 22 | Fix false quality blocks caused by capture accounting and stale errors | Done | Owner: Copilot, implementation/local acceptance. v0.4.2/build 42; real four-window pre-fix regression reproduces failure at Low/Auto. Include shadow allocation, skip over-budget additional windows, retain hard memory limits and mandatory own exclusions; separate error causes and clear stale messages. Complete Release 380 passed (196 app + 36 Effects + 148 Core), zero failures/skips, including actual desktop Ripple/Incinerate and restoration. Universal app/saver, signatures, bundle and disabled smoke passed; exact logs/coverage above. |
 | 21 | Relax effect quality gate and protect Settings exclusion | Done | Owner: Copilot. 12-step resource-only Auto ladder, expensive effects allowed at Low/serious thermal pressure, critical thermal and memory/capture safety retained; protected Kinetiq rule enforced in UI, settings and runtime. Complete Release 376 passed (192 app + 36 Effects + 148 Core), zero failures/skips, including actual captured-README rendering and protected rule persistence. Universal app/saver, strict signatures, bundle and disabled smoke passed. Exact logs/Lines coverage above. |
 | 20 | v0.4.0 Studio built-ins, My Effects, complete Try menu, interactive Layouts | Done | Owner: Copilot. Built-in close/open/minimize engines as Studio layers through `LayerCompositor`, reverse playback, saved compositions owning Open/Close/Minimize, Try menu with every effect, animated hover/keyboard/scroll overview with ⌃⌥↑ and five-window demos. See CHANGELOG 0.4.0 for verification. |

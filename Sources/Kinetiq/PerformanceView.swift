@@ -13,7 +13,11 @@ struct PerformanceView: View {
     var body: some View {
         Form {
             Section("Render Quality") {
-                Picker("Selection", selection: $manager.selection) {
+                Picker("Selection", selection: Binding(get: { manager.selection }, set: { choice in
+                    guard manager.selection != choice else { return }
+                    manager.selection = choice
+                    KinetiqTelemetry.emit(.quality(choice))
+                })) {
                     ForEach(RenderQuality.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 LabeledContent("Resolved quality", value: manager.resolvedQuality.title)

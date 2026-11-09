@@ -102,7 +102,7 @@ final class DestructionEffectPlayer: NSObject, OverlayContent {
     /// Off-main extraction cannot resurrect a cancelled generation or consume more than two source slots.
     @discardableResult
     func play(_ frame: CapturedFrame, windowFrame: CGRect, durationScale: Double,
-              isValid: @MainActor () -> Bool = { true }) async -> Bool {
+              trigger: EffectTrigger? = nil, isValid: @MainActor () -> Bool = { true }) async -> Bool {
         RenderQualityManager.shared.refreshEnvironment()
         let sources = Set(playing.map(\.sourceID)).union(pending)
         guard !Task.isCancelled, isValid(), RenderQualityManager.shared.budget.allowsExpensive, durationScale.isFinite,
@@ -141,6 +141,7 @@ final class DestructionEffectPlayer: NSObject, OverlayContent {
             overlays = NSScreen.screens.map { OverlayWindow(screen: $0, renderer: self, level: level) }
         }
         overlays.forEach { $0.render(); $0.show() }
+        KinetiqTelemetry.emit((trigger ?? .close).usageEvent(effectID: LibraryEffect.destruction.id))
         return true
     }
 
