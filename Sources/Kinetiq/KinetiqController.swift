@@ -178,17 +178,34 @@ final class KinetiqController: NSObject {
     /// Plays the original Liquid on the front window without closing it: the window is captured,
     /// hidden while it melts, then put back exactly where it was.
     func tryLiquid(windowID: CGWindowID? = nil) {
-        guard let liquidPlayer, settings.enabled, session == nil, !CatalogRuntime.shared.isPlaying else { return }
+        guard let liquidPlayer else { return }
+        tryOnFrontWindow(windowID, play: { [settings] frame, info in
+            liquidPlayer.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration)
+        }, isPlaying: { liquidPlayer.hasScene }, cancel: { liquidPlayer.cancelAll() })
+    }
+
+    /// Window Destruction on the front window, which comes back once the pieces are gone.
+    func tryDestruction(windowID: CGWindowID? = nil) {
+        guard let destruction = closePlayer?.destructionPlayer else { return }
+        tryOnFrontWindow(windowID, play: { [settings] frame, info in
+            await destruction.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration)
+        }, isPlaying: { destruction.hasScene }, cancel: { destruction.cancelAll() })
+    }
+
+    /// Captures the front window, starts a desktop-wide player on it, hides the real window while it
+    /// plays and restores the exact origin afterwards (bounded wait). Nothing is closed.
+    private func tryOnFrontWindow(_ windowID: CGWindowID?, play: @escaping (CapturedFrame, WindowInfo) async -> Bool,
+                                  isPlaying: @escaping () -> Bool, cancel: @escaping () -> Void) {
+        guard settings.enabled, session == nil, !CatalogRuntime.shared.isPlaying else { return }
         cancelAll()
         Task {
             guard let (info, element) = await CatalogRuntime.shared.frontTarget(windowID),
                   let frame = try? await capture.capture(info), frame.isPainted, frame.pointSize == info.frame.size else { return }
             let lease = CatalogWindowLease(element: element, info: info)
-            guard liquidPlayer.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration) else { return }
-            guard await lease.park() else { liquidPlayer.cancelAll(); lease.restore(); return }
-            // Back once the fluid has pooled, or after a bounded wait.
+            guard await play(frame, info) else { return }
+            guard await lease.park() else { cancel(); lease.restore(); return }
             let deadline = CACurrentMediaTime() + 4 * settings.closeDuration
-            while liquidPlayer.hasScene, CACurrentMediaTime() < deadline, settings.enabled {
+            while isPlaying(), CACurrentMediaTime() < deadline, settings.enabled {
                 try? await Task.sleep(for: .milliseconds(100))
             }
             lease.restore()

@@ -17,6 +17,7 @@ final class SetupModel: ObservableObject {
     private let enabledChanged: () -> Void
     let runtimeStatus: () -> ManagementRuntimeStatus
     let systemSaver: SystemScreenSaver?
+    let telemetry: KinetiqTelemetry?
     @Published var requestedPage: ManagementPage?
     @Published var requestedLibraryEffect: String?
     @Published private(set) var effectError: String?
@@ -24,13 +25,14 @@ final class SetupModel: ObservableObject {
 
     init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void,
          enabledChanged: @escaping () -> Void, runtimeStatus: @escaping () -> ManagementRuntimeStatus,
-         systemSaver: SystemScreenSaver? = nil) {
+         systemSaver: SystemScreenSaver? = nil, telemetry: KinetiqTelemetry? = nil) {
         self.settings = settings
         self.closeEffectChanged = closeEffectChanged
         self.startChaos = startChaos
         self.enabledChanged = enabledChanged
         self.runtimeStatus = runtimeStatus
         self.systemSaver = systemSaver
+        self.telemetry = telemetry
     }
 
     func refresh() {
@@ -339,6 +341,7 @@ struct SetupControlsView: View {
                     Text("Off").tag(CloseEffectChoice.off.rawValue)
                     Text("Random").tag(CloseEffectChoice.random.rawValue)
                     Text("Liquid").tag(CloseEffectChoice.liquid.rawValue)
+                    Text(LibraryEffect.destruction.title).tag(CloseEffectChoice.destruction.rawValue)
                     Divider()
                     ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 }
@@ -359,7 +362,7 @@ struct SetupControlsView: View {
                         Text($0.title).tag(MinimizeEffectChoice.morph($0).rawValue)
                     }
                 }
-                Text("Liquid melts from the top-right, spills over window edges and pools behind the Dock before slowly fading. Other minimize effects morph into the Dock icon. Minimize effects apply to the yellow button only; ⌘M remains native.")
+                Text("Liquid melts from the top-right, spills over window edges and pools behind the Dock before slowly draining off the bottom edges. Other minimize effects morph into the Dock icon. Minimize effects apply to the yellow button only; ⌘M remains native.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 SliderRow(title: "Duration",
@@ -414,11 +417,12 @@ struct SetupControlsView: View {
                             Text("Off").tag(CloseEffectChoice.off.rawValue)
                             Text("Random").tag(CloseEffectChoice.random.rawValue)
                             Text("Liquid").tag(CloseEffectChoice.liquid.rawValue)
+                            Text(LibraryEffect.destruction.title).tag(CloseEffectChoice.destruction.rawValue)
                             Divider()
                             ForEach(CloseEffect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                         }
                         .labelsHidden()
-                        .frame(width: 150)
+                        .frame(width: 190)
                     }
                 }
                 HStack {
@@ -476,6 +480,10 @@ struct SetupControlsView: View {
                     CGRequestScreenCaptureAccess()
                     Permissions.openPrivacySettings("Privacy_ScreenCapture")
                 }
+            }
+
+            if let telemetry = model.telemetry {
+                TelemetryPrivacyView(telemetry: telemetry)
             }
 
             Section {
@@ -562,9 +570,10 @@ final class SetupWindowController {
 
     init(settings: Settings, closeEffectChanged: @escaping () -> Void, startChaos: @escaping () -> Void,
          enabledChanged: @escaping () -> Void, runtimeStatus: @escaping () -> ManagementRuntimeStatus,
-         systemSaver: SystemScreenSaver? = nil) {
+         systemSaver: SystemScreenSaver? = nil, telemetry: KinetiqTelemetry? = nil) {
         model = SetupModel(settings: settings, closeEffectChanged: closeEffectChanged, startChaos: startChaos,
-                           enabledChanged: enabledChanged, runtimeStatus: runtimeStatus, systemSaver: systemSaver)
+                           enabledChanged: enabledChanged, runtimeStatus: runtimeStatus, systemSaver: systemSaver,
+                           telemetry: telemetry)
     }
 
     func show(page: ManagementPage? = nil, effect: LibraryEffect? = nil) {
@@ -590,5 +599,11 @@ final class SetupWindowController {
         }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Called after the application's single telemetry owner finishes initializing.
+    func requestAnalyticsConsentIfNeeded() {
+        guard let telemetry = model.telemetry, let window else { return }
+        TelemetryConsentPrompt.present(for: telemetry, on: window)
     }
 }

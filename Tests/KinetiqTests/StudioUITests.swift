@@ -71,8 +71,9 @@ final class StudioUITests: XCTestCase {
         let builtins = tryItems.filter { $0.action == NSSelectorFromString("runBuiltinEffect:") }
         XCTAssertEqual(builtins.compactMap { $0.representedObject as? String }, BuiltinLayer.all.map(\.effect.id))
         XCTAssertEqual(tryItems.filter { $0.action == NSSelectorFromString("runLiquid") }.count, 1)
-        // Every one of the 65 library effects can be tried: 19 Studio + 45 layerable built-ins + Liquid.
-        XCTAssertEqual(studio.count + builtins.count + 1, LibraryEffect.all.count)
+        XCTAssertEqual(tryItems.filter { $0.action == NSSelectorFromString("runDestruction") }.count, 1)
+        // Every library effect can be tried: 19 Studio + 45 layerable built-ins + Liquid + Window Destruction.
+        XCTAssertEqual(studio.count + builtins.count + 2, LibraryEffect.all.count)
         for item in tryItems where item.action != nil && item.submenu == nil {
             XCTAssertTrue(item.target === delegate, item.title)
             XCTAssertTrue(delegate.responds(to: try XCTUnwrap(item.action)), item.title)
@@ -87,7 +88,7 @@ final class StudioUITests: XCTestCase {
     }
 
     @MainActor
-    func testTriggerAssignmentResolvesStoreOwnerBeforeOriginalSettings() async throws {
+    func testTriggerAssignmentResolvesStoreOwnerBeforeOriginalSettingsIncludingDestruction() async throws {
         let suite = "io.github.invernomut0.Kinetiq.assignment.tests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -95,10 +96,14 @@ final class StudioUITests: XCTestCase {
         let store = CatalogStore(defaults: defaults)
         settings.closeEffect = .effect(.fire)
         XCTAssertEqual(TriggerAssignment.current(.close, settings: settings, store: store), .effect(.close(.fire)))
+        settings.closeEffect = .destruction
+        XCTAssertEqual(defaults.string(forKey: "closeEffect"), "destruction")
+        XCTAssertEqual(TriggerAssignment.current(.close, settings: settings, store: store), .effect(.destruction))
         var fold = EffectPreset(effect: .fold); fold.trigger = .close
         try store.save(fold)
         XCTAssertEqual(TriggerAssignment.current(.close, settings: settings, store: store), .effect(.catalog(.fold)))
         try store.releaseAssignment(to: .close)
+        XCTAssertEqual(TriggerAssignment.current(.close, settings: settings, store: store), .effect(.destruction))
         settings.closeEffect = .random
         XCTAssertEqual(TriggerAssignment.current(.close, settings: settings, store: store), .random)
         settings.minimizeEffect = .liquid
@@ -150,7 +155,7 @@ final class StudioUITests: XCTestCase {
     }
 
     @MainActor
-    func testNativeNavigationOrderAndSixLibraryCategories() async {
+    func testNativeNavigationOrderAnd66EffectsInSixLibraryCategories() async {
         XCTAssertEqual(ManagementPage.allCases.map(\.title), [
             "Overview", "Effects", "Animation Studio", "Physics", "Layouts", "Rules",
             "Screen Saver", "Performance", "Windows", "Diagnostics", "Settings"
@@ -163,10 +168,10 @@ final class StudioUITests: XCTestCase {
         XCTAssertEqual(EffectCategory.allCases.map { category in
             EffectCatalog.effects.filter { $0.category == category }.count
         }, [2, 4, 4, 4, 2, 3])
-        XCTAssertEqual(LibraryEffect.all.count, 65)
+        XCTAssertEqual(LibraryEffect.all.count, 66)
         XCTAssertEqual(EffectCategory.allCases.map { category in
             LibraryEffect.all.filter { $0.category == category }.count
-        }, [5, 31, 14, 10, 2, 3])
+        }, [5, 31, 15, 10, 2, 3])
     }
 
     @MainActor

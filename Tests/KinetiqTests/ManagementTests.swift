@@ -37,6 +37,42 @@ final class ManagementTests: XCTestCase {
         }
     }
 
+    func testCoffeeCTAUsesVerifiedProfileWithoutTrackingParameters() {
+        XCTAssertEqual(SupportCoffeeView.title, "Buy me a coffee")
+        let destination = SupportCoffeeView.destination
+        XCTAssertEqual(destination.scheme, "https")
+        XCTAssertEqual(destination.host, "buymeacoffee.com")
+        XCTAssertEqual(destination.path, "/invernomut0")
+        XCTAssertNil(destination.query)
+        XCTAssertNil(destination.fragment)
+        XCTAssertNil(destination.user)
+        XCTAssertNil(destination.password)
+    }
+
+    /// Real composed-window pixels: the persistent CTA must fit even beside the Studio at minimum size.
+    @MainActor
+    func testCoffeeCTAIsVisibleInNativeSidebarAcrossPagesAndAppearances() async throws {
+        let model = model(settings: try isolatedSettings())
+        let (window, shell) = try hostingWindow(model: model)
+        defer { window.close() }
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            window.appearance = NSAppearance(named: appearance)
+            for size in [NSSize(width: 960, height: 700), NSSize(width: 1180, height: 780)] {
+                window.setContentSize(size)
+                for page in [ManagementPage.overview, .animationStudio, .settings] {
+                    model.requestedPage = page
+                    await settleLayout(shell, window: window)
+                    // Compact forms can sample only eight colors; the CTA's actual surface
+                    // proves rendering here, without changing the richer screenshot checks.
+                    let image = try await ownWindowImage(shell, window: window, requireDiversePalette: false)
+                    assertCoffeeCTAVisible(image, window: window)
+                    XCTAssertFalse(CatalogRuntime.shared.isPlaying)
+                    XCTAssertNil(model.telemetry, "Support must not construct or grant analytics")
+                }
+            }
+        }
+    }
+
     @MainActor
     func testEnableControlPersistsBeforeCallingEngineAction() async throws {
         let settings = try isolatedSettings()
@@ -145,6 +181,55 @@ final class ManagementTests: XCTestCase {
         XCTAssertEqual(catalogPreferences(), defaultsBefore)
     }
 
+    /// Bounds native containers, not just finite frames: a 4,000-point split can still be finite.
+    @MainActor
+    func testStudioKeepsNativeSidebarAndEditorInsideWindow() async throws {
+        let saved = CatalogStore.shared.document
+        let preferences = catalogPreferences()
+        defer { CatalogStore.shared.document = saved }
+        let populated = StudioDocument(name: "Ripple composition", duration: 3,
+                                       layers: [StudioLayer(preset: EffectPreset(effect: .ripple))])
+        for document in [StudioDocument(), populated] {
+            // In-memory documents only; never save over the user's composition.
+            CatalogStore.shared.document = document
+            let model = model(settings: try isolatedSettings())
+            model.requestedPage = .animationStudio
+            let (window, shell) = try hostingWindow(model: model)
+            let sizes = [NSSize(width: 960, height: 700), NSSize(width: 1040, height: 736),
+                         NSSize(width: 1180, height: 780)]
+            let configurations = [NSAppearance.Name.aqua, .darkAqua].flatMap { appearance in
+                sizes.map { (appearance, $0) }
+            }
+            for (appearance, size) in configurations {
+                window.appearance = NSAppearance(named: appearance)
+                window.setContentSize(size)
+                await settleLayout(shell, window: window)
+                var outlines = 0
+                var splits = 0
+                func check(_ view: NSView) {
+                    if view is NSOutlineView || view is NSSplitView {
+                        if view is NSOutlineView { outlines += 1 } else { splits += 1 }
+                        let frame = view.convert(view.bounds, to: nil)
+                        let viewport = NSRect(origin: .zero, size: window.contentView!.bounds.size)
+                        XCTAssertGreaterThan(frame.width, 100, "Collapsed \(type(of: view))")
+                        XCTAssertGreaterThan(frame.height, 100, "Collapsed \(type(of: view))")
+                        XCTAssertGreaterThanOrEqual(frame.minX, viewport.minX - 1, "Content left of window: \(frame)")
+                        XCTAssertLessThanOrEqual(frame.maxX, viewport.maxX + 1, "Content right of window: \(frame)")
+                        XCTAssertGreaterThanOrEqual(frame.minY, viewport.minY - 1, "Content above window: \(frame)")
+                        XCTAssertLessThanOrEqual(frame.maxY, viewport.maxY + 1, "Content below window: \(frame)")
+                        XCTAssertLessThanOrEqual(frame.height, window.frame.height, "Intrinsic height escaped the window")
+                    }
+                    view.subviews.forEach(check)
+                }
+                check(shell)
+                XCTAssertGreaterThan(outlines, 0, "The navigation sidebar must be mounted")
+                XCTAssertGreaterThan(splits, 0, "The navigation split must be mounted")
+            }
+            window.close()
+        }
+        XCTAssertEqual(catalogPreferences(), preferences)
+    }
+
     /// Reuses one shell, including nil and repeated requests, rather than recreating the destination views.
     @MainActor
     func testRequestedPageUpdatesMountedShellWithoutStartingPreviewOrPlayback() async throws {
@@ -226,11 +311,12 @@ final class ManagementTests: XCTestCase {
         let (window, shell) = try hostingWindow(model: model)
         defer { window.close() }
         XCTAssertFalse(CatalogRuntime.shared.isPlaying)
-        for page in [ManagementPage.effects, .animationStudio, .performance] {
+        for page in [ManagementPage.overview, .effects, .animationStudio, .performance, .settings] {
             model.requestedPage = page
             await settleLayout(shell, window: window)
             XCTAssertEqual(window.title, "Kinetiq — \(page.title)")
             let image = try await ownWindowImage(shell, window: window)
+            assertCoffeeCTAVisible(image, window: window)
             XCTAssertGreaterThan(image.pixelsWide, 0)
             XCTAssertGreaterThan(image.pixelsHigh, 0)
             XCTAssertLessThanOrEqual(image.pixelsWide * image.pixelsHigh, 8_000_000)
@@ -308,7 +394,8 @@ final class ManagementTests: XCTestCase {
 
     /// Capture the actual composed window, including its toolbar and native colors.
     @MainActor
-    private func ownWindowImage(_ shell: NSView, window: NSWindow) async throws -> NSBitmapImageRep {
+    private func ownWindowImage(_ shell: NSView, window: NSWindow,
+                               requireDiversePalette: Bool = true) async throws -> NSBitmapImageRep {
         guard CGPreflightScreenCaptureAccess() else {
             throw XCTSkip("Screen Recording is required only for optional own-window screenshots")
         }
@@ -324,8 +411,29 @@ final class ManagementTests: XCTestCase {
         config.colorSpaceName = CGColorSpace.sRGB
         let image = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: own), configuration: config)
         let bitmap = try XCTUnwrap(NSBitmapImageRep(cgImage: image).converting(to: .deviceRGB, renderingIntent: .default))
-        XCTAssertTrue(hasVisiblePixels(bitmap), "The screenshot must contain the actual painted UI")
+        if requireDiversePalette {
+            XCTAssertTrue(hasVisiblePixels(bitmap), "The screenshot must contain the actual painted UI")
+        }
         return bitmap
+    }
+
+    /// Count only the brand-yellow surface in the sidebar footer, not unrelated detail content.
+    @MainActor
+    private func assertCoffeeCTAVisible(_ bitmap: NSBitmapImageRep, window: NSWindow) {
+        let scale = CGFloat(bitmap.pixelsWide) / window.frame.width
+        let right = min(bitmap.pixelsWide, Int(250 * scale))
+        let top = max(0, bitmap.pixelsHigh - Int(180 * scale))
+        var yellowPixels = 0
+        for y in stride(from: top, to: bitmap.pixelsHigh, by: 2) {
+            for x in stride(from: 0, to: right, by: 2) {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                if color.alphaComponent > 0.95, color.redComponent > 0.96,
+                   abs(color.greenComponent - 221.0 / 255) < 0.05, color.blueComponent < 0.10 {
+                    yellowPixels += 1
+                }
+            }
+        }
+        XCTAssertGreaterThan(yellowPixels, 500, "The yellow coffee CTA must remain visibly inside the sidebar footer")
     }
 
     @MainActor

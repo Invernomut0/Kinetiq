@@ -5,14 +5,14 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] — Build 36
+## [0.4.0] — Build 40
 
 ### Added
 
-- **Built-in effects in the Animation Studio.** Add Layer now offers all 30 original close shaders (Incinerate, Fire, Broken Glass…), the 6 spring entrances and the 9 Dock morphs next to the 19 Studio effects. A new `LayerCompositor` plays them in document order on one capture, each layer reading the previous one's output, in a stage with room around the window, for both previews and desktop playback. Built-in layers have timing, speed curve and direction; their look stays the original. Liquid is not a layer (it is a desktop-wide simulation) but can be tried from the menu.
+- **Built-in effects in the Animation Studio.** Add Layer now offers all 30 original close shaders (Incinerate, Fire, Broken Glass…), the 6 spring entrances and the 9 Dock morphs next to the 19 Studio effects. A new `LayerCompositor` plays them in document order on one capture, each layer reading the previous one's output, in a stage with room around the window, for both previews and desktop playback. Built-in layers have timing, speed curve and direction; their look stays the original. Liquid and Window Destruction are not layers (they are desktop-wide simulations) but can be tried from the menu.
 - **Play in reverse** for any layer: a close shader becomes an entrance (the shaders' own opening direction), a minimize morph becomes a restore.
 - **My Effects.** Studio compositions are saved by name (`CustomEffect`, `customEffects.v1`) and can own Open, Close or Minimize exactly like a preset: one owner per event across presets and custom effects. The Studio toolbar has **My Effects**, **Save** (⌘S) and **Use when…**, plus a status line saying whether and where the effect is used. The Effects library lists My Effects first with a looping preview, **Use when…** buttons, Run, Edit in Studio and Delete; the menu bar's Open, Close and Minimize submenus list them too.
-- **Try an Effect** now covers every effect: My Effects, the 30 close shaders, 6 entrances, 9 minimize morphs, Liquid and the 19 Studio effects, each played once on the front window and put back.
+- **Try an Effect** now covers every effect: My Effects, the 30 close shaders, 6 entrances, 9 minimize morphs, Liquid, Window Destruction and the 19 Studio effects, each played once on the front window and put back.
 - **Interactive, animated Layouts.** Windows fly from their real positions into Exposé 3D, Orbit or Cube with a spring and fly back on exit; the dimmed backdrop fades with them. Pointing at a window lifts it (Exposé straightens it to face you) and shows its app and title; click brings it forward with a return animation; arrow keys, Tab and Return navigate; scroll spins the orbit or the cube carousel; Escape or right-click puts everything back. Cube is now a carousel with one window facing you. Geometry lives in the pure `OverviewLayout`, shared by the desktop and the preview so hit-testing matches what is drawn.
 - **⌃⌥↑ anywhere** opens the chosen layout (and closes it again), through Carbon `RegisterEventHotKey`: only that combination reaches Kinetiq, no other keystroke is observed. Toggle and layout choice on the Layouts page; the menu has **Arrange Windows**.
 - The Layouts page shows each layout as a looping demo with five windows (rest, fly in, browse, fly back), sliders that change it live, Start, Use for Shortcut and Defaults.
@@ -31,8 +31,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Verification
 
 - `swift test` (debug): **Core 145 passed, Effects 36 passed, app 112 run with 28 skipped and 1 failing test.** The failure is `LiquidIntegrationTests.testLiquidPickersInRealNativeHostingViews`; it fails identically on the unmodified v0.3.0 commit in the same session, because SwiftUI exposed only 1–3 accessibility elements to the test process there (an environment condition, not a regression). The 28 skips need Screen Recording in the test host.
-- New tests: schema-1 upgrade and schema-2 built-in/reversed round trip; My Effects persistence, single ownership with presets, release and invalid input; every one of the 45 built-in layers animating and reversing on the sample window; Ripple feeding Incinerate; overview geometry (home → arranged, highlight on top, carousel and orbit); the five-window overview demo returning every window home; the Try menu covering all 65 effects.
-- `scripts/build-app.sh`: universal arm64/x86_64 app and saver, `codesign --verify --deep --strict` OK, Info.plist 0.4.0 / 36. Preview frames of the three layouts and the Ripple → Incinerate composition were inspected.
+- New tests: schema-1 upgrade and schema-2 built-in/reversed round trip; My Effects persistence, single ownership with presets, release and invalid input; every one of the 45 built-in layers animating and reversing on the sample window; Ripple feeding Incinerate; overview geometry (home → arranged, highlight on top, carousel and orbit); the five-window overview demo returning every window home; the Try menu covering all 66 library effects.
+- `scripts/build-app.sh`: universal arm64/x86_64 app and saver, `codesign --verify --deep --strict` OK, Info.plist 0.4.0 / 40. Preview frames of the three layouts and the Ripple → Incinerate composition were inspected.
+## [0.3.4] — Build 39
+
+### Added
+
+- Owner-authorized direct **GA4 Web Measurement Protocol** provider using the existing single application owner and unchanged generic TelemetrySDK core. Valid GA4 bundle configuration takes precedence over the still-linked, dormant native Firebase SDK; invalid presence fails closed. Native fallback signing/Keychain gates remain unchanged.
+- Fresh default-off GA4 Boolean consent and separate app-local pseudonymous identity without Keychain access or transfer of previous consent/UUIDs. Only the actual `feature_used` / `privacy_settings` action is sent; no native automatic, OS/hardware, lifecycle or synthetic session/engagement events. Approved actions carry a positive actual-Date session ID, refreshed after 30 minutes without approved actions, and only positive actual consented foreground engagement measured with ContinuousClock and NSApp notifications. Zero engagement is omitted; no automatic startup/Overview events or fake timing fill graphs. Advertising user data/personalization are denied; connection IP/network processing remains disclosed, with no report/realtime guarantee.
+- Sanitized GA4 Settings `transportStatus`: readiness, submitted count, in-flight count, HTTP acceptance and categorical failure without URLs/secrets. HTTP acceptance is not confirmed ingestion; filtered core installation events are not transport failures.
+- Bounded root-local ignored `.env` packaging through `scripts/configure-ga4.py`, recognizing only `KINETIQ_GA4_MEASUREMENT_ID` and `KINETIQ_GA4_API_SECRET`, writing exact `measurement_id` / `api_secret` fields only to the main app resource. Runtime never reads `.env`; saver/wrong-ID destinations, invalid/admin extras and stale absent configuration are handled locally.
+- Standalone offline `scripts/test_ga4_config.py`: genuine owner-only positive cases (skip absent), invalid-input contracts and categorical assertions, with no fabricated valid credentials, network mocks or live requests. Explicit `--validate` is debug event-structure validation only, not secret authentication/ingestion proof and not automatic CI.
+
+### Fixed
+
+- The actual SwiftUI one-shot Settings `.task` could run before analytics consent was granted and never submit the visit. Key it by readiness, runtime enablement and consent (not busy state), wait 100 ms, and cancel when the actual visible visit becomes ineligible or disappears.
+- Correct telemetry documentation's obsolete no-session/no-engagement claims, stale pending acceptance and confusion between LLVM Regions and **Lines**. Current Python GA4 acceptance is **26 passed**. Owner troubleshooting: reopen actual `build/Kinetiq.app`, use Reports → Realtime and an actual consented Privacy & Analytics visit; Home November 1–7 excludes Today November 8. HTTP 204 does not authenticate the secret or prove ingestion, Web measurement IDs start with G- (not numeric stream/native app IDs), and website-tagging banners alone do not prove MP failure.
+
+### Privacy and acceptance
+
+- The owner explicitly authorizes an **extractable bundled ingestion secret**, enabling forged/spam events and contrary to recommended server-only secret deployment. No administrator/service-account credentials are packaged. Web-stream credentials differ from the native Firebase app stream; console Analytics is active per owner, not proven ingestion.
+- Ephemeral bounded transport, rejected redirects, no disk queue/retries/delivery acknowledgement; withdrawal suppresses new requests and cancels pending work but cannot erase received server data. Local identity remains in preferences.
+- Current complete **Release and Debug each passed 361 tests = 179 app + 36 Effects + 146 Core; 0 failures, 0 skips, exit 0**, `/tmp/kinetiq-ga4-fix-release.log` and `/tmp/kinetiq-ga4-fix-debug.log` (`DEBUG_EXIT=0`). Debug app suite completed in approximately **1928 seconds**, not hung. Focused Release: **55 = 21 GA4 Swift + 34 native contracts, 0 failures**, `/tmp/kinetiq-ga4-fix-focused.log`. Actual native Settings mounted denied, granted while visible without navigation, recorded exactly one event and revoked using the retained owner and recording boundary. GA4 disclosure was tested; no normal consented app GUI launch or live collection request was automated. Full suites include real README capture-to-Metal optics. The focused post-documentation rerun using `swift test -c release --filter 'LiquidIntegrationTests/testCapturedREADMEOpticsPreserveNativeTextContrast'` passed the actual Test Case in **2.618 seconds: 1 test, 0 failures, 0 skips, exit 0** (`/tmp/kinetiq-ga4-fix-postdocs.log`). The initial dot-filter attempt selected 0 tests and is not a successful regression run.
+- Current Python GA4: **26 passed, 0 failures/errors/skips, exit 0**; native parser: **19 passed, 0 skips**; signing: **5 ran, 4 passed, 1 skipped**, because the real Apple Team is unavailable. Current explicit session-aware Google debug probe: **0 validation messages, exit 0**, structure validation only, not authentication/ingestion. It uses a real Web session ID and optional measured preparation timing, **not app engagement**; ordinary tests and smoke are offline.
+- Universal build **`BUILD_EXIT=0`**, `/tmp/kinetiq-ga4-fix-build.log`; actual app and embedded saver each **arm64 + x86_64**, both deep/strict signatures verified **0**. Direct terminal resource verifier **0**, `KINETIQ_TELEMETRY_BUNDLE_CHECK_SUCCESS`; signed disabled smoke **0**, `KINETIQ_TELEMETRY_DISABLED_SMOKE_SUCCESS`; no saved logs claimed for direct checks. Local `build/Kinetiq.app` contains owner GA4 configuration and works without Keychain after fresh default-off consent. Native fallback status **`KINETIQ_FIREBASE_SIGNING_BLOCKED_OFF` is not GA4 unavailability**.
+- Actual Release LLVM **Lines**, verified from the report header, not Regions: GA4 provider **77.09% (275 lines/63 missed)**, owner **97.08% (240/7)**, privacy UI **89.69% (97/10)**, store **100% (20/0)**, native adapter **21.31% (61/48)**. Matching binary `.build/out/Products/Release/KinetiqTests.xctest/Contents/MacOS/KinetiqTests`; profile `/tmp/kinetiq-ga4-fix-release.profdata`; report `/tmp/kinetiq-ga4-fix-coverage.txt`. Approved live data-task/response/cancellation and 30-minute session-boundary exclusions are **not runtime-tested**; no ingestion, exhaustive integration coverage or Metal branch-coverage claim.
+- Reported categorical runtime check: root/bundle configuration matches the Web stream public ID **G-NWQ84487HV**, same configuration `true`, typed GA4 consent `TRUE`; no app process at the reported process check. This is not request or ingestion evidence. No live production configuration or owner preferences were touched.
+- **G1 Done — Copilot**, implementation and verified offline/local acceptance only; **G2 Review — Lorenzo**, actual Web-stream credentials/console ingestion, consented cold/relaunch/live offline/cancellation/revocation, IP/location/retention/access/erasure/privacy, extractable-secret spam risk, terms, notarization and release provisioning. Hosted CI execution is unverified. Native F1 evidence stays historical; native blocked-off signing is unchanged and dormant in configured GA4 mode.
+- Two root `.env` keys remain ignored and local only; credentials are **not uploaded or provisioned in GitHub CI**. Workflow builds without owner `.env` fall back safely to native blocked off and **do not produce a configured GA4 release app**. Version **0.3.4 / build 39**.
+- **Workflow:** Owner-requested publication uses commits/push on firebase, reviewed PR and normal merge into main. Git history and PR are publication evidence; local packaging is not new DMG release.
+
+## [0.3.3] — Build 38
+
+### Added
+
+- **Window Destruction**, a Close-only built-in available in the global Close menu, per-app close rules and the Effects library with **Use when a window closes**. `LibraryEffect.destruction` and `CloseEffectChoice.destruction` use raw ID `destruction`, with Destruction / Fragmentation metadata.
+- A shared **66-entry** manifest: 19 unchanged Studio effects + 47 originals (30 close shaders, 6 entrances, 9 minimize morphs, Liquid and Window Destruction). Combined category totals are **5 / 31 / 15 / 10 / 2 / 3**. Off and the 30-shader close Random pool are unchanged; Fire remains the default. Studio schema 1 and its layer model are unchanged.
+- Captured-window destruction through shared `UIObjectExtractor`, `ChaosScene`, `ChaosWorld.destroyWindow()` and transparent `ChaosRenderer` `oneShot` rendering, without wallpaper or a restoring/rebuilding scene loop. Glyphs/icons release over 0.02–0.22 normalized seconds, shards over 0.4–1.15; gravity, bounce and piling end in a fade with a three-normalized-second lifetime. The complete preview timeline is six seconds at 1×, scaled by the shared 0.25×–3× duration multiplier.
+- Per-display desktop floors behind the Dock and click-through overlays; at most two source captures including pending work, each at most 32 megapixels / 16384 per dimension, with 1200 glyphs, 160 other objects and 256 target tiles per display. Sample/real-window previews use a local floor without AX movement or touching the live window; the expensive-effects gate refuses playback rather than substituting another effect.
+- Memory-only Window Destruction captures: no disk images, screen saver activation or changes to the existing saver behavior/settings. Updated English guides and completed TODO 19 release acceptance.
+
+### Verification
+
+- Final release suite: **304 tests — 122 app + 36 Effects + 146 Core; 0 failures, 0 skips** (`/tmp/kinetiq-v033-acceptance.log`), with both native UI and Destruction opt-in dumps. Real README capture-to-Metal contact sheet visually inspected: text before shards, piling, clear at six seconds at 1× and correct initial border clipping. Real test-window snapshots are under `/tmp/kinetiq-v033-ui` and `/tmp/kinetiq-v033-destruction`, not fabricated sample images or distributed artifacts; normal playback remains memory-only.
+- Final build exit 0 (`/tmp/kinetiq-v033-final-build.log`); app and embedded saver each verified universal x86_64/arm64 with `lipo` and `codesign --verify --deep --strict`. Packaged 0.3.3/build 38 launched from `build/Kinetiq.app` (PID 56054 at verification); Quick Look cache and Finder refreshed.
+- LLVM release **line** coverage (`/tmp/kinetiq-v033-coverage.txt`, not Regions): DestructionEffectPlayer 95.95%, OriginalEffectPreview 92.49%, LibraryEffect 98.49%, ChaosWorld 99.20%, ChaosRenderer Swift 88.86%. Not 100%, not Metal shader branch coverage, and not proof of every native failure path/display configuration. Local-floor previews do not mutate windows; actual Close retains its native lifecycle. Studio schema/layers and screen saver behavior are unchanged. Prior release results below remain historical evidence.
+
+## [0.3.2] — Build 37
+
+### Changed
+
+- Replace original Liquid's final global fade with slow physical drainage through bottom outlets opening from both corners towards the center over six normalized seconds. Gentle outward floor flow preserves the initial melt, real-window shelf collisions and behind-Dock pool.
+- Keep material opaque until every particle's full kernel is below the display. Retain particle indices/UVs while retiring drained samples from physics, bounding their final positions just below the screen.
+- Replay the complete Liquid ending in sample/real-window previews, sharing geometry-dependent timing with the desktop safety deadline. Update library and settings descriptions without changing assignments, preferences or Studio Liquid Morph.
+- Cover progressive physical exit, no early leakage from thin bottom-aligned sources, negative display origins, duration scaling, deterministic stepping and real capture-to-Metal opacity/clear completion.
+
+### Verification
+
+- Final direct release suite with coverage: **287 tests — 146 Core + 36 Effects + 105 app; 0 failures, 0 skips**, including opt-in native UI captures and genuine captured-document drainage/preview regressions. Initial native helper-frontmost failure passed on isolated retry and the complete final suite, without weakening assertions.
+- Actual drainage contact sheet visually inspected; universal arm64/x86_64 app and embedded saver passed strict signature checks. Packaged 0.3.2/build 37 launched; Quick Look/Finder refreshed. Current line coverage: LiquidWorld 98.70%, Liquid renderer Swift 100%, player 95.89%, original preview 92.16% (not Metal shader branch coverage).
+
+## [0.3.1] — Build 36
+
+### Fixed
+
+- Bound each `NavigationSplitView` column to its actual viewport. Native ideal-size propagation previously laid out a roughly 4,146-point split inside a 768-point window, leaving the sidebar, page header, Studio toolbar, inspector and timeline outside the visible area. Bounding the outer split alone was insufficient.
+- Keep the Studio introduction inline only for empty documents. A persistent **?** button opens it in a popover, so it no longer overlaps the preview/inspector after adding a layer at compact window sizes.
+- Preserve the 960 × 700-point minimum content area, all 65 library effects, the 19 Studio effects, saved documents and event assignments.
+
+### Verification
+
+- Release suite with coverage: **284 tests — 144 Core + 36 Effects + 104 app; 0 failures, 0 skips**. The new native geometry regression failed against the original layout and passes with empty/populated documents at three window sizes in light/dark appearances. Existing shader, real-capture, runtime restoration and editor tests remain in the suite.
+- Final app and embedded saver verified universal arm64/x86_64 with strict signatures; packaged version 0.3.1/build 36 launched. Native Studio checked empty and after Add Layer, including inspector tabs and keyframe-track creation at minimum size, without saving a user document. Quick Look/Finder refreshed.
 
 ## [0.3.0] — Build 35
 

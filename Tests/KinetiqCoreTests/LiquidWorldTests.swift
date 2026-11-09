@@ -57,7 +57,7 @@ final class LiquidWorldTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(p.position.x, Float(world.screenBounds.minX) - 0.01, file: file, line: line)
             XCTAssertLessThanOrEqual(p.position.x, Float(world.screenBounds.maxX) + 0.01, file: file, line: line)
             XCTAssertGreaterThanOrEqual(p.position.y, Float(world.screenBounds.minY) - 0.01, file: file, line: line)
-            XCTAssertLessThanOrEqual(p.position.y, Float(world.screenBounds.maxY) + 0.01, file: file, line: line)
+            XCTAssertLessThanOrEqual(p.position.y, Float(world.screenBounds.maxY) + world.spacing * 1.5 + 1.01, file: file, line: line)
         }
     }
 
@@ -107,8 +107,8 @@ final class LiquidWorldTests: XCTestCase {
         let screen = try domain(), frame = source(in: screen)
         let a = LiquidWorld(windowFrame: frame, screenBounds: screen, obstacles: [])
         let b = LiquidWorld(windowFrame: frame, screenBounds: screen, obstacles: [])
-        advance(a, seconds: 2)
-        for _ in 0..<120 { b.step(1 / 60) }
+        advance(a, seconds: 12)
+        for _ in 0..<720 { b.step(1 / 60) }
         XCTAssertEqual(a.elapsed, b.elapsed)
         for (lhs, rhs) in zip(a.particles, b.particles) {
             XCTAssertEqual(lhs.position, rhs.position)
@@ -120,10 +120,10 @@ final class LiquidWorldTests: XCTestCase {
     func testDurationScaleNormalizesPhysicsAndRendererTimeline() throws {
         let screen = try domain(), frame = source(in: screen)
         let normal = LiquidWorld(windowFrame: frame, screenBounds: screen, obstacles: [])
-        advance(normal, seconds: 2)
+        advance(normal, seconds: 9)
         for scale: Float in [0.25, 0.5, 3] {
             let world = LiquidWorld(windowFrame: frame, screenBounds: screen, obstacles: [], durationScale: scale)
-            advance(world, seconds: 2, scale: scale)
+            advance(world, seconds: 9, scale: scale)
             XCTAssertEqual(world.meltDuration, 1.4 * scale)
             XCTAssertEqual(world.elapsed, normal.elapsed * scale, accuracy: 0.00001)
             XCTAssertEqual(world.alpha, normal.alpha)
@@ -247,48 +247,88 @@ final class LiquidWorldTests: XCTestCase {
                            width: screen.width * 0.75, height: screen.height * 0.3)
         let world = LiquidWorld(windowFrame: frame, screenBounds: screen, obstacles: [shelf])
         let count = world.particles.count
-        var previousAlpha: Float = 1
-        var observedFade = false
-        for tick in 0..<1681 {
+        var observedDrain = false
+        for tick in 0..<Int(ceil(world.duration * 120)) {
             if tick.isMultiple(of: 60) { world.setObstacles(tick < 480 ? [shelf] : []) }
             world.step(h)
             if tick.isMultiple(of: 120) { assertFiniteAndBounded(world) }
-            XCTAssertLessThanOrEqual(world.alpha, previousAlpha)
-            if world.alpha > 0 && world.alpha < 1 { observedFade = true }
-            previousAlpha = world.alpha
+            XCTAssertEqual(world.alpha, world.isFinished ? 0 : 1)
+            if world.particles.contains(where: { $0.position.y > Float(screen.maxY) }) { observedDrain = true }
         }
-        XCTAssertTrue(observedFade)
+        XCTAssertTrue(observedDrain)
         XCTAssertTrue(world.isFinished)
         XCTAssertEqual(world.alpha, 0)
-        XCTAssertLessThanOrEqual(world.elapsed, 14)
+        XCTAssertLessThanOrEqual(world.elapsed, world.duration)
         XCTAssertEqual(world.particles.count, count)
         let finalTime = world.elapsed
         world.step(1)
         XCTAssertEqual(world.elapsed, finalTime)
     }
 
-    func testFadeLingersThenTakesThreeScaledSecondsAndTerminates() throws {
+    func testDrainLingersThenLeavesBottomWithoutFadingAtEveryDurationScale() throws {
         let screen = try domain()
         let frame = CGRect(x: screen.midX, y: screen.minY + 2, width: 1, height: 1)
         for scale: Float in [0.25, 3] {
             let world = LiquidWorld(windowFrame: frame, screenBounds: screen, obstacles: [], durationScale: scale)
             advance(world, seconds: 4.4, scale: scale)
-            XCTAssertEqual(world.alpha, 1, "Melting and a three-second linger must precede fading")
-            var fadeBegan: Float?
-            var previous: Float = 1
-            while !world.isFinished && world.elapsed < 14 * scale {
+            XCTAssertEqual(world.alpha, 1, "Melting and a three-second linger must precede drainage")
+            XCTAssertLessThanOrEqual(world.particles[0].position.y, Float(screen.maxY))
+            var observedDownwardExit = false
+            while !world.isFinished && world.elapsed < world.duration {
                 world.step(h * scale)
-                if world.alpha < 1 && fadeBegan == nil { fadeBegan = world.elapsed }
-                XCTAssertLessThanOrEqual(world.alpha, previous)
-                previous = world.alpha
+                XCTAssertEqual(world.alpha, world.isFinished ? 0 : 1, "Drainage must not reduce material opacity")
+                if world.particles[0].position.y > Float(screen.maxY) {
+                    observedDownwardExit = true
+                    XCTAssertGreaterThan(world.elapsed, world.drainStart)
+                }
             }
             XCTAssertTrue(world.isFinished)
             XCTAssertEqual(world.alpha, 0)
-            if let began = fadeBegan {
-                XCTAssertEqual((world.elapsed - began) / scale, 3, accuracy: 0.03)
-            } else { XCTFail("No gradual fade observed") }
-            XCTAssertLessThanOrEqual(world.elapsed, 14 * scale)
+            XCTAssertTrue(observedDownwardExit)
+            XCTAssertGreaterThan(world.particles[0].position.y, Float(screen.maxY) + world.spacing * 1.5)
+            XCTAssertLessThanOrEqual(world.elapsed, world.duration)
         }
+    }
+
+    func testBottomOutletsDrainFromEdgesProgressivelyAndRetainOpaqueMaterial() throws {
+        let screen = try domain()
+        let world = LiquidWorld(windowFrame: screen, screenBounds: screen, obstacles: [])
+        let identity = world.particles.map(\.uv)
+        advance(world, seconds: world.drainStart)
+        XCTAssertEqual(world.alpha, 1)
+        XCTAssertTrue(world.particles.allSatisfy { $0.position.y <= Float(screen.maxY) })
+        var partialTicks = 0
+        var firstExit: SIMD2<Float>?
+        while !world.isFinished && world.elapsed < world.duration {
+            world.step(h)
+            let outside = world.particles.filter { $0.position.y > Float(screen.maxY) }
+            if firstExit == nil { firstExit = outside.first?.position }
+            if !outside.isEmpty && outside.count < world.particles.count {
+                partialTicks += 1
+                XCTAssertEqual(world.alpha, 1)
+            }
+            assertFiniteAndBounded(world)
+        }
+        let exit = try XCTUnwrap(firstExit)
+        XCTAssertLessThan(min(exit.x - Float(screen.minX), Float(screen.maxX) - exit.x), Float(screen.width) * 0.25)
+        XCTAssertGreaterThan(partialTicks, 120, "The pool must drain gradually, not vanish in a single frame")
+        XCTAssertTrue(world.isFinished)
+        XCTAssertTrue(world.particles.allSatisfy { $0.position.y > Float(screen.maxY) + world.spacing * 1.5 })
+        XCTAssertEqual(world.particles.map(\.uv), identity)
+    }
+
+    func testThinSourceAtBottomCannotLeakBeforeOutletsOpen() throws {
+        let screen = try domain()
+        let frame = CGRect(x: screen.minX + 1, y: screen.maxY - 1, width: screen.width - 2, height: 1)
+        let world = LiquidWorld(windowFrame: frame, screenBounds: screen, obstacles: [])
+        while world.elapsed + h < world.drainStart {
+            world.step(h)
+            XCTAssertEqual(world.alpha, 1)
+            XCTAssertTrue(world.particles.allSatisfy { $0.position.y <= Float(screen.maxY) })
+        }
+        advance(world, seconds: world.duration - world.elapsed)
+        XCTAssertTrue(world.isFinished)
+        assertFiniteAndBounded(world)
     }
 
     func testTranslationToNegativeScreenOriginsPreservesDynamics() throws {
@@ -311,16 +351,20 @@ final class LiquidWorldTests: XCTestCase {
         XCTAssertEqual(b.particles.map(\.uv), a.particles.map(\.uv))
         XCTAssertGreaterThan(b.particles.map { $0.position.y }.max()!, Float(negative.maxY) - b.spacing)
         assertFiniteAndBounded(b)
+        advance(b, seconds: b.duration)
+        XCTAssertTrue(b.isFinished)
+        XCTAssertTrue(b.particles.allSatisfy { $0.position.y > Float(negative.maxY) + b.spacing * 1.5 })
+        assertFiniteAndBounded(b)
     }
 
-    func testFullDisplayParticleBudgetRemainsStableThroughPoolingAndFade() throws {
+    func testFullDisplayParticleBudgetRemainsStableThroughPoolingAndDrainage() throws {
         let screen = try desktop().screen
         let world = LiquidWorld(windowFrame: screen, screenBounds: screen, obstacles: [])
         let initialCount = world.particles.count
         XCTAssertGreaterThan(initialCount, 0)
         XCTAssertLessThanOrEqual(initialCount, 1500)
         var observedPool = false
-        for tick in 0..<1680 {
+        for tick in 0..<Int(ceil(world.duration * 120)) {
             world.step(h)
             if tick.isMultiple(of: 120) { assertFiniteAndBounded(world) }
             if world.elapsed > world.meltDuration, world.alpha == 1 {
@@ -332,7 +376,7 @@ final class LiquidWorldTests: XCTestCase {
         XCTAssertEqual(world.particles.count, initialCount)
         XCTAssertTrue(world.isFinished)
         XCTAssertEqual(world.alpha, 0)
-        XCTAssertLessThanOrEqual(world.elapsed, 14)
+        XCTAssertLessThanOrEqual(world.elapsed, world.duration)
     }
 
     func testInvalidDeltaAndLongFrameNeverAccumulateUnboundedCatchup() throws {

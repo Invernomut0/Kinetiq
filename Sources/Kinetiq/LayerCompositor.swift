@@ -27,7 +27,8 @@ enum BuiltinLayer: Equatable {
         case .close(let value): self = .close(value)
         case .entrance(let value): self = .entrance(value)
         case .minimize(let value): self = .minimize(value)
-        case .catalog, .liquid: return nil
+        // Liquid and Window Destruction are desktop-wide simulations with their own players.
+        case .catalog, .liquid, .destruction: return nil
         }
     }
 

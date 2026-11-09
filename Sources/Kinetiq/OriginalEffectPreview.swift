@@ -5,6 +5,7 @@ import AppKit
 import CoreVideo
 import KinetiqCore
 import KinetiqEffects
+import KinetiqSaverSupport
 @preconcurrency import Metal
 import SwiftUI
 
@@ -91,15 +92,27 @@ final class OriginalPreviewRenderer {
     func cancel() { generation = UUID() }
 
     /// The timeline length a preview scrubs through, in seconds.
-    static func timelineSeconds(effect: LibraryEffect, preset: EffectPreset?, settings: Settings) -> Double {
+    static func timelineSeconds(effect: LibraryEffect, preset: EffectPreset?, settings: Settings,
+                                source: PreviewSource = .sample) -> Double {
         switch effect {
         case .catalog(.wobbly): return wobblyPreviewSeconds
         case .catalog(let id): return preset?.duration ?? EffectPreset(effect: id).duration
         case .close(let close): return close.duration * settings.closeDuration
         case .entrance: return 2.5
         case .minimize(let style): return Double(style.duration) * settings.closeDuration
-        case .liquid: return 6 * settings.closeDuration
+        case .destruction: return DestructionScene.duration * settings.closeDuration
+        case .liquid:
+            let frame = source.windowID.flatMap { WindowLocator.frame(of: $0) } ?? SampleWindow.frameOnStage
+            return Double(LiquidWorld.duration(for: liquidStage(frame), durationScale: Float(settings.closeDuration)))
         }
+    }
+
+    /// The same local floor and timing for the scrubber and captured render path.
+    private static func liquidStage(_ frame: CGRect) -> CGRect {
+        let margin = max(24, frame.width * 0.15)
+        var stage = frame.insetBy(dx: -margin, dy: -margin)
+        stage.size.height += frame.height * 0.85
+        return stage
     }
 
     /// Library entry point: any effect, from the sample window or a real one.
@@ -298,6 +311,7 @@ final class OriginalPreviewRenderer {
         var scene: EffectScene?
         var deformer: (any WindowDeformer)?
         var world: LiquidWorld?
+        var destruction: ChaosRenderer?
         var catalog: StudioDocument?
         var alpha: Float = 1
         var tilesX = CatalogDragPolicy.meshTiles(requested: settings.tilesX, meshLimit: min(64, budget.meshLimit))
@@ -344,14 +358,29 @@ final class OriginalPreviewRenderer {
             deformer = model
             tilesX = CatalogDragPolicy.meshTiles(requested: 24, meshLimit: min(64, budget.meshLimit))
             tilesY = CatalogDragPolicy.meshTiles(requested: 20, meshLimit: min(64, budget.meshLimit))
+        case .destruction:
+            guard budget.allowsExpensive else { throw OriginalPreviewError.budget }
+            stage = Self.liquidStage(windowFrame)
+            let localStage = stage
+            guard let pieces = await Task.detached(priority: .userInitiated, operation: {
+                DestructionScene.build(frame: frame, windowFrame: windowFrame, stage: localStage)
+            }).value else { throw OriginalPreviewError.capture }
+            try validate(token, settings: settings)
+            let renderer = try DestructionScene.renderer(device: gpu.device, scene: pieces, size: stage.size,
+                scale: CGFloat(frame.windowRect.width / frame.pointSize.width))
+            let ticks = Int((progress * DestructionScene.duration * 120).rounded(.down))
+            for tick in 0..<ticks {
+                if tick.isMultiple(of: 24) { await Task.yield(); try validate(token, settings: settings) }
+                renderer.simulate(1 / 120)
+            }
+            destruction = renderer
         case .liquid:
             guard budget.allowsExpensive, budget.maxParticles > 0 else { throw OriginalPreviewError.budget }
-            stage.size.height += windowFrame.height * 0.85
+            stage = Self.liquidStage(windowFrame)
             let liquid = LiquidWorld(windowFrame: windowFrame, screenBounds: stage, obstacles: [],
                 durationScale: Float(settings.closeDuration), maxParticles: budget.maxParticles)
-            // Six normalized seconds includes complete melting, fall and pooling.
-            // Keep the entire stage, not the now-empty original-window crop.
-            try await advance(liquid, seconds: progress * 6 * settings.closeDuration, token: token, settings: settings)
+            // Replay the complete physical drainage too, without cropping the local floor.
+            try await advance(liquid, seconds: progress * Double(liquid.duration), token: token, settings: settings)
             if gpu.liquid == nil { gpu.liquid = try LiquidEffectRenderer(device: gpu.device) }
             gpu.liquid?.geometryScale = budget.textureScale
             world = liquid
@@ -392,7 +421,9 @@ final class OriginalPreviewRenderer {
         descriptor.usage = [.renderTarget, .shaderRead]
         guard let target = gpu.device.makeTexture(descriptor: descriptor),
               let command = gpu.queue.makeCommandBuffer() else { throw OriginalPreviewError.metal }
-        if let catalog {
+        if let destruction {
+            destruction.encodeFrame(commands: command, target: target, dt: 0)
+        } else if let catalog {
             if gpu.compositor == nil { gpu.compositor = LayerCompositor(device: gpu.device) }
             let layers = LayerCompositor.active(catalog, at: progress * catalog.duration).count
             let scratch = layers > 1 ? gpu.device.makeTexture(descriptor: descriptor) : nil

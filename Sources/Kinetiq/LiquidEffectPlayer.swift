@@ -94,7 +94,7 @@ final class LiquidEffectPlayer: NSObject, OverlayContent {
                                     obstacles: obstacles, durationScale: Float(scale), maxParticles: budget.maxParticles)
             guard !world.isFinished else { return nil }
             return Playing(world: world, sourceID: frame.windowID, texture: texture, backing: retainedBacking, uvRect: uv,
-                           deadline: CACurrentMediaTime() + 15 * scale)
+                           deadline: CACurrentMediaTime() + Double(world.duration) + scale)
         }
         guard !additions.isEmpty else { return false }
         if displayLink == nil {

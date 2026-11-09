@@ -289,6 +289,7 @@ struct EffectDetailView: View {
                 + (events.isEmpty ? " Runs manually only." : " Can react to: \(events.joined(separator: ", ")).")
         case .entrance: return "Uses the spring settings from Physics. Shown on the window that just opened."
         case .close: return "Plays on the captured image of the window after it has really closed. Duration follows the shared multiplier."
+        case .destruction: return "A physical simulation of fragments and extracted window contents, played only after a real close. Duration follows the shared multiplier."
         case .minimize: return "Travels to the window's Dock icon. In this preview the destination is local, not your actual Dock."
         case .liquid: return "A particle fluid simulation. Here it pools on a local floor instead of behind your Dock."
         }

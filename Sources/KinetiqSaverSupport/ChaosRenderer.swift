@@ -372,6 +372,7 @@ public final class ChaosRenderer {
 
     private let scene: ChaosScene
     private let settings: ChaosSettings
+    private let oneShot: Bool
     public private(set) var world: ChaosWorld
     private var phase = Phase.playing
     private var fade: Float = 0
@@ -386,7 +387,7 @@ public final class ChaosRenderer {
     private let puffPipeline: MTLRenderPipelineState
     private let puffAdditivePipeline: MTLRenderPipelineState
     private let fadePipeline: MTLRenderPipelineState
-    private let wallpaper: MTLTexture
+    private let wallpaper: MTLTexture?
     private let windowTextures: [MTLTexture?]
     private let atlas: ChaosAtlas?
 
@@ -411,18 +412,23 @@ public final class ChaosRenderer {
 
     private static var library: MTLLibrary?
 
-    public init(device: MTLDevice, scene: ChaosScene, screenSize: CGSize, pixelScale: CGFloat, wallpaper: CGImage, settings: ChaosSettings) throws {
-        guard let queue = device.makeCommandQueue(), let wallpaperTexture = ChaosTexture.make(device: device, image: wallpaper) else {
+    public init(device: MTLDevice, scene: ChaosScene, screenSize: CGSize, pixelScale: CGFloat, wallpaper: CGImage?, settings: ChaosSettings,
+                oneShot: Bool = false) throws {
+        guard let queue = device.makeCommandQueue() else {
             throw ChaosRendererError.noDevice
         }
+        let wallpaperTexture = wallpaper.flatMap { ChaosTexture.make(device: device, image: $0) }
+        guard wallpaper == nil || wallpaperTexture != nil else { throw ChaosRendererError.noDevice }
         self.device = device
         self.queue = queue
         self.scene = scene
         self.settings = settings
+        self.oneShot = oneShot
         self.wallpaper = wallpaperTexture
         self.screenSize = SIMD2(Float(screenSize.width), Float(screenSize.height))
         self.pixelScale = Float(pixelScale)
         world = ChaosWorld(seeds: scene.seeds, size: self.screenSize, settings: settings)
+        if oneShot { world.destroyWindow() }
         windowTextures = scene.pictures.map { ChaosTexture.make(device: device, image: $0) }
         atlas = scene.sprites.isEmpty ? nil : ChaosAtlas(device: device, objects: scene.sprites)
         let groups = scene.pictures.count
@@ -483,8 +489,17 @@ public final class ChaosRenderer {
 
     // MARK: - Frame
 
+    /// A one-shot never restores the saved window or covers the live desktop with a fade.
+    public var isFinished: Bool {
+        oneShot && world.bodies.allSatisfy { $0.state == .gone } && world.puffs.isEmpty
+    }
+
     public func simulate(_ dt: Float) {
         elapsed += dt
+        if oneShot {
+            world.step(dt: dt)
+            return
+        }
         switch phase {
         case .playing:
             world.step(dt: dt)
@@ -504,7 +519,7 @@ public final class ChaosRenderer {
         }
     }
 
-    public func encodeFrame(commands: MTLCommandBuffer, target: MTLTexture, dt: Float) {
+    public func encodeFrame(commands: MTLCommandBuffer, target: MTLTexture, dt: Float, clear: Bool = true) {
         frames += 1
         inFlight.wait()
         commands.addCompletedHandler { [inFlight] _ in inFlight.signal() }
@@ -516,34 +531,39 @@ public final class ChaosRenderer {
         var spriteOffset = 0, triOffset = 0
         let spritePointer = spriteBuffers[s].contents().bindMemory(to: SpriteInstance.self, capacity: spriteCapacity)
         let triPointer = triBuffers[s].contents().bindMemory(to: TriInstance.self, capacity: triCapacity)
-        struct Segment { var start: Int; var count: Int; var texture: MTLTexture?; var kind: Int }   // kind: 0 sprites, 1 triangles, 2 cracks
+        struct Segment { var start: Int; var count: Int; var texture: MTLTexture?; var kind: Int; var clip: CGRect? }   // kind: 0 sprites, 1 triangles, 2 cracks
         var segments: [Segment] = []
+        var clip: CGRect?
         var crackOffset = 0
         let crackPointer = crackBuffers[s].contents().bindMemory(to: CrackInstance.self, capacity: crackCapacity)
         func add(_ instances: [SpriteInstance], _ texture: MTLTexture?) {
             guard !instances.isEmpty, let texture, spriteOffset + instances.count <= spriteCapacity else { return }
             instances.withUnsafeBufferPointer { (spritePointer + spriteOffset).update(from: $0.baseAddress!, count: instances.count) }
-            segments.append(Segment(start: spriteOffset, count: instances.count, texture: texture, kind: 0))
+            segments.append(Segment(start: spriteOffset, count: instances.count, texture: texture, kind: 0, clip: clip))
             spriteOffset += instances.count
         }
         func add(_ instances: [TriInstance], _ texture: MTLTexture?) {
             guard !instances.isEmpty, let texture, triOffset + instances.count <= triCapacity else { return }
             instances.withUnsafeBufferPointer { (triPointer + triOffset).update(from: $0.baseAddress!, count: instances.count) }
-            segments.append(Segment(start: triOffset, count: instances.count, texture: texture, kind: 1))
+            segments.append(Segment(start: triOffset, count: instances.count, texture: texture, kind: 1, clip: clip))
             triOffset += instances.count
         }
         func add(_ instances: [CrackInstance]) {
             guard !instances.isEmpty, crackOffset + instances.count <= crackCapacity else { return }
             instances.withUnsafeBufferPointer { (crackPointer + crackOffset).update(from: $0.baseAddress!, count: instances.count) }
-            segments.append(Segment(start: crackOffset, count: instances.count, texture: nil, kind: 2))
+            segments.append(Segment(start: crackOffset, count: instances.count, texture: nil, kind: 2, clip: clip))
             crackOffset += instances.count
         }
-        add([SpriteInstance(pos: screenSize / 2, size: screenSize + SIMD2(64, 64), uv: SIMD4(0, 0, 1, 1))], wallpaper)
+        if !oneShot {
+            add([SpriteInstance(pos: screenSize / 2, size: screenSize + SIMD2(64, 64), uv: SIMD4(0, 0, 1, 1))], wallpaper)
+        }
         for g in scene.pictures.indices {
+            clip = oneShot ? scene.frames[g] : nil
             add(attachedShards[g], windowTextures[g])
             add(attachedCracks[g])
             add(attachedSprites[g], atlas?.texture)
         }
+        clip = nil
         for g in scene.pictures.indices {
             add(looseShards[g], windowTextures[g])
             add(looseCracks[g])
@@ -554,8 +574,8 @@ public final class ChaosRenderer {
 
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = target
-        pass.colorAttachments[0].loadAction = .clear
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        pass.colorAttachments[0].loadAction = clear ? .clear : .load
+        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: oneShot ? 0 : 1)
         pass.colorAttachments[0].storeAction = .store
         guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return }
         var resolution = screenSize
@@ -569,6 +589,19 @@ public final class ChaosRenderer {
         encoder.setFragmentBytes(&clock, length: MemoryLayout<Float>.size, index: 1)
         var current = 0
         for segment in segments {
+            // Cracks have a soft rim wider than their clipped centerline. Only
+            // attached material is window-clipped; falling debris uses the full display.
+            if let clip = segment.clip {
+                let sx = CGFloat(target.width) / CGFloat(screenSize.x), sy = CGFloat(target.height) / CGFloat(screenSize.y)
+                let x = max(0, min(target.width, Int(floor(clip.minX * sx))))
+                let y = max(0, min(target.height, Int(floor(clip.minY * sy))))
+                let right = max(x, min(target.width, Int(ceil(clip.maxX * sx))))
+                let bottom = max(y, min(target.height, Int(ceil(clip.maxY * sy))))
+                guard right > x, bottom > y else { continue }
+                encoder.setScissorRect(MTLScissorRect(x: x, y: y, width: right - x, height: bottom - y))
+            } else {
+                encoder.setScissorRect(MTLScissorRect(x: 0, y: 0, width: target.width, height: target.height))
+            }
             if segment.kind != current {
                 current = segment.kind
                 encoder.setRenderPipelineState(current == 0 ? spritePipeline : (current == 1 ? triPipeline : crackPipeline))
@@ -586,6 +619,7 @@ public final class ChaosRenderer {
                 encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: segment.count)
             }
         }
+        encoder.setScissorRect(MTLScissorRect(x: 0, y: 0, width: target.width, height: target.height))
         var scale = pixelScale
         if puffs.normal > 0 {
             encoder.setRenderPipelineState(puffPipeline)

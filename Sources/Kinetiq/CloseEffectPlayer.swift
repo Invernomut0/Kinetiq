@@ -46,6 +46,8 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
     private var armed = false
     private var ready: Set<CloseEffect> = []
     private var warmUpTask: Task<Void, Never>?
+    /// Shares the close-trigger lifetime, but owns separate transparent physical overlays.
+    let destructionPlayer = DestructionEffectPlayer.make()
 
     private init(device: MTLDevice, queue: MTLCommandQueue) {
         self.device = device
@@ -69,7 +71,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
         var effects: [CloseEffect] = []
         for choice in choices {
             switch choice {
-            case .off, .liquid: break
+            case .off, .liquid, .destruction: break
             case .random: effects.append(contentsOf: CloseEffect.allCases)
             case .effect(let effect): effects.append(effect)
             }
@@ -100,7 +102,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
     /// The effect to play for the user's choice. A random pick favors the shaders that are already compiled.
     func effect(for choice: CloseEffectChoice) -> CloseEffect? {
         switch choice {
-        case .off, .liquid: return nil
+        case .off, .liquid, .destruction: return nil
         case .effect(let effect): return effect
         case .random: return ready.randomElement() ?? CloseEffect.allCases.randomElement()
         }
@@ -186,6 +188,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
 
     /// Stops every running effect (the screens changed, or the app is quitting).
     func cancelAll() {
+        destructionPlayer?.cancelAll()
         playing.removeAll()
         refreshBounds()
         finishIfIdle()

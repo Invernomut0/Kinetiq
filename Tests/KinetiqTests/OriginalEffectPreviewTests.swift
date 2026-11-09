@@ -163,12 +163,16 @@ final class OriginalEffectPreviewTests: XCTestCase {
         defer { window.close() }
         let preferences = try settings(), original = window.frame
         let renderer = OriginalPreviewRenderer(budget: { .forQuality(.high) })
+        let duration = OriginalPreviewRenderer.timelineSeconds(effect: .liquid, preset: nil, settings: preferences,
+                                                               source: .window(frame.windowID))
         let start = try await renderer.previewCaptured(effect: .liquid, frame: frame,
             windowFrame: rect, progress: 0, settings: preferences)
         let melt = try await renderer.previewCaptured(effect: .liquid, frame: frame,
-            windowFrame: rect, progress: 0.3, settings: preferences)
+            windowFrame: rect, progress: 1.8 / duration, settings: preferences)
         let pool = try await renderer.previewCaptured(effect: .liquid, frame: frame,
-            windowFrame: rect, progress: 0.8, settings: preferences)
+            windowFrame: rect, progress: 5 / duration, settings: preferences)
+        let end = try await renderer.previewCaptured(effect: .liquid, frame: frame,
+            windowFrame: rect, progress: 1, settings: preferences)
         let a = try pixels(start), b = try pixels(melt), c = try pixels(pool)
         XCTAssertEqual(start.size, melt.size)
         XCTAssertEqual(start.size, pool.size)
@@ -177,6 +181,8 @@ final class OriginalEffectPreviewTests: XCTestCase {
         XCTAssertGreaterThan(try alphaMass(c, lowerFraction: 0.85), 10, "Actual simulated material must reach the retained local floor")
         XCTAssertEqual(try alphaMass(a, lowerFraction: 0.85), 0, accuracy: 0.01)
         XCTAssertNotEqual(try bytes(a), try bytes(b))
+        XCTAssertEqual(end.size, start.size)
+        XCTAssertEqual(try alphaMass(pixels(end)), 0, "The full preview must include physical drainage")
         XCTAssertEqual(window.frame, original)
         XCTAssertFalse(window.isMiniaturized)
     }

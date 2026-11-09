@@ -14,10 +14,11 @@ enum LibraryEffect: Hashable, Identifiable {
     case entrance(WobbleEntrance)
     case minimize(DockMorphStyle)
     case liquid
+    case destruction
 
     static let all: [LibraryEffect] = EffectID.allCases.map(Self.catalog)
         + CloseEffect.allCases.map(Self.close) + WobbleEntrance.allCases.map(Self.entrance)
-        + DockMorphStyle.allCases.map(Self.minimize) + [.liquid]
+        + DockMorphStyle.allCases.map(Self.minimize) + [.liquid, .destruction]
 
     var id: String {
         switch self {
@@ -26,6 +27,7 @@ enum LibraryEffect: Hashable, Identifiable {
         case .entrance(let effect): return "open:" + effect.rawValue
         case .minimize(let effect): return "minimize:" + effect.rawValue
         case .liquid: return "liquid"
+        case .destruction: return "destruction"
         }
     }
 
@@ -43,13 +45,14 @@ enum LibraryEffect: Hashable, Identifiable {
         case .entrance(let effect): return effect.title
         case .minimize(let effect): return effect.title
         case .liquid: return "Liquid"
+        case .destruction: return "Window Destruction"
         }
     }
 
     var badge: String {
         switch self {
         case .catalog: return "Studio"
-        case .close: return "Original Close"
+        case .close, .destruction: return "Original Close"
         case .entrance: return "Original Open"
         case .minimize: return "Original Minimize"
         case .liquid: return "Original Close / Minimize"
@@ -79,7 +82,7 @@ enum LibraryEffect: Hashable, Identifiable {
     var triggers: [EffectTrigger] {
         switch self {
         case .catalog(let effect): return EffectCatalog.descriptor(effect).triggers
-        case .close: return [.close]
+        case .close, .destruction: return [.close]
         case .entrance: return [.open]
         case .minimize: return [.minimize]
         case .liquid: return [.close, .minimize]
@@ -94,7 +97,9 @@ enum LibraryEffect: Hashable, Identifiable {
         switch self {
         case .catalog(let effect): return EffectCatalog.descriptor(effect).summary
         case .liquid:
-            return "The window melts from the top-right corner, spills over its edges and pools behind the Dock before fading away."
+            return "The window melts from the top-right corner, pools behind the Dock, then slowly drains off the bottom edges."
+        case .destruction:
+            return "The closed window breaks into fragments as its letters, icons and controls fall apart."
         case .entrance(let entrance):
             switch entrance {
             case .wobblePop: return "The new window springs in with a jelly pop from its center and settles."
@@ -158,6 +163,7 @@ enum LibraryEffect: Hashable, Identifiable {
             let descriptor = EffectCatalog.descriptor(effect)
             return (descriptor.category, descriptor.submenu)
         case .liquid: return (.transitions, "Fluid")
+        case .destruction: return (.destruction, "Fragmentation")
         case .minimize: return (.transitions, "Minimize / Restore")
         case .entrance(let entrance):
             switch entrance {
@@ -248,6 +254,7 @@ enum OriginalEffectAssignment {
         try store.releaseAssignment(to: trigger)
         switch effect {
         case .close(let value): settings.closeEffect = .effect(value)
+        case .destruction: settings.closeEffect = .destruction
         case .entrance(let value): settings.openEffect = .wobble(value)
         case .minimize(let value): settings.minimizeEffect = .morph(value)
         case .liquid:
@@ -262,6 +269,7 @@ enum OriginalEffectAssignment {
         guard store.assigned(to: trigger) == nil, effect.triggers.contains(trigger) else { return false }
         switch effect {
         case .close(let value): return settings.closeEffect == .effect(value)
+        case .destruction: return settings.closeEffect == .destruction
         case .entrance(let value): return settings.openEffect == .wobble(value)
         case .minimize(let value): return settings.minimizeEffect == .morph(value)
         case .liquid: return trigger == .close ? settings.closeEffect == .liquid : settings.minimizeEffect == .liquid
@@ -290,6 +298,7 @@ enum TriggerAssignment: Equatable {
             case .off: return .off
             case .random: return .random
             case .liquid: return .effect(.liquid)
+            case .destruction: return .effect(.destruction)
             case .effect(let value): return .effect(.close(value))
             }
         case .open:

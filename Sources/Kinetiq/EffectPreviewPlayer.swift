@@ -83,7 +83,7 @@ struct EffectPreviewPlayer: View {
     private func duration(of subject: PreviewSubject) -> Double {
         switch subject {
         case .effect(let effect, let preset):
-            return OriginalPreviewRenderer.timelineSeconds(effect: effect, preset: preset, settings: settings)
+            return OriginalPreviewRenderer.timelineSeconds(effect: effect, preset: preset, settings: settings, source: sources.source)
         case .document(let document): return max(0.1, document.duration)
         case .overview: return OriginalPreviewRenderer.overviewPreviewSeconds
         }
