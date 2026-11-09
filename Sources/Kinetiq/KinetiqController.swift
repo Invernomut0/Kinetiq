@@ -50,6 +50,8 @@ private final class DragSession {
     var tiles: (x: Int, y: Int)?
     /// Shadow of the capture on screen: the native one, which depends on whether the window was active.
     var shadow: ShadowInsets?
+    /// A finite event attached only after capture/renderer preparation succeeds.
+    var usageEvent: KinetiqUsageEvent?
 
     /// Only beginSession supplies an explicit persisted drag assignment. Legacy
     /// maximize/resize/open sessions deliberately have no catalog drag policy.
@@ -180,7 +182,7 @@ final class KinetiqController: NSObject {
     func tryLiquid(windowID: CGWindowID? = nil) {
         guard let liquidPlayer else { return }
         tryOnFrontWindow(windowID, play: { [settings] frame, info in
-            liquidPlayer.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration)
+            liquidPlayer.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration, trigger: .manual)
         }, isPlaying: { liquidPlayer.hasScene }, cancel: { liquidPlayer.cancelAll() })
     }
 
@@ -188,7 +190,7 @@ final class KinetiqController: NSObject {
     func tryDestruction(windowID: CGWindowID? = nil) {
         guard let destruction = closePlayer?.destructionPlayer else { return }
         tryOnFrontWindow(windowID, play: { [settings] frame, info in
-            await destruction.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration)
+            await destruction.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration, trigger: .manual)
         }, isPlaying: { destruction.hasScene }, cancel: { destruction.cancelAll() })
     }
 
@@ -473,6 +475,7 @@ final class KinetiqController: NSObject {
         if CatalogRuntime.shared.isPlaying { CatalogRuntime.shared.stop() }
         let policy = CatalogDragPolicy(preset: CatalogStore.shared.assigned(to: .drag))
         let session = DragSession(window: info, cursor: point, dragPolicy: policy, physics: settings.physics)
+        session.usageEvent = .effectPlayed(effectID: policy.map { LibraryEffect.catalog($0.preset.effect).id } ?? "wobbly_classic", trigger: .drag)
         session.titleBarHeight = titleBarHeight
         self.session = session
         refreshDragGeometry(session, now: session.began, force: true)
@@ -566,7 +569,8 @@ final class KinetiqController: NSObject {
             guard let axWindow = AXBridge.findWindow(info, hitPoint: endPoint) else { return }
             Task { @MainActor in
                 // GNOME uses 20×20 tiles for this effect.
-                self?.startEffect(info, axWindow: axWindow, tiles: (20, 20)) { size in
+                self?.startEffect(info, axWindow: axWindow, tiles: (20, 20),
+                                  usageEvent: .effectPlayed(effectID: "wobbly_classic", trigger: .resize)) { size in
                     ResizeBounce(size: SIMD2(Float(size.width), Float(size.height)), origin: SIMD2(info.frame.origin),
                                  edges: edges, pickup: pickup, pointerTravel: travel, settings: physics)
                 }
@@ -627,14 +631,16 @@ final class KinetiqController: NSObject {
         if maximized {
             maximizedWindows.insert(info.id)
             // GNOME forces 10×10 tiles when maximizing.
-            startEffect(info, axWindow: element, tiles: (10, 10)) { size in
+            startEffect(info, axWindow: element, tiles: (10, 10),
+                        usageEvent: .effectPlayed(effectID: "wobbly_classic", trigger: .maximize)) { size in
                 let model = KinetiqModel(size: SIMD2(Float(size.width), Float(size.height)), origin: origin, settings: physics)
                 model.maximize()
                 return model
             }
         } else {
             maximizedWindows.remove(info.id)
-            startEffect(info, axWindow: element, tiles: nil) { size in
+            startEffect(info, axWindow: element, tiles: nil,
+                        usageEvent: .effectPlayed(effectID: "wobbly_classic", trigger: .maximize)) { size in
                 let model = KinetiqModel(size: SIMD2(Float(size.width), Float(size.height)), origin: origin, settings: physics)
                 model.unmaximize()
                 return model
@@ -649,7 +655,8 @@ final class KinetiqController: NSObject {
         // A stone falls somewhere around the middle of the window.
         let drop = SIMD2(Float(info.frame.width) * Float.random(in: 0.3...0.7), Float(info.frame.height) * Float.random(in: 0.3...0.7))
         let free = session == nil
-        startEffect(info, axWindow: element, tiles: (22, 18)) { size in
+        startEffect(info, axWindow: element, tiles: (22, 18),
+                usageEvent: .effectPlayed(effectID: LibraryEffect.entrance(entrance).id, trigger: .open)) { size in
             let model = KinetiqModel(size: SIMD2(Float(size.width), Float(size.height)), origin: origin, settings: physics)
             entrance.apply(to: model, drop: drop)
             return model
@@ -664,6 +671,7 @@ final class KinetiqController: NSObject {
     }
 
     private func startEffect(_ info: WindowInfo, axWindow: AXUIElement, tiles: (x: Int, y: Int)?,
+                             usageEvent: KinetiqUsageEvent? = nil,
                              make: @escaping (CGSize) -> WindowDeformer) {
         guard session == nil, !CatalogRuntime.shared.isPlaying else { return }
         let session = DragSession(window: info, cursor: CGPoint(x: info.frame.midX, y: info.frame.midY))
@@ -673,6 +681,7 @@ final class KinetiqController: NSObject {
         session.axResolved = true
         session.makeEffect = make
         session.tiles = tiles
+        session.usageEvent = usageEvent
         self.session = session
         startCapture(for: session)
     }
@@ -783,6 +792,10 @@ final class KinetiqController: NSObject {
         overlays.forEach { $0.render() }
         overlays.forEach { $0.show() }
         startDisplayLink(near: session.cursor)
+        if displayLink != nil, let event = session.usageEvent {
+            session.usageEvent = nil
+            KinetiqTelemetry.emit(event)
+        }
     }
 
     private func updateScene(_ session: DragSession, _ deformer: WindowDeformer) {

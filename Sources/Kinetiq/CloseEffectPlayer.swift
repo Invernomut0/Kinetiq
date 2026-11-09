@@ -7,6 +7,7 @@ import CoreVideo
 import Metal
 import MetalKit
 import QuartzCore
+import KinetiqCore
 import KinetiqEffects
 
 /// Plays the close effects: the capture of the closed window is drawn by the effect's shader in transparent
@@ -144,7 +145,7 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
     /// accepted, captures always finish even if the quality budget later changes.
     @discardableResult
     func play(_ frame: CapturedFrame, windowFrame: CGRect, effect: CloseEffect, pointer: CGPoint, durationScale: Double,
-              nativeFade: Bool, allowsQualityFallback: Bool = false) -> Bool {
+              nativeFade: Bool, allowsQualityFallback: Bool = false, trigger: EffectTrigger? = nil) -> Bool {
         RenderQualityManager.shared.refreshEnvironment()
         let effect = allowsQualityFallback && !RenderQualityManager.shared.budget.allowsExpensive ? .glide : effect
         guard let textureCache else { return false }
@@ -183,6 +184,9 @@ final class CloseEffectPlayer: NSObject, OverlayContent {
         overlays.forEach { $0.render() }
         overlays.forEach { $0.show() }
         startDisplayLink(near: CGPoint(x: windowFrame.midX, y: windowFrame.midY))
+        if displayLink != nil {
+            KinetiqTelemetry.emit((trigger ?? .close).usageEvent(effectID: LibraryEffect.close(effect).id))
+        }
         return true
     }
 

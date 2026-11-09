@@ -392,6 +392,84 @@ final class GA4MeasurementProtocolTests: XCTestCase {
             clientID: UUID(), event: action) == nil)
     }
 
+    /// Only the pure builder sees owner credentials; no provider is started and no URL is logged.
+    func testEveryTypedActionBuildsItsOwnGA4NameAndOnlyApprovedParametersOffline() throws {
+        let configuration = try realConfiguration()
+        let clientID = UUID()
+        var names = Set<String>()
+        for action in UsagePolicyContracts.approved {
+            let event = TelemetryEvent(name: action.usage.name, installationID: clientID,
+                properties: UsagePolicyContracts.enriched(action.properties))
+            let request = try XCTUnwrap(GA4MeasurementProtocolProvider.makeRequest(
+                configuration: configuration, clientID: clientID, event: event))
+            let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+            XCTAssertEqual(Set(payload.keys), ["client_id", "consent", "events"])
+            XCTAssertEqual(payload["consent"] as? [String: String],
+                           ["ad_user_data": "DENIED", "ad_personalization": "DENIED"])
+            let events = try XCTUnwrap(payload["events"] as? [[String: Any]])
+            XCTAssertEqual(events.count, 1)
+            let outgoing = try XCTUnwrap(events.first)
+            XCTAssertEqual(Set(outgoing.keys), ["name", "params"])
+            let name = try XCTUnwrap(outgoing["name"] as? String)
+            names.insert(name)
+            XCTAssertEqual(name, action.name)
+            let parameters = try XCTUnwrap(outgoing["params"] as? [String: String])
+            XCTAssertEqual(parameters, action.parameters)
+            XCTAssertEqual(parameters, FirebaseAnalyticsPolicy.parameters(for: event))
+            XCTAssertTrue(Set(parameters.keys).isDisjoint(with: UsagePolicyContracts.strippedKeys))
+            for key in UsagePolicyContracts.strippedKeys {
+                XCTAssertNil(payload[key], key)
+                XCTAssertNil(outgoing[key], key)
+                XCTAssertNil(parameters[key], key)
+            }
+        }
+        XCTAssertEqual(names, ["feature_used", "effect_played", "effect_selected", "studio_action",
+                               "screensaver_action", "quality_changed"])
+        XCTAssertNil(FirebaseApp.app())
+    }
+
+    func testGA4BuilderRejectsEntireInvalidSharedPolicyCorpusOffline() throws {
+        let configuration = try realConfiguration()
+        let clientID = UUID()
+        for invalid in UsagePolicyContracts.rejected {
+            let event = TelemetryEvent(name: invalid.name, installationID: clientID, properties: invalid.properties)
+            XCTAssertNil(FirebaseAnalyticsPolicy.parameters(for: event), invalid.name)
+            // Avoid XCTAssertNil(request): a failure must never print a credential-bearing URL.
+            XCTAssertTrue(try GA4MeasurementProtocolProvider.makeRequest(configuration: configuration,
+                clientID: clientID, event: event) == nil, invalid.name)
+        }
+        XCTAssertNil(FirebaseApp.app())
+    }
+
+    func testEveryGA4UsageNameAddsOnlyRealTimingAndCannotOverrideItWithEventProperties() throws {
+        let configuration = try realConfiguration()
+        let clientID = UUID()
+        let timing = try measuredForegroundTiming()
+        var checked = Set<String>()
+        for action in UsagePolicyContracts.approved where checked.insert(action.name).inserted {
+            let event = TelemetryEvent(name: action.name, installationID: clientID,
+                properties: UsagePolicyContracts.enriched(action.properties))
+            let request = try XCTUnwrap(GA4MeasurementProtocolProvider.makeRequest(
+                configuration: configuration, clientID: clientID, event: event, timing: timing))
+            let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+            XCTAssertEqual(Set(payload.keys), ["client_id", "consent", "events"])
+            let events = try XCTUnwrap(payload["events"] as? [[String: Any]])
+            XCTAssertEqual(events.count, 1)
+            let outgoing = try XCTUnwrap(events.first)
+            XCTAssertEqual(outgoing["name"] as? String, action.name)
+            let parameters = try XCTUnwrap(outgoing["params"] as? [String: Any])
+            XCTAssertEqual(Set(parameters.keys), Set(action.parameters.keys).union(["session_id", "engagement_time_msec"]))
+            for (key, value) in action.parameters { XCTAssertEqual(parameters[key] as? String, value) }
+            XCTAssertEqual((parameters["session_id"] as? NSNumber)?.int64Value, timing.sessionID)
+            XCTAssertEqual((parameters["engagement_time_msec"] as? NSNumber)?.int64Value, timing.engagementTimeMilliseconds)
+            for key in UsagePolicyContracts.strippedKeys.subtracting(["session_id", "engagement_time_msec"]) {
+                XCTAssertNil(payload[key], key)
+                XCTAssertNil(parameters[key], key)
+            }
+        }
+        XCTAssertEqual(checked.count, 6)
+    }
+
     func testWebClientIdentityUsesStableNumericFormatInsteadOfHyphenatedUUID() {
         let identity = UUID()
         let encoded = GA4MeasurementProtocolProvider.webClientID(for: identity)
@@ -500,6 +578,7 @@ final class GA4MeasurementProtocolTests: XCTestCase {
         defaults.set(true, forKey: KinetiqTelemetry.consentKey)
         let telemetry = KinetiqTelemetry(defaults: defaults, configuration: .success(host), productID: productID)
         await telemetry.initialize()
+        XCTAssertNil(defaults.object(forKey: KinetiqTelemetry.ga4UsageConsentRevisionKey))
         XCTAssertEqual(telemetry.transportStatus, GA4MeasurementProtocolProvider.TransportStatus.stopped.message)
         // Only isolated test preferences are granted. Startup emits no approved feature action.
         await telemetry.setAnalyticsConsent(true)
@@ -507,6 +586,8 @@ final class GA4MeasurementProtocolTests: XCTestCase {
         XCTAssertTrue(telemetry.analyticsConsent)
         XCTAssertTrue(defaults.bool(forKey: KinetiqTelemetry.ga4ConsentKey))
         XCTAssertTrue(defaults.bool(forKey: KinetiqTelemetry.ga4ConsentDecisionKey))
+        XCTAssertEqual(defaults.object(forKey: KinetiqTelemetry.ga4UsageConsentRevisionKey) as? Int, 2)
+        XCTAssertNil(defaults.object(forKey: KinetiqTelemetry.usageConsentRevisionKey))
         XCTAssertTrue(defaults.string(forKey: ga4Key) != nil)
         XCTAssertTrue(defaults.string(forKey: ga4Key) != previousID)
         await telemetry.setAnalyticsConsent(false)
@@ -517,6 +598,105 @@ final class GA4MeasurementProtocolTests: XCTestCase {
         XCTAssertTrue(defaults.string(forKey: nativeKey) == previousID)
         await telemetry.privacySettingsOpened()
         await telemetry.shutdown()
+        XCTAssertNil(FirebaseApp.app())
+    }
+
+    func testGA4PreviousScopeGrantRequiresFreshConsentEvenWithOldDecisionAndKeepsBothIdentities() async throws {
+        let host = try TelemetryHostConfiguration.load(ga4File: ownerResource())
+        let defaults = try preferences()
+        let productID = "kinetiq_ga4_scope_" + UUID().uuidString.lowercased()
+        let nativeKey = TelemetryPreferenceIdentityStore.preferenceKey(productID: productID)
+        let webKey = TelemetryPreferenceIdentityStore.preferenceKey(productID: productID + ".ga4")
+        let nativeID = UUID().uuidString, webID = UUID().uuidString
+        defaults.set(nativeID, forKey: nativeKey)
+        defaults.set(webID, forKey: webKey)
+        defaults.set(true, forKey: KinetiqTelemetry.ga4ConsentKey)
+        defaults.set(true, forKey: KinetiqTelemetry.ga4ConsentDecisionKey)
+        defaults.set(true, forKey: KinetiqTelemetry.consentKey)
+        defaults.set(2, forKey: KinetiqTelemetry.usageConsentRevisionKey)
+        defaults.removeObject(forKey: KinetiqTelemetry.ga4UsageConsentRevisionKey)
+        let provider = RecordingHostAnalytics()
+        let telemetry = KinetiqTelemetry(defaults: defaults, configuration: .success(host), productID: productID,
+                         provider: provider)
+        XCTAssertFalse(telemetry.analyticsConsent)
+        telemetry.record(.studio(.saved))
+        await telemetry.initialize()
+        XCTAssertTrue(telemetry.mode == .ga4)
+        XCTAssertTrue(telemetry.ready)
+        XCTAssertFalse(telemetry.analyticsConsent)
+        XCTAssertTrue(telemetry.shouldRequestConsentAtStartup)
+        XCTAssertTrue(telemetry.claimStartupConsentPrompt())
+        XCTAssertFalse(telemetry.claimStartupConsentPrompt())
+        XCTAssertTrue(defaults.bool(forKey: KinetiqTelemetry.ga4ConsentDecisionKey))
+        XCTAssertNil(defaults.object(forKey: KinetiqTelemetry.ga4UsageConsentRevisionKey))
+        XCTAssertEqual(telemetry.transportStatus, GA4MeasurementProtocolProvider.TransportStatus.stopped.message)
+        XCTAssertTrue(defaults.string(forKey: nativeKey) == nativeID)
+        XCTAssertTrue(defaults.string(forKey: webKey) == webID)
+        await telemetry.setAnalyticsConsent(true)
+        XCTAssertTrue(telemetry.analyticsConsent)
+        XCTAssertEqual(defaults.object(forKey: KinetiqTelemetry.ga4UsageConsentRevisionKey) as? Int, 2)
+        XCTAssertEqual(defaults.object(forKey: KinetiqTelemetry.usageConsentRevisionKey) as? Int, 2)
+        XCTAssertTrue(defaults.string(forKey: nativeKey) == nativeID)
+        XCTAssertTrue(defaults.string(forKey: webKey) == webID)
+        let events = await provider.events
+        XCTAssertTrue(events.compactMap { FirebaseAnalyticsPolicy.parameters(for: $0) }.isEmpty,
+                  "Denied actions cannot replay after grant; only the recording core boundary is installed")
+        await telemetry.setAnalyticsConsent(false)
+        await telemetry.shutdown()
+        XCTAssertNil(FirebaseApp.app())
+    }
+
+    func testGA4MissingStaleAndStringRevisionRejectOldGrantWithoutStartingTransport() async throws {
+        let host = try TelemetryHostConfiguration.load(ga4File: ownerResource())
+        for revision: Any? in [nil, 1, "2", true, 3] {
+            let defaults = try preferences()
+            defaults.set(true, forKey: KinetiqTelemetry.ga4ConsentKey)
+            defaults.set(true, forKey: KinetiqTelemetry.ga4ConsentDecisionKey)
+            defaults.removeObject(forKey: KinetiqTelemetry.ga4UsageConsentRevisionKey)
+            if let revision { defaults.set(revision, forKey: KinetiqTelemetry.ga4UsageConsentRevisionKey) }
+            let productID = "kinetiq_ga4_revision_" + UUID().uuidString.lowercased()
+            let identityKey = TelemetryPreferenceIdentityStore.preferenceKey(productID: productID + ".ga4")
+            let provider = RecordingHostAnalytics()
+            let telemetry = KinetiqTelemetry(defaults: defaults, configuration: .success(host), productID: productID,
+                                             provider: provider)
+            XCTAssertFalse(telemetry.analyticsConsent)
+            await telemetry.initialize()
+            XCTAssertTrue(telemetry.ready)
+            XCTAssertFalse(telemetry.analyticsConsent)
+            XCTAssertTrue(telemetry.shouldRequestConsentAtStartup)
+            XCTAssertNil(defaults.object(forKey: identityKey))
+            XCTAssertEqual(telemetry.transportStatus, GA4MeasurementProtocolProvider.TransportStatus.stopped.message)
+            let calls = await provider.calls
+            XCTAssertTrue(calls.isEmpty)
+            await telemetry.shutdown()
+        }
+        XCTAssertNil(FirebaseApp.app())
+    }
+
+    func testGA4PreviousDenialWithoutRevisionSurvivesRestartWithoutPromptOrIdentity() async throws {
+        let host = try TelemetryHostConfiguration.load(ga4File: ownerResource())
+        let defaults = try preferences()
+        let productID = "kinetiq_ga4_denial_" + UUID().uuidString.lowercased()
+        defaults.set(false, forKey: KinetiqTelemetry.ga4ConsentKey)
+        defaults.set(true, forKey: KinetiqTelemetry.ga4ConsentDecisionKey)
+        defaults.removeObject(forKey: KinetiqTelemetry.ga4UsageConsentRevisionKey)
+        for _ in 0..<2 {
+            let provider = RecordingHostAnalytics()
+            let telemetry = KinetiqTelemetry(defaults: defaults, configuration: .success(host), productID: productID,
+                                             provider: provider)
+            await telemetry.initialize()
+            XCTAssertFalse(telemetry.analyticsConsent)
+            XCTAssertFalse(telemetry.shouldRequestConsentAtStartup)
+            XCTAssertFalse(telemetry.claimStartupConsentPrompt())
+            XCTAssertFalse(defaults.bool(forKey: KinetiqTelemetry.ga4ConsentKey))
+            XCTAssertTrue(defaults.bool(forKey: KinetiqTelemetry.ga4ConsentDecisionKey))
+            XCTAssertNil(defaults.object(forKey: KinetiqTelemetry.ga4UsageConsentRevisionKey))
+            XCTAssertNil(defaults.object(forKey: TelemetryPreferenceIdentityStore.preferenceKey(productID: productID + ".ga4")))
+            XCTAssertEqual(telemetry.transportStatus, GA4MeasurementProtocolProvider.TransportStatus.stopped.message)
+            let calls = await provider.calls
+            XCTAssertTrue(calls.isEmpty)
+            await telemetry.shutdown()
+        }
         XCTAssertNil(FirebaseApp.app())
     }
 
@@ -550,11 +730,28 @@ final class GA4MeasurementProtocolTests: XCTestCase {
         let ga4 = TelemetryConsentPrompt.makeAlert(mode: .ga4)
         XCTAssertEqual(native.buttons.map(\.title), ["Don't Share", "Enable Analytics"])
         XCTAssertEqual(ga4.buttons.map(\.title), ["Don't Share", "Enable Analytics"])
+        XCTAssertEqual(native.buttons[0].keyEquivalent, "\r")
+        XCTAssertEqual(ga4.buttons[0].keyEquivalent, "\r")
+        XCTAssertEqual(native.buttons[1].keyEquivalent, "")
         XCTAssertEqual(ga4.buttons[1].keyEquivalent, "")
         XCTAssertTrue(native.informativeText.contains("app-private Keychain"))
         XCTAssertTrue(ga4.informativeText.contains("No Keychain access"))
         XCTAssertTrue(ga4.informativeText.contains("connection IP"))
         XCTAssertTrue(ga4.informativeText.contains("partial"))
+        for alert in [native, ga4] {
+            for disclosure in ["known effect identifiers", "effect selections", "Animation Studio",
+                "successful Studio", "save/import/export", "screen saver", "render quality",
+                "only as 'custom'", "No window titles", "document contents", "paths",
+                "Previously granted settings-only consent", "please choose again",
+                "Analytics stays off unless you enable it"] {
+                XCTAssertTrue(alert.informativeText.contains(disclosure), disclosure)
+            }
+            XCTAssertTrue(alert.informativeText.contains("macOS host is not measured"))
+        }
+        XCTAssertTrue(native.informativeText.contains("may derive approximate city/country"))
+        XCTAssertTrue(ga4.informativeText.contains("City/country reports may be unavailable"))
+        XCTAssertTrue(ga4.informativeText.contains("no external location service"))
+        XCTAssertTrue(ga4.informativeText.contains("HTTP acceptance does not confirm report ingestion"))
         XCTAssertTrue(TelemetryConsentPrompt.withdrawalDisclosure(mode: .ga4).contains("cannot recall"))
     }
 }

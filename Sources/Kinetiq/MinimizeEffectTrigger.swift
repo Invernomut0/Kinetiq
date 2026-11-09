@@ -155,14 +155,14 @@ final class MinimizeEffectTrigger {
         let target = icon ?? fallbackIcon(near: info.frame)
         let started: Bool
         if let custom {
-            started = await CatalogRuntime.shared.playCaptured(frame, windowFrame: info.frame, document: custom.document)
+            started = await CatalogRuntime.shared.playCaptured(frame, windowFrame: info.frame, document: custom.document, trigger: .minimize)
         } else if let assigned {
-            started = CatalogRuntime.shared.playCaptured(frame, windowFrame: info.frame, preset: assigned)
+            started = CatalogRuntime.shared.playCaptured(frame, windowFrame: info.frame, preset: assigned, trigger: .minimize)
         } else {
             switch resolvedChoice() ?? .off {
             case .liquid:
                 Self.log.notice("Liquid minimize: window \(info.id)")
-                started = liquid?.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration) ?? false
+                started = liquid?.play(frame, windowFrame: info.frame, durationScale: settings.closeDuration, trigger: .minimize) ?? false
             case .morph(let style):
                 Self.log.notice("\(style.title, privacy: .public) into \(target.minX), \(target.minY) \(target.width)x\(target.height) (dock icon found: \(icon != nil))")
                 started = morph.play(frame, windowFrame: info.frame, icon: target, style: style,

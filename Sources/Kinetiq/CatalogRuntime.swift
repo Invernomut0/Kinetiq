@@ -446,11 +446,13 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         guard token == previewGeneration, !Task.isCancelled, settings.enabled else { throw CancellationError() }
     }
 
-    func play(_ preset: EffectPreset, windowID: CGWindowID? = nil) async {
-        await playDocument(StudioDocument(duration: preset.duration, layers: [StudioLayer(preset: preset)]), windowID: windowID)
+    func play(_ preset: EffectPreset, windowID: CGWindowID? = nil, trigger: EffectTrigger = .manual) async {
+        await playDocument(StudioDocument(duration: preset.duration, layers: [StudioLayer(preset: preset)]),
+                           windowID: windowID, trigger: trigger, effect: .catalog(preset.effect))
     }
 
-    func playDocument(_ document: StudioDocument, windowID: CGWindowID? = nil) async {
+    func playDocument(_ document: StudioDocument, windowID: CGWindowID? = nil,
+                      trigger: EffectTrigger = .manual, effect: LibraryEffect? = nil) async {
         stop()
         let token = generation
         do {
@@ -532,6 +534,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
                 }
             }
             startClock()
+            KinetiqTelemetry.emit(trigger.usageEvent(effectID: effect?.id ?? "custom"))
         } catch {
             // An obsolete async caller must not tear down a newer scene.
             if generation == token { stop(); if !(error is CancellationError) { report(error) } }
@@ -545,7 +548,8 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
     /// A saved Studio composition on a frozen capture (Close/Minimize of a custom effect).
     /// Returns false, before any overlay appears, if the first frame cannot be rendered.
     @discardableResult
-    func playCaptured(_ frame: CapturedFrame, windowFrame: CGRect, document: StudioDocument) async -> Bool {
+    func playCaptured(_ frame: CapturedFrame, windowFrame: CGRect, document: StudioDocument,
+                      trigger: EffectTrigger = .close) async -> Bool {
         guard !isPlaying, frame.isPainted, frame.pointSize == windowFrame.size,
               let document = try? document.validated(), !document.layers.filter(\.enabled).isEmpty else { return false }
         do {
@@ -562,13 +566,15 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             compositeStage = LayerCompositor.stage(windowFrame: windowFrame, shadow: frame.shadow)
             began = CACurrentMediaTime()
             showOverlays(); startClock()
+            KinetiqTelemetry.emit(trigger.usageEvent(effectID: "custom"))
             return true
         } catch { report(error); return false }
     }
 
     /// Close/minimize hooks own their native lifecycle; this path NEVER recaptures or moves windows.
     @discardableResult
-    func playCaptured(_ frame: CapturedFrame, windowFrame: CGRect, preset: EffectPreset) -> Bool {
+    func playCaptured(_ frame: CapturedFrame, windowFrame: CGRect, preset: EffectPreset,
+                      trigger: EffectTrigger? = nil) -> Bool {
         guard !isPlaying, frame.isPainted, frame.pointSize == windowFrame.size else { return false }
         do {
             try check(preset); try prepare()
@@ -580,6 +586,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             document = StudioDocument(duration: preset.duration, layers: [StudioLayer(preset: preset)])
             began = CACurrentMediaTime()
             showOverlays(); startClock()
+            KinetiqTelemetry.emit((trigger ?? preset.trigger).usageEvent(effectID: LibraryEffect.catalog(preset.effect).id))
             return true
         } catch { report(error); return false }
     }

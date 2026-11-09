@@ -331,7 +331,7 @@ final class GA4MeasurementProtocolProvider: AnalyticsProvider {
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "client_id": webClientID(for: clientID),
             "consent": ["ad_user_data": "DENIED", "ad_personalization": "DENIED"],
-            "events": [["name": "feature_used", "params": parameters]]
+            "events": [["name": event.name, "params": parameters]]
         ])
         return request
     }

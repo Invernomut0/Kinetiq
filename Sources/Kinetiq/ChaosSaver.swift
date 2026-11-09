@@ -215,6 +215,7 @@ final class ChaosSaver: NSObject {
         NSApp.activate()
         for overlay in overlays { overlay.window.makeKeyAndOrderFront(nil) }
         NSCursor.hide()
+        KinetiqTelemetry.emit(.screenSaver(.previewStarted))
 
         let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown, .scrollWheel]
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in

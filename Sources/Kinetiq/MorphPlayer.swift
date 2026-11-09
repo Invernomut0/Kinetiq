@@ -26,7 +26,7 @@ final class MorphPlayer {
 
     /// Starts the morph. Returns false if the capture can't be drawn. `completion` runs once the window is in the icon.
     func play(_ frame: CapturedFrame, windowFrame: CGRect, icon: CGRect, style: DockMorphStyle, durationScale: Double,
-              completion: @escaping () -> Void) -> Bool {
+              trigger: EffectTrigger? = nil, completion: @escaping () -> Void) -> Bool {
         guard !isPlaying, renderer.setFrame(frame) else { return false }
         let deformer = DockMorphDeformer(
             windowOrigin: SIMD2(Float(windowFrame.minX), Float(windowFrame.minY)),
@@ -52,6 +52,7 @@ final class MorphPlayer {
         link.add(to: .main, forMode: .common)
         displayLink = link
         lastTimestamp = CACurrentMediaTime()
+        KinetiqTelemetry.emit((trigger ?? .minimize).usageEvent(effectID: LibraryEffect.minimize(style).id))
         return true
     }
 

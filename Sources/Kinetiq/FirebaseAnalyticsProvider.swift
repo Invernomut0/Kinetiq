@@ -57,7 +57,7 @@ final class FirebaseAnalyticsProvider: AnalyticsProvider {
 
     func capture(_ event: TelemetryEvent) {
         guard started, let parameters = FirebaseAnalyticsPolicy.parameters(for: event) else { return }
-        Analytics.logEvent("feature_used", parameters: parameters)
+        Analytics.logEvent(event.name, parameters: parameters)
     }
 
     /// Firebase has no public awaited flush API. Never invent a delivery acknowledgement.
@@ -82,7 +82,6 @@ enum FirebaseAnalyticsPolicy {
         "FirebaseAutomaticScreenReportingEnabled", "FirebaseAppDelegateProxyEnabled"]
 
     static func parameters(for event: TelemetryEvent) -> [String: String]? {
-        guard event.name == "feature_used", event.properties["feature"] == .string("privacy_settings") else { return nil }
-        return ["feature": "privacy_settings"]
+        KinetiqUsageEvent.approvedParameters(name: event.name, properties: event.properties)
     }
 }
