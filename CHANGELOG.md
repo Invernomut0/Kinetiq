@@ -5,6 +5,22 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] — Build 42
+
+### Fixed
+
+- Layouts capture admission now includes ScreenCaptureKit's 100-point shadow room on every side. Previously an additional capture could pass the opaque-window estimate, exceed the total 32 MP after allocation, and abort the entire overview even at Low/Auto and nominal thermal pressure. Extra windows that do not fit are skipped, retaining already prepared captures; the primary window still fails explicitly if too large. Native pixels, the 32 MP total and eight-window maximum are preserved.
+- Separate capture-memory, texture-allocation, renderer-busy, invalid-resource and critical-thermal errors instead of claiming every failure is a quality-disabled effect. Layouts displays the admitted window count.
+- Clear previous operation errors when stopping, retrying, editing a Studio document or opening another effect page. A quality update that reopens the thermal gate clears only the thermal refusal; unrelated failures remain visible until a new operation.
+
+### Verification
+
+- A native regression with four real, test-owned README windows reproduced the exact former message in both Low and Auto before the fix: one test, six assertion failures (`/tmp/kinetiq-layout-red.log`). The test restricts selection to its helper PID, never capturing user windows.
+- Complete Release: **380 passed — 196 app + 36 Effects + 148 Core; zero failures/skips** (`/tmp/kinetiq-layout-final-release.log`). Actual desktop Ripple → Incinerate runs at Low/Auto, clears the previous failure, renders overlapping layers, restores the exact helper-window origin and retains a specific critical-thermal refusal. Real captures also verify shadow estimation, bounded overview admission and selective thermal-error recovery. Initial focused suites: 55 passed (`/tmp/kinetiq-layout-focused.log`).
+- Universal app/saver **0.4.2 / 42**, both x86_64 + arm64 and strict signatures passed; bundle verifier and signed disabled smoke passed (`/tmp/kinetiq-layout-build.log`). No normal app restart, consent change or live analytics was automated.
+- LLVM **Lines**: runtime **75.74%**, capture **75.00%**, compositor **96.47%**, Studio UI **59.15%**, library UI **67.31%** (`/tmp/kinetiq-layout-final-coverage.txt`, profile `/tmp/kinetiq-layout-final-release.profdata`). Not exhaustive integration, all display configurations or Metal shader branch coverage.
+- After the README update, all 15 runtime tests and the real captured-README optics regression passed again: **16 tests, zero failures/skips, exit 0** (`/tmp/kinetiq-layout-postdocs.log`).
+
 ## [0.4.1] — Build 41
 
 ### Fixed

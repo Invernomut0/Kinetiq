@@ -39,7 +39,11 @@ private enum CatalogFailure: String, LocalizedError {
     case metal = "Metal rendering is unavailable."
     case gpu = "The GPU could not render the captured window."
     case accessibility = "Accessibility could not safely move this exact window."
-    case budget = "This effect is disabled by the current quality safety budget."
+    case thermal = "macOS reports critical thermal pressure. Heavy effects are temporarily paused by the safety budget."
+    case budget = "The rendering budget has no usable mesh or particle resources."
+    case captureLimit = "The window capture exceeds the 32-megapixel memory limit. Try a smaller window."
+    case allocation = "The effect could not allocate its render textures. Try again or reduce render quality."
+    case busy = "Rendering is finishing another frame. Try again in a moment."
     case composition = "Physics and interactive overviews require a single enabled layer."
     var errorDescription: String? { rawValue }
 }
@@ -184,7 +188,10 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
 
     private let settings: Settings
     private let budgetProvider: @MainActor () -> RenderBudget
+    private let windowFilter: @MainActor (WindowInfo) -> Bool
     private let qualityManager: RenderQualityManager?
+    private var qualityObservation: AnyCancellable?
+    private var lastFailure: CatalogFailure?
     private let capture = WindowCapture()
     private var metal: MTLDevice?
     private var queue: MTLCommandQueue?
@@ -236,9 +243,11 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
 
     /// Isolated Settings/budgets let tests avoid changing standard preferences.
     init(settings: Settings = Settings(), budget: @escaping @MainActor () -> RenderBudget = { RenderQualityManager.shared.budget },
-         qualityManager: RenderQualityManager? = nil) {
+         qualityManager: RenderQualityManager? = nil,
+         windowFilter: @escaping @MainActor (WindowInfo) -> Bool = { _ in true }) {
         self.settings = settings
         budgetProvider = budget
+        self.windowFilter = windowFilter
         self.qualityManager = qualityManager
         super.init()
         let center = NotificationCenter.default
@@ -248,6 +257,10 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.willSleepNotification,
                      NSWorkspace.screensDidSleepNotification] {
             NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(interrupted), name: name, object: nil)
+        }
+        qualityObservation = (qualityManager ?? .shared).$budget.dropFirst().sink { [weak self] budget in
+            guard let self, self.lastFailure == .thermal, budget.allowsExpensive else { return }
+            self.clearError()
         }
     }
 
@@ -263,7 +276,17 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
 
     var device: MTLDevice { metal! }
     var hasScene: Bool { !entries.isEmpty }
+    var capturedWindowCount: Int { entries.count }
+    var capturedPixelCount: Int { entries.reduce(0) { $0 + $1.source.texture.width * $1.source.texture.height } }
     var sceneBounds: CGRect { entries.isEmpty ? .null : NSScreen.screens.reduce(.null) { $0.union($1.cgFrame) } }
+
+    /// A page change/edit or new attempt must not display a previous operation's refusal.
+    func clearError() { lastFailure = nil; errorMessage = nil }
+
+    private func report(_ error: Error) {
+        lastFailure = error as? CatalogFailure
+        errorMessage = error.localizedDescription
+    }
 
     /// Filtering is shared with capture; an explicit invalid ID never falls back to another window.
     func availableWindows() -> [ManagedWindow] {
@@ -288,7 +311,8 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
                   let bounds = e[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: bounds), rect.width >= 80, rect.height >= 40,
                   NSScreen.screens.contains(where: { $0.cgVisibleFrame.intersects(rect) }) else { return nil }
-            return WindowInfo(id: id, pid: pid_t(pid), frame: rect)
+            let info = WindowInfo(id: id, pid: pid_t(pid), frame: rect)
+            return windowFilter(info) ? info : nil
         }
     }
 
@@ -338,6 +362,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         guard settings.enabled else { throw CatalogFailure.disabled }
         if layer.isBuiltin {
             do { try LayerCompositor.check(layer, budget: budgetProvider()) }
+            catch CompositorError.thermal { throw CatalogFailure.thermal }
             catch CompositorError.budget { throw CatalogFailure.budget }
             return
         }
@@ -347,9 +372,9 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
     private func check(_ preset: EffectPreset) throws {
         guard settings.enabled else { throw CatalogFailure.disabled }
         _ = try preset.validated()
-        guard !EffectCatalog.descriptor(preset.effect).expensive || budgetProvider().allowsExpensive else { throw CatalogFailure.budget }
-                let budget = budgetProvider()
-                guard budget.meshLimit > 0,
+        let budget = budgetProvider()
+        guard !EffectCatalog.descriptor(preset.effect).expensive || budget.allowsExpensive else { throw CatalogFailure.thermal }
+        guard budget.meshLimit > 0,
               (preset.effect != .shatter && preset.effect != .explode) || budget.maxParticles > 0 else { throw CatalogFailure.budget }
     }
 
@@ -358,7 +383,8 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
            CACurrentMediaTime() - cached.capture.frame.capturedAt <= 2 { return cached.capture }
         // Reject oversized captures before ScreenCaptureKit allocates a native IOSurface.
         let scale = NSScreen.containing(cgPoint: CGPoint(x: info.frame.midX, y: info.frame.midY))?.backingScaleFactor ?? 2
-        guard info.frame.width * info.frame.height * scale * scale <= 32_000_000 else { throw CatalogFailure.budget }
+        guard WindowCapture.estimatedPixelCount(windowSize: info.frame.size, scale: scale)
+            <= Double(WindowCapture.maximumPixelCount) else { throw CatalogFailure.captureLimit }
         let task: Task<CapturedFrame, Error>
         if let current = captureTask, current.id == info.id { task = current.task }
         else {
@@ -378,6 +404,8 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         catch { if captureTask?.id == info.id { captureTask = nil }; throw error }
         if captureTask?.id == info.id { captureTask = nil }
         guard !Task.isCancelled, frame.isPainted, frame.pointSize == info.frame.size else { throw CancellationError() }
+        guard CVPixelBufferGetWidth(frame.pixelBuffer) * CVPixelBufferGetHeight(frame.pixelBuffer)
+            <= WindowCapture.maximumPixelCount else { throw CatalogFailure.captureLimit }
         return try CatalogCapture(frame, cache: cache!)
     }
 
@@ -446,17 +474,28 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             for info in infos {
                 let pixels = prepared.reduce(0) { $0 + $1.source.texture.width * $1.source.texture.height }
                 let scale = NSScreen.containing(cgPoint: CGPoint(x: info.frame.midX, y: info.frame.midY))?.backingScaleFactor ?? 2
-                if Double(pixels) + info.frame.width * info.frame.height * scale * scale > 32_000_000 {
-                    if info.id == primaryInfo.id { throw CatalogFailure.budget }
+                if Double(pixels) + WindowCapture.estimatedPixelCount(windowSize: info.frame.size, scale: scale)
+                    > Double(WindowCapture.maximumPixelCount) {
+                    if info.id == primaryInfo.id { throw CatalogFailure.captureLimit }
                     continue
                 }
                 guard let element = await exactElement(info) else {
                     if info.id == primaryInfo.id { throw CatalogFailure.window }; continue
                 }
                 try validPlayback(token)
-                let captured = try await source(info)
+                let captured: CatalogCapture
+                do { captured = try await source(info) }
+                catch CatalogFailure.captureLimit {
+                    if info.id == primaryInfo.id { throw CatalogFailure.captureLimit }
+                    continue
+                }
                 try validPlayback(token)
-                guard pixels + captured.texture.width * captured.texture.height <= 32_000_000 else { throw CatalogFailure.budget }
+                // The filter's actual scale can differ from the display estimate. Keep the
+                // primary and already-admitted captures if an extra window still does not fit.
+                guard pixels + captured.texture.width * captured.texture.height <= WindowCapture.maximumPixelCount else {
+                    if info.id == primaryInfo.id { throw CatalogFailure.captureLimit }
+                    continue
+                }
                 prepared.append(Entry(source: captured, info: info, rect: info.frame, preset: primary))
                 elements.append((element, info))
             }
@@ -495,7 +534,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             startClock()
         } catch {
             // An obsolete async caller must not tear down a newer scene.
-            if generation == token { stop(); if !(error is CancellationError) { errorMessage = error.localizedDescription } }
+            if generation == token { stop(); if !(error is CancellationError) { report(error) } }
         }
     }
 
@@ -524,7 +563,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             began = CACurrentMediaTime()
             showOverlays(); startClock()
             return true
-        } catch { errorMessage = error.localizedDescription; return false }
+        } catch { report(error); return false }
     }
 
     /// Close/minimize hooks own their native lifecycle; this path NEVER recaptures or moves windows.
@@ -542,7 +581,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             began = CACurrentMediaTime()
             showOverlays(); startClock()
             return true
-        } catch { errorMessage = error.localizedDescription; return false }
+        } catch { report(error); return false }
     }
 
     func stop(terminating: Bool = false, preservingMinimize: Bool = false) {
@@ -580,6 +619,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         composed = nil; composing = false
         resourceFailures = 0
         isPlaying = false
+        clearError()
     }
 
     /// Native minimize shares the same Space/sleep/disable restoration boundary.
@@ -611,7 +651,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
     }
 
     private func startClock() {
-        errorMessage = nil; isPlaying = true
+        clearError(); isPlaying = true
         began = CACurrentMediaTime(); previous = began
         lastRendered = 0
         let fps = max(1, min(120, budgetProvider().secondaryFPS))
@@ -626,7 +666,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         let now = CACurrentMediaTime(), time = now - began
         let budget = budgetProvider()
         do { for layer in document.layers where layer.enabled { try check(layer) } }
-        catch { stop(); errorMessage = error.localizedDescription; return }
+        catch { stop(); report(error); return }
         if !overview && time >= document.duration { stop(preservingMinimize: true); return }
         if var dynamics, let layer = document.layers.first(where: { $0.enabled && time >= $0.start && time <= $0.start + $0.preset.duration }) {
             dynamics.advance(now - previous, effect: layer.preset.effect,
@@ -653,7 +693,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
                     composed = output; composing = false
                 } catch {
                     guard generation == token else { return }
-                    stop(); errorMessage = error.localizedDescription
+                    stop(); report(error)
                 }
             }
         }
@@ -945,7 +985,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
         guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
               let command = queue?.makeCommandBuffer(), let encoder = command.makeRenderCommandEncoder(descriptor: pass) else {
             resourceFailures += 1
-            if resourceFailures >= 3 { stop(); errorMessage = CatalogFailure.gpu.localizedDescription }
+            if resourceFailures >= 3 { stop(); report(CatalogFailure.gpu) }
             return
         }
         resourceFailures = 0
@@ -992,7 +1032,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             if command.status == .error {
                 Task { @MainActor in
                     guard let self, self.generation == token else { return }
-                    self.stop(); self.errorMessage = CatalogFailure.gpu.localizedDescription
+                    self.stop(); self.report(CatalogFailure.gpu)
                 }
             }
         }
@@ -1023,12 +1063,12 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             }
             budget.textureScale *= 0.5
         }
-        throw CatalogFailure.budget
+        throw CatalogFailure.allocation
     }
 
     /// Built-in and catalog layers through the shared compositor, into a budget-scaled stage texture.
     private func composeImage(source: CatalogCapture, rect: CGRect, document: StudioDocument, time: Double) async throws -> MTLTexture {
-        guard inFlightCompositions < 2 else { throw CatalogFailure.budget }
+        guard inFlightCompositions < 2 else { throw CatalogFailure.busy }
         inFlightCompositions += 1
         defer { inFlightCompositions -= 1 }
         guard let metal, let compositor, let command = queue?.makeCommandBuffer() else { throw CatalogFailure.metal }
@@ -1041,15 +1081,16 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
             width: size.width, height: size.height, mipmapped: false)
         descriptor.storageMode = .shared; descriptor.usage = [.renderTarget, .shaderRead]
         let layers = LayerCompositor.active(document, at: time).count
-        guard let final = metal.makeTexture(descriptor: descriptor) else { throw CatalogFailure.budget }
+        guard let final = metal.makeTexture(descriptor: descriptor) else { throw CatalogFailure.allocation }
         let scratch = layers > 1 ? metal.makeTexture(descriptor: descriptor) : nil
-        guard layers <= 1 || scratch != nil else { throw CatalogFailure.budget }
+        guard layers <= 1 || scratch != nil else { throw CatalogFailure.allocation }
         do {
             try compositor.encode(document: document, time: time,
                 source: LayerCompositor.Source(texture: source.texture, uv: source.uv, shadow: source.frame.shadow),
                 windowFrame: rect, stage: stage, final: final, scratch: scratch, budget: budget,
                 physics: settings.physics, seed: UInt64(source.frame.windowID), command: command)
-        } catch CompositorError.budget { throw CatalogFailure.budget }
+        } catch CompositorError.thermal { throw CatalogFailure.thermal }
+        catch CompositorError.budget { throw CatalogFailure.budget }
         trackCompletion(command)
         let success: Bool = await withCheckedContinuation { continuation in
             command.addCompletedHandler { [source] completed in
@@ -1064,7 +1105,7 @@ final class CatalogRuntime: NSObject, ObservableObject, OverlayContent {
     /// Sequential budget-scaled ping-pong passes; point size and P3 survive readback.
     private func renderImage(source: CatalogCapture, rect: CGRect, document: StudioDocument, time: Double) async throws -> MTLTexture {
         // Superseded previews still own their GPU resources until completion.
-        guard inFlightCompositions < 2 else { throw CatalogFailure.budget }
+        guard inFlightCompositions < 2 else { throw CatalogFailure.busy }
         inFlightCompositions += 1
         defer { inFlightCompositions -= 1 }
         let (a, b, budget) = try makeTargets(source: source)

@@ -191,7 +191,9 @@ struct AnimationStudioView: View {
             }
         }
         .padding(16)
+        .onAppear { runtime.clearError() }
         .onChange(of: editor.document) { _, document in
+            runtime.clearError()
             if !document.layers.contains(where: { $0.id == selectedLayer }) { selectedLayer = document.layers.first?.id }
             time = min(time, document.duration)
             store.document = document
