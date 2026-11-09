@@ -174,12 +174,13 @@ def feature(canvas, t, over, title_lines, sub, x=150, y=360, align="la"):
 def window_in(t, delay=0.0): return ease_out((t - delay) / 0.5)
 
 def s_intro(c, t):
+    t -= 0.9  # the wordmark enters once the opening poster has dissolved
     e = ease_out((t - 0.3) / 1.4)
     wave_mark(c, W / 2, 360 - (1 - e) * 20, t, e, 1.4)
     tr = 46 - 36 * ease_out((t - 0.4) / 1.8)
     text(c, "Kinetiq", font(NY, 168, "Bold"), W / 2, 520 + (1 - e) * 30, INK, e, "mm", tracking=tr)
-    reveal(c, "Your Mac, in motion.", font(SF, 40, "Light"), W / 2, 640, t, 1.2, 0.9, SOFT, "mm")
-    reveal(c, "Window effects for macOS", font(SF, 22, "Semibold"), W / 2, 720, t, 1.7, 0.9, ACCENT, "mm", tracking=6)
+    reveal(c, "Your Mac, in motion.", font(SF, 40, "Light"), W / 2, 640, t, 0.9, 0.8, SOFT, "mm")
+    reveal(c, "Window effects for macOS", font(SF, 22, "Semibold"), W / 2, 720, t, 1.3, 0.8, ACCENT, "mm", tracking=6)
 
 def s_wobbly(c, t):
     feature(c, t, "WOBBLY WINDOWS", ["Drag it.", "Watch it wobble."], "A real spring mesh, like Compiz.")
@@ -408,12 +409,20 @@ def render(T):
             if a < 0.999:
                 layer.putalpha(layer.getchannel("A").point(lambda v: int(v * a)))
             canvas.alpha_composite(layer)
-    if T > TOTAL - 0.9:  # fade to black
-        k = clamp((T - (TOTAL - 0.9)) / 0.9)
-        canvas = Image.blend(canvas, Image.new("RGBA", (W, H), (0, 0, 0, 255)), k)
-    if T < 0.6:
-        canvas = Image.blend(Image.new("RGBA", (W, H), (0, 0, 0, 255)), canvas, clamp(T / 0.6))
+    # Opens on the marketing poster (it is also the player's preview frame) and
+    # ends resting on the Buy me a coffee frame instead of black.
+    if T < POSTER_HOLD + POSTER_FADE:
+        k = ease_io((T - POSTER_HOLD) / POSTER_FADE)
+        canvas = Image.blend(poster(), canvas, k)
     return canvas.convert("RGB")
+
+POSTER_HOLD, POSTER_FADE = 0.8, 0.7
+_poster = []
+def poster():
+    if not _poster:
+        path = os.environ.get("KINETIQ_POSTER")
+        _poster.append(Image.open(path).convert("RGBA").resize((W, H), Image.LANCZOS))
+    return _poster[0]
 
 if STILL:
     for s in STILL.split(","):

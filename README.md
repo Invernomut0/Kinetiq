@@ -6,7 +6,8 @@
 
 <p align="center">
   <b>Your Mac, in motion.</b><br>
-  Compiz-style wobbly windows, 30+ GPU close effects, liquid and 3D window layouts for macOS.
+  Compiz-style wobbly windows, 30+ GPU close effects, liquid and 3D window layouts for macOS.<br>
+  <sub>Built on <a href="https://github.com/jsgrrchg/Wobbly">Wobbly</a> by José Gurruchaga, the original wobbly windows app for macOS.</sub>
 </p>
 
 <p align="center">
@@ -16,7 +17,7 @@
   <a href="https://buymeacoffee.com/invernomut0"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy%20me%20a%20coffee-ffdd00?logo=buymeacoffee&logoColor=000"></a>
 </p>
 
-https://github.com/user-attachments/assets/bdc6f7c0-842a-468f-934c-ed94370ca43c
+https://github.com/user-attachments/assets/a0a1cb90-5acb-4949-8daf-f1a8077bc120
 
 <p align="center"><sub>Music: <i>Eternity</i> by Pufino · Free To Use Music (freetouse.com)</sub></p>
 
@@ -69,7 +70,7 @@ App exclusions (including Kinetiq itself), menus, locked-screen surfaces, full-s
 windows and nonmovable/protected popovers remain outside this support. This source
 change is not included in the already-published v0.5.1 DMG.
 
-The [user guide](docs/user-guide.md) explains every page, effect and setting. See also the [Animation Studio guide](docs/animation-studio.md) and the [list of built-in effects](docs/original-effects.md).
+The **[Wiki](https://github.com/Invernomut0/Kinetiq/wiki)** walks through every feature step by step. The [user guide](docs/user-guide.md) explains every page, effect and setting. See also the [Animation Studio guide](docs/animation-studio.md) and the [list of built-in effects](docs/original-effects.md).
 
 ## Privacy
 
@@ -99,6 +100,7 @@ Kinetiq is free and open source, made by one developer. If it made your Mac a li
 
 ## Credits
 
+- Kinetiq began as a fork of **[Wobbly](https://github.com/jsgrrchg/Wobbly) by José Gurruchaga**, the Compiz-style wobbly windows app for macOS (GPL-3.0). The wobbly windows at Kinetiq's core, and the app it grew from, are José's work. Thank you, José.
 - The wobbly model comes from the Compiz wobbly plugin by David Reveman (Novell), with the spring model by Kristian Høgsberg.
 - The physics, presets and resize effect are ported from the GNOME Shell extension [Compiz windows effect](https://github.com/hermes83/compiz-windows-effect) by Mauro Pepe.
 - The trick for hiding the real window comes from [AeroSpace](https://github.com/nikitabobko/AeroSpace).
