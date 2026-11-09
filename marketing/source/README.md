@@ -14,7 +14,10 @@ Everything is rendered by Kinetiq's real effect engines on fictional demo window
 
 3. Film (1920×1080, 30 fps, H.264 + AAC):
 
-       python3 kinetiq_film.py /tmp/kinetiq-frames ../Kinetiq-promo.mp4 /tmp/score.wav
+       KINETIQ_POSTER=../Kinetiq-hero-2560x1440.png python3 kinetiq_film.py /tmp/kinetiq-frames ../Kinetiq-promo.mp4 /tmp/score.wav
+
+   The film opens on the poster image (GitHub's player shows the first frame as its preview)
+   and ends on the Buy me a coffee frame rather than black.
 
 4. Posters:
 
@@ -34,5 +37,7 @@ The MP3 itself is not stored in this repository. To remux with it:
 
     ffmpeg -i Kinetiq-promo.mp4 -ss 61.1 -t 47 -i "Pufino - Eternity (freetouse.com).mp3" -map 0:v:0 -map 1:a:0 -c:v copy \
       -af "afade=t=in:st=0:d=0.8,afade=t=out:st=44:d=3,loudnorm=I=-14:TP=-1.0:LRA=11" -ar 48000 -c:a aac -b:a 256k -shortest out.mp4
+
+The 720p `Kinetiq-promo-web.mp4` (under GitHub's 10 MB attachment limit) is a two-pass x264 encode at 1450 kb/s with 128 kb/s AAC; the README embeds its GitHub user-attachments upload.
 
 `kinetiq_score.py` still produces the original synthesized score as a royalty-free alternative.
