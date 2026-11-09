@@ -112,6 +112,8 @@ final class KinetiqController: NSObject {
     }
 
     private let settings: Settings
+    private let windowFilter: @MainActor (WindowInfo) -> Bool
+    private let dragPreset: @MainActor () -> EffectPreset?
     private let renderer: MeshRenderer
     private let capture = WindowCapture()
     private let mover = CoalescingMover()
@@ -135,9 +137,16 @@ final class KinetiqController: NSObject {
     private var zoomTimer: Timer?
     private var maximizedWindows: Set<CGWindowID> = []
 
-    init?(settings: Settings) {
+    /// Read-only rendering diagnostics; never exported as analytics metadata.
+    var animatedWindowID: CGWindowID? { session?.deformer == nil ? nil : session?.window.id }
+    var isDragWindowParked: Bool { session?.hidden == true }
+
+    init?(settings: Settings, windowFilter: @escaping @MainActor (WindowInfo) -> Bool = { _ in true },
+          dragPreset: @escaping @MainActor () -> EffectPreset? = { CatalogStore.shared.assigned(to: .drag) }) {
         guard let renderer = MeshRenderer() else { return nil }
         self.settings = settings
+        self.windowFilter = windowFilter
+        self.dragPreset = dragPreset
         self.renderer = renderer
         closePlayer = CloseEffectPlayer.make()
         liquidPlayer = LiquidEffectPlayer.make()
@@ -309,8 +318,10 @@ final class KinetiqController: NSObject {
             if frame.contains(point) { finishImmediately(current) }
         }
 
-        guard let info = WindowLocator.window(at: point, in: windows) else { return false }
+        guard let info = WindowLocator.dragWindow(at: point, in: windows), windowFilter(info) else { return false }
         if usesModifier {
+            // Do not swallow an unmovable popup's gesture and later animate its parent.
+            guard AXBridge.findMovableWindow(info, hitPoint: point) != nil else { return false }
             beginSession(info, at: point, titleBarHeight: nil)
             return true
         }
@@ -457,7 +468,7 @@ final class KinetiqController: NSObject {
     private func flagsChanged(_ flags: CGEventFlags) {
         guard settings.enabled, session == nil, settings.modifier.matches(flags),
               let cursor = CGEvent(source: nil)?.location,
-              let info = WindowLocator.window(at: cursor) else { return }
+              let info = WindowLocator.dragWindow(at: cursor), windowFilter(info) else { return }
         // Capture as soon as the modifier is pressed so the texture is ready by the time the user clicks.
         prefetch(info)
     }
@@ -473,7 +484,7 @@ final class KinetiqController: NSObject {
         // A pending title-bar drag may have been accepted before manual playback
         // started. Stop only when committing this eligible gesture, never on a raw click.
         if CatalogRuntime.shared.isPlaying { CatalogRuntime.shared.stop() }
-        let policy = CatalogDragPolicy(preset: CatalogStore.shared.assigned(to: .drag))
+        let policy = CatalogDragPolicy(preset: dragPreset())
         let session = DragSession(window: info, cursor: point, dragPolicy: policy, physics: settings.physics)
         session.usageEvent = .effectPlayed(effectID: policy.map { LibraryEffect.catalog($0.preset.effect).id } ?? "wobbly_classic", trigger: .drag)
         session.titleBarHeight = titleBarHeight
@@ -691,7 +702,7 @@ final class KinetiqController: NSObject {
     private func resolveAXWindow(for session: DragSession, hitPoint: CGPoint) {
         let info = session.window
         AXBridge.queue(for: info.pid).async { [weak self] in
-            let axWindow = AXBridge.findWindow(info, hitPoint: hitPoint)
+            let axWindow = AXBridge.findMovableWindow(info, hitPoint: hitPoint)
             let fullScreen = axWindow.map(AXBridge.isFullScreen) ?? false
             if let axWindow, !fullScreen { AXBridge.raise(axWindow, pid: info.pid) }
             Task { @MainActor in
@@ -789,6 +800,8 @@ final class KinetiqController: NSObject {
         if overlays.isEmpty {
             overlays = NSScreen.screens.map { OverlayWindow(screen: $0, renderer: renderer) }
         }
+        let level = NSWindow.Level(rawValue: max(NSWindow.Level.floating.rawValue, session.window.layer + 1))
+        overlays.forEach { $0.setLevel(level) }
         overlays.forEach { $0.render() }
         overlays.forEach { $0.show() }
         startDisplayLink(near: session.cursor)

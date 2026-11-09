@@ -5,6 +5,43 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Wobbly drag selection now includes small app-owned floating, modal and popup-level
+  windows, independently of the stricter locator used by other effects. Exact AX/CG
+  identity and writable position are required; a popup never falls back to its parent.
+- Recognize safe title strips without a close button and additional noninteractive
+  title-bar containers; buttons, tabs and editable fields retain native input. Custom
+  or borderless movable surfaces can use the configured modifier (default ⌃⌘).
+- Place drag overlays above their target's level. Preserve own-app/user exclusions,
+  resize borders, system/menu/security surfaces and full-screen refusal. Bound AX
+  lookup queries while retaining normal messaging timeouts for movement.
+
+### Verification status
+
+- Seven real, disposable README-backed AppKit compatibility regressions passed before
+  the final AX timeout/identity refinements (`/tmp/kinetiq-wobbly-focused-3.log`).
+  They cover native controls, floating/modal/popup panels, a 70×35 panel, missing close
+  button, borderless movability, own-process exclusion and actual capture/parking/restore.
+- Final graphical acceptance is **blocked**, not passed: the subsequent complete
+  Release run executed 237 app tests with 43 assertion failures (13 unexpected),
+  while 36 Effects and 148 Core tests passed (`/tmp/kinetiq-wobbly-release.log`).
+  The isolated seven-test rerun also failed readiness. A bounded metadata-only
+  diagnostic confirmed full-screen `loginwindow` layers above the test helpers.
+  No lock-screen bypass or user-app lifecycle/consent change was attempted.
+- Rerun the complete Release suite and captured-README optics in an unlocked session
+  before merge. Actual Telegram, TextEdit and Teams versions have not been tested.
+  Version/build remain 0.5.1/44; existing release/tag/DMG are unchanged.
+- Universal app/saver build, both architectures, strict signatures, resource verifier
+  and the correct `--telemetry-smoke-test` passed. Final serial non-graphical Release
+  suites passed **184 = 36 Effects + 148 Core**, zero failures, exit 0
+  (`/tmp/kinetiq-wobbly-nongraphical-final.log`). An earlier incorrect smoke command
+  briefly entered normal startup; its separate process was closed, preserving the
+  preexisting instance. No consent automation or intentional live probe; no guarantee
+  of zero automatic traffic. See task 26 in `TODO.md` for exact local logs and gates.
+
 ## [0.5.1] — Build 44
 
 ### Changed

@@ -2,6 +2,42 @@
 
 Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (implementation).
 
+**Wobbly window compatibility — task 26 Review**, owner **Copilot** (implementation)
+/ **Lorenzo** (unlock session and native acceptance).
+Drag-only admission supports app-owned floating/modal/popup levels, small windows,
+safe missing-close-button title strips and modifier drags on movable custom/borderless
+windows. Require exact AX/CG identity and writable position; never move a popup's
+parent. Native controls, resize borders, user/own exclusions and security surfaces
+remain protected. Drag overlays follow the target level; lookup queries are bounded,
+movement keeps normal IPC timeouts. No analytics/schema/consent/version changes.
+
+- **Done — Copilot:** seven genuine AppKit helper regressions initially passed,
+	zero failures/skips (`/tmp/kinetiq-wobbly-focused-3.log`), before the final AX
+	identity/timeout refinements. Editor diagnostics are clear.
+- **Done — Copilot:** universal app/saver build exit 0, both arm64 + x86_64,
+	strict signatures passed (`/tmp/kinetiq-wobbly-build.log`). Resource verifier
+	and correct `--telemetry-smoke-test` passed, exit 0
+	(`/tmp/kinetiq-wobbly-bundle-check.log`, `/tmp/kinetiq-wobbly-disabled-smoke.log`).
+	Independent source review found no concrete P0/P1 issue; this is not native acceptance.
+- **Done — Copilot:** final serial Release non-graphical suites: **184 passed =
+	36 Effects + 148 Core**, zero failures, exit 0
+	(`/tmp/kinetiq-wobbly-nongraphical-final.log`). This does not certify the blocked
+	app/helper suite or captured-README optics.
+- **Review — Copilot/Lorenzo:** an incorrectly invoked smoke used an unrecognized
+	environment flag and briefly entered normal startup. Its separate test-owned
+	process was closed; the preexisting instance was preserved. No consent was
+	automated or live probe intentionally sent; zero automatic traffic is not asserted.
+- **Review — Lorenzo/Copilot:** final graphical acceptance blocked by the locked
+	macOS session. Full Release: 237 app tests / 43 assertion failures (13 unexpected),
+	plus 36 Effects and 148 Core passed (`/tmp/kinetiq-wobbly-release.log`);
+	isolated seven-test rerun: 12 assertion failures / six readiness errors
+	(`/tmp/kinetiq-wobbly-strict-focused.log`). Metadata-only diagnostic confirmed
+	full-screen `loginwindow` layers above owned helpers. No assertions weakened,
+	lock-screen bypass or real consent manipulation in these test runs.
+- **To Do — Copilot after manual unlock:** rerun complete Release plus real final
+	captured-README optics; only then consider normal PR merge. No named third-party
+	app runtime acceptance or new release/DMG is claimed.
+
 **Published release — v0.5.1 / build 44:** task **25 Done**, owner **Copilot**.
 README installation/first-launch instructions, final captured-README optics and
 DMG/checksum verification are complete; PR #7 normal merge, annotated tag and
@@ -183,6 +219,7 @@ pin, without SDK source edits.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
+| 26 | Broaden safe wobbly window compatibility | Review | Owner: Copilot (implementation), Lorenzo (manual session unlock). Seven actual native regressions initially passed; final AX refinements compile but graphical acceptance remains blocked by loginwindow. Full and isolated failed-run evidence above; complete Release and final README optics required before merge. No third-party app runtime certification, security/exclusion bypass or new release. |
 | 25 | GitHub v0.5.1 release and safe first-launch instructions | Done | Owner: Copilot. README installation, checksum, Gatekeeper and targeted quarantine guidance implemented; post-doc90 including real optics, DMG integrity/read-only byte comparison/universal metadata/signatures and checksum passed. PR #7 normal merge 2a8d3f4, annotated v0.5.1 and Latest publication with matching uploaded asset digests verified. Private repository requires authorized login; no visibility, real consent/live analytics, normal app lifecycle or billing/protection changes. Hosted CI failures remain separate owner Review. |
 | 24 | Consented macOS configured country for standard GA4 Country | Done | Owner: Copilot, implementation/local acceptance only. v0.5.1/build 44; GA4 revision 3/native 2, country-only top-level user_location, closed ISO249, no custom country key or fabricated location. Final Release414, 89 analytics; matching Lines and universal package/signatures/bundle/disabled smoke verified in docs/telemetry.md. Actual Mac-region getter/live delivery unexecuted. Final post-edit README optics and publication tracked in task25; G2/F2 remain owner Review. |
 | 23 | Revision-2 opt-in product analytics and practical GA4 reporting | Done | Owner: Copilot, implementation/local acceptance only. v0.5.0/build 43; six typed events/five-property allowlist, finite IDs, actual starts vs selections, Studio actions, app-side saver actions and manual quality; old grants require updated consent. Complete Release 407 passed, 82 analytics contracts; post-documentation 83 passed including actual README optics. Universal package/signatures/bundle/disabled smoke and matching Lines verified above. Earlier native capture failures documented, final suite passed unchanged assertions. Publication tracked separately in Git/PR history. G2/F2 owner gates stay Review. |

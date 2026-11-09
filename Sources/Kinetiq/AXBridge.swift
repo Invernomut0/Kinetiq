@@ -4,6 +4,7 @@
 
 import AppKit
 @preconcurrency import ApplicationServices
+import QuartzCore
 
 @_silgen_name("_AXUIElementGetWindow")
 private func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePointer<CGWindowID>) -> AXError
@@ -34,25 +35,68 @@ enum AXBridge {
         return queue(for: pid)
     }
 
-    static func findWindow(_ info: WindowInfo, hitPoint: CGPoint) -> AXUIElement? {
+    static func findWindow(_ info: WindowInfo, hitPoint: CGPoint, timeout: Float = 0.25,
+                           requireIdentity: Bool = false) -> AXUIElement? {
+        let deadline = CACurrentMediaTime() + Double(timeout)
+        func bounded(_ window: AXUIElement) -> AXUIElement? {
+            let remaining = deadline - CACurrentMediaTime()
+            guard remaining > 0 else { return nil }
+            return limit(window, min(0.025, Float(remaining)))
+        }
         let app = AXUIElementCreateApplication(info.pid)
-        AXUIElementSetMessagingTimeout(app, 0.25)
+        AXUIElementSetMessagingTimeout(app, timeout)
 
         var value: CFTypeRef?
         let windows = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success
             ? value as? [AXUIElement] ?? [] : []
         // Exact match: identical frames are common (maximized or tiled windows of the same app on other Spaces).
-        if let exact = windows.first(where: { windowID(of: $0) == info.id }) { return exact }
-
-        // Fallback: what the app says is under the cursor can only be on the current Space.
-        if let hit = hitTest(info.pid, at: hitPoint, timeout: 0.25),
-           let window = role(of: hit) == kAXWindowRole as String ? hit : element(hit, kAXWindowAttribute) {
-            return window
+        for candidate in windows {
+            guard let window = bounded(candidate) else { return nil }
+            if windowID(of: window) == info.id { return limit(window, 0) }
         }
 
+        // Fallback: what the app says is under the cursor can only be on the current Space.
+        let remaining = deadline - CACurrentMediaTime()
+        guard remaining > 0 else { return nil }
+        if let hit = hitTest(info.pid, at: hitPoint, timeout: min(0.025, Float(remaining))).flatMap(bounded),
+           let candidate = role(of: hit) == kAXWindowRole as String ? hit : element(hit, kAXWindowAttribute),
+           let window = bounded(candidate), matchesWindow(window, info: info),
+           !requireIdentity || windowID(of: window) == info.id {
+            return limit(window, 0)
+        }
+        guard !requireIdentity else { return nil }
+
         // Last resort: frame match, but only if unambiguous. Guessing would park the wrong window.
-        let candidates = windows.filter { frame(of: $0).map { matches($0, info.frame) } ?? false }
-        return candidates.count == 1 ? candidates[0] : nil
+        var candidates: [AXUIElement] = []
+        for candidate in windows {
+            guard let window = bounded(candidate) else { return nil }
+            if matchesWindow(window, info: info), frame(of: window).map({ matches($0, info.frame) }) == true {
+                candidates.append(window)
+            }
+        }
+        return candidates.count == 1 ? limit(candidates[0], 0) : nil
+    }
+
+    /// Never substitute a popup's parent (even if both have the same frame).
+    private static func matchesWindow(_ window: AXUIElement, info: WindowInfo) -> Bool {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(window, &pid) == .success, pid == info.pid else { return false }
+        if let id = windowID(of: window) { return id == info.id }
+        return frame(of: window).map { matches($0, info.frame) } ?? false
+    }
+
+    /// Drag capability, not AXStandardWindow: panels and custom app windows may move too.
+    static func findMovableWindow(_ info: WindowInfo, hitPoint: CGPoint) -> AXUIElement? {
+        enableChromiumAccessibility(pid: info.pid)
+        guard let window = findWindow(info, hitPoint: hitPoint, timeout: 0.1, requireIdentity: true) else { return nil }
+        AXUIElementSetMessagingTimeout(window, 0.025)
+        var writable = DarwinBoolean(false)
+        guard role(of: window) == kAXWindowRole as String, !isFullScreen(window),
+              AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &writable) == .success,
+              writable.boolValue else { return nil }
+                // Queries are bounded; moving a slow app must retain its normal IPC timeout.
+                AXUIElementSetMessagingTimeout(window, 0)
+        return window
     }
 
     /// CGWindowID behind an AX window (private, but stable for years and used by yabai, AeroSpace, AltTab…).
@@ -76,11 +120,13 @@ enum AXBridge {
 
     private static let draggableRoles: Set<String> = [
         kAXWindowRole as String, kAXToolbarRole as String, kAXGroupRole as String, kAXStaticTextRole as String,
+        kAXImageRole as String, "AXSplitGroup", "AXLayoutArea", "AXUnknown",
     ]
 
     /// If `point` falls on a draggable area of the title bar (not a button, tab or field), returns the
     /// height of that bar. It is inferred from the close button, which macOS centers vertically in it;
-    /// windows without a close button (games, borderless windows) are skipped.
+    /// Missing/nonstandard close buttons use only a narrow empty title strip;
+    /// buttons, fields, tabs and other interactive descendants stay native.
     /// Called from the event tap, so it uses a short timeout.
     static func titleBarHeight(_ info: WindowInfo, at point: CGPoint) -> CGFloat? {
         // Asking our own process through Accessibility from the event tap (main thread) would only time out.
@@ -89,26 +135,41 @@ enum AXBridge {
         }
         enableChromiumAccessibility(pid: info.pid)
         guard let hit = hitTest(info.pid, at: point, timeout: 0.1).map({ limit($0, 0.1) }),
-              let hitWindow = draggableWindow(from: hit) else { return nil }
-        // Chromium's top strip hangs from an internal pseudo-window with no close button: use the real one.
-        let window = windowID(of: hitWindow) == info.id ? hitWindow : realWindow(withID: info.id, pid: info.pid) ?? hitWindow
-        guard let close = element(window, kAXCloseButtonAttribute).map({ limit($0, 0.1) }),
-              let closeFrame = frame(of: close) else { return nil }
+              draggableWindow(from: hit) != nil else { return nil }
+                // Chromium can hang its title strip from a pseudo-window. Resolve the
+                // actual WindowServer target, never fall back to a different parent.
+        guard let window = findMovableWindow(info, hitPoint: point).map({ limit($0, 0.1) }) else { return nil }
+                guard let close = element(window, kAXCloseButtonAttribute).map({ limit($0, 0.1) }),
+              let closeFrame = frame(of: close) else {
+            return emptyTitleStripHeight(window, hit: hit, info: info, point: point)
+                }
 
         let closeCenter = CGPoint(x: closeFrame.midX, y: closeFrame.midY)
         guard info.frame.contains(closeCenter) else {
             // iTerm2 (Minimal theme) reports its close button outside the window. Without it the bar height is
             // unknown: take the standard one, and only for the empty bar (a tab title is an `AXStaticText`).
-            guard role(of: hit) == kAXWindowRole as String, point.y - info.frame.minY <= unknownTitleBarHeight else { return nil }
-            return unknownTitleBarHeight
+            return emptyTitleStripHeight(window, hit: hit, info: info, point: point)
         }
 
         let height = 2 * (closeCenter.y - info.frame.minY)
-        guard height >= 20, height <= 120, point.y - info.frame.minY <= height else { return nil }
+        guard height >= 20, height <= 120 else {
+            return emptyTitleStripHeight(window, hit: hit, info: info, point: point)
+        }
+        guard point.y - info.frame.minY <= height else { return nil }
         return height
     }
 
     private static let unknownTitleBarHeight: CGFloat = 28
+
+    private static func emptyTitleStripHeight(_ window: AXUIElement, hit: AXUIElement,
+                                             info: WindowInfo, point: CGPoint) -> CGFloat? {
+        guard info.frame.contains(point), point.y - info.frame.minY <= unknownTitleBarHeight else { return nil }
+        let emptyRoles: Set<String> = [kAXWindowRole as String, kAXToolbarRole as String,
+                                      kAXGroupRole as String, "AXUnknown"]
+        let isTitle = element(window, "AXTitleUIElement").map { CFEqual($0, hit) } ?? false
+        guard role(of: hit).map(emptyRoles.contains) == true || isTitle else { return nil }
+        return min(unknownTitleBarHeight, info.frame.height)
+    }
 
     @MainActor
     private static func ownTitleBarHeight(_ info: WindowInfo, at point: CGPoint) -> CGFloat? {
@@ -132,25 +193,20 @@ enum AXBridge {
         AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
     }
 
-    private static func realWindow(withID id: CGWindowID, pid: pid_t) -> AXUIElement? {
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.1)
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
-              let windows = value as? [AXUIElement] else { return nil }
-        return windows.first { windowID(of: $0) == id }.map { limit($0, 0.1) }
-    }
-
     /// Walks up from `hit` to its window and returns it only if every element on the way is draggable.
     /// The hit test returns the deepest element, which is often plain text or a group inside a control:
     /// the title of a Chromium tab is an `AXStaticText` whose parent is the tab itself (`AXRadioButton`).
     private static func draggableWindow(from hit: AXUIElement) -> AXUIElement? {
         var current = hit
-        for _ in 0..<8 {
+        let deadline = CACurrentMediaTime() + 0.1
+        for _ in 0..<32 {
+            let remaining = deadline - CACurrentMediaTime()
+            guard remaining > 0 else { return nil }
+            current = limit(current, min(0.025, Float(remaining)))
             guard let role = role(of: current), draggableRoles.contains(role) else { return nil }
             if role == kAXWindowRole as String { return current }
             guard let parent = element(current, kAXParentAttribute) else { return nil }
-            current = limit(parent, 0.1)
+            current = parent
         }
         return nil
     }
