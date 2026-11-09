@@ -36,6 +36,9 @@ consent/identity namespaces and six-event/five-key schema remain unchanged; no s
 	Logs `/tmp/kinetiq-country-postdocs.log`, `/tmp/kinetiq-country-dmg.log`.
 - **Doing — Copilot (task 25 remote):** normal branch/PR merge followed by annotated
 	version tag and GitHub release/asset digest verification; publication not yet claimed.
+- **Review — Lorenzo:** current PR **#7** `host` CI did not start due to account
+	billing/spending limits; no hosted build/tests. Review Billing & plans and rerun
+	Actions; local verification is separate and no protections/account settings change.
 - **Review — Lorenzo (G2/F2):** live ingestion/privacy/distribution/native signing
 	gates remain open. PR #6 is merged; its hosted job never started due to account
 	billing/spending limits. Review Billing & plans and rerun Actions; no hosted pass

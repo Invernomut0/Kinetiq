@@ -114,6 +114,12 @@ billing settings or branch protections are changed.
   remain publication steps, not inferred from the local DMG. Hosted CI remains
   separately verified/reported; historical PR #6 billing failure is not a new pass.
 
+**Current PR #7 hosted CI — not started:** GitHub's `host` annotation again reports
+failed recent account payments or a spending-limit increase requirement. No hosted
+tests/build ran; the arm64 capacity notice is additional context, not a pass. Lorenzo
+must review Billing & plans and rerun Actions. Local 414/90-test/package evidence is
+separate; no account settings, checks or branch protections are bypassed or changed.
+
 No normal app start, real consent/preferences change, live probe or console automation
 is authorized here. **G2/F2 Review — Lorenzo** retain live ingestion, privacy/distribution
 and native signing review. **PR #6 is merged**; its hosted job was **not started**

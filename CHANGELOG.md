@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Actual universal app/saver **0.5.1/44**, x86_64 + arm64, strict signatures, bundle and signed disabled smoke passed (`/tmp/kinetiq-country-build.log`; direct checks). No normal app restart, real consent/preferences change or live event.
 - Owner-requested **task 25 Doing — Copilot**: prepare GitHub DMG release, SHA-256 checksums and post-edit real README optics. Installation docs explain DMG vs source archives, permissions, menu-bar launch/quit, non-notarized/ad-hoc signatures, preferred Open Anyway and targeted `xattr -dr com.apple.quarantine` versus broad `xattr -cr`; no global Gatekeeper disablement. Release publication/asset verification pending, not inferred from local packaging. G2/F2 live-ingestion/privacy review stays open; historical PR #6 CI billing failure is not a pass for a new PR.
 - Final post-documentation **90 passed = 89 analytics + 1 actual captured-README optics**, zero failures/skips (`/tmp/kinetiq-country-postdocs.log`, actual optics 2.672 seconds). DMG integrity/read-only byte comparison, app/saver signatures and universal 0.5.1/44 metadata passed; checksum reports OK (`/tmp/kinetiq-country-dmg.log`). Remote tag/release publication still pending.
+- Current PR **#7** hosted `host` job did not start because of GitHub account billing/spending limits; no hosted tests/build ran. Owner Billing & plans review/rerun remains open. Local acceptance is separate; no account settings or branch protections were changed.
 
 ## [0.5.0] — Build 43
 
