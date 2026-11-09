@@ -2,7 +2,47 @@
 
 Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (implementation).
 
-**Current product analytics — v0.5.0 / build 43:** task **23 Done**, owner **Copilot**, implementation/local acceptance only.
+**Current release preparation — v0.5.1 / build 44:** task **25 Doing**, owner **Copilot**.
+README installation/first-launch instructions, final captured-README optics and
+DMG/checksum verification are complete; GitHub tag/release publication is in progress.
+Prefer Open Anyway; targeted quarantine removal only for a trusted, verified copy,
+not broad `xattr -cr`, global Gatekeeper disablement or damaged/malware-warning bypass.
+
+**Configured-country GA4 — task 24 Done**, owner **Copilot**, implementation/local acceptance only.
+Use only consented `Locale.current.region?.identifier`, valid ISO 3166-1 alpha-2,
+as top-level `user_location.country_id` for standard Country, never a custom country
+event parameter/definition. Read inside provider start after configuration enablement
+and analytics consent, snapshot only in memory until stop/revocation, clear and
+refresh on next consented start. Typed optional `GA4ConfiguredCountry`; static builder
+takes explicit country defaulting to nil. Nil/invalid omits `user_location`, without
+language/time-zone fallback, GPS, IP lookup, external service, new network permission,
+`ip_override`, invented city or `region_id`. Country alone is valid; Google's region
+recommendation does not authorize fabrication. Configured country is not citizenship
+or physical location and can override GA4 attribution/distort maps.
+
+GA4 revision **3** requires a new disclosed explicit choice; prior revision-2 grants
+stay off, default **Don't Share**. Native revision **2**, signing gates, all existing
+consent/identity namespaces and six-event/five-key schema remain unchanged; no saver SDK.
+
+- **Done — Copilot:** complete Release **414 = 230 app + 36 Effects + 148 Core**, zero
+	failures/skips; **89 analytics contracts** with seven Country/manifest regressions.
+	Universal 0.5.1/44 app/saver, signatures/bundle/disabled smoke passed. Matching LLVM
+	Lines country 85.71%, provider 77.30%, owner 97.24%, privacy 89.69%, taxonomy 100%,
+	native 20%; actual Mac region getter/live delivery unexecuted. Exact logs/profile
+	in [task 24](docs/telemetry.md#local-acceptance--task-24).
+- **Done — Copilot (task 25 local):** final post-doc **90 passed**, zero failures/skips,
+	including real README optics (2.672 seconds); DMG integrity, read-only byte comparison,
+	universal 0.5.1/44 metadata and app/saver signatures passed, SHA-256 checksum OK.
+	Logs `/tmp/kinetiq-country-postdocs.log`, `/tmp/kinetiq-country-dmg.log`.
+- **Doing — Copilot (task 25 remote):** normal branch/PR merge followed by annotated
+	version tag and GitHub release/asset digest verification; publication not yet claimed.
+- **Review — Lorenzo (G2/F2):** live ingestion/privacy/distribution/native signing
+	gates remain open. PR #6 is merged; its hosted job never started due to account
+	billing/spending limits. Review Billing & plans and rerun Actions; no hosted pass
+	or new PR number is implied. No normal app start, live probe, real consent change
+	or account/protection changes are authorized by release preparation.
+
+**Historical product analytics — v0.5.0 / build 43:** task **23 Done**, owner **Copilot**, implementation/local acceptance only; not build-44 acceptance.
 Implemented: revision-2 opt-in separately for GA4/native modes, old grants off until
 an updated explicit choice, default Don't Share; preserved legacy consent/identities.
 Six typed events cover actual visits, successful playback starts, separate selections,
@@ -12,7 +52,7 @@ and explicit quality choices (not auto adaptation). Closed five-property allowli
 content/app IDs/custom names/window metadata/hardware/precise location/free-form data.
 Single retained owner/weak hook, four immediate tasks/no disk queue, retry or replay, existing
 four-request cap, best-effort drops rather than exact census; core and native gates
-unchanged, no saver SDK. No external geolocation service or location overrides;
+unchanged, no saver SDK. That historical version used no external geolocation service or location overrides;
 City/Country may be `(not set)`. Report setup is documented, not automated.
 
 - **Done — Copilot:** complete final Release **407 passed** (223 app + 36 Effects +
@@ -133,6 +173,8 @@ pin, without SDK source edits.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
+| 25 | GitHub v0.5.1 release and safe first-launch instructions | Doing | Owner: Copilot. README installation, checksum, Gatekeeper and targeted quarantine guidance implemented; post-doc90 including real optics, DMG integrity/read-only byte comparison/universal metadata/signatures and checksum passed. Normal PR merge, annotated tag and remote release/assets verification pending. No real consent/live analytics, normal app lifecycle or billing/protection changes. |
+| 24 | Consented macOS configured country for standard GA4 Country | Done | Owner: Copilot, implementation/local acceptance only. v0.5.1/build 44; GA4 revision 3/native 2, country-only top-level user_location, closed ISO249, no custom country key or fabricated location. Final Release414, 89 analytics; matching Lines and universal package/signatures/bundle/disabled smoke verified in docs/telemetry.md. Actual Mac-region getter/live delivery unexecuted. Final post-edit README optics and publication tracked in task25; G2/F2 remain owner Review. |
 | 23 | Revision-2 opt-in product analytics and practical GA4 reporting | Done | Owner: Copilot, implementation/local acceptance only. v0.5.0/build 43; six typed events/five-property allowlist, finite IDs, actual starts vs selections, Studio actions, app-side saver actions and manual quality; old grants require updated consent. Complete Release 407 passed, 82 analytics contracts; post-documentation 83 passed including actual README optics. Universal package/signatures/bundle/disabled smoke and matching Lines verified above. Earlier native capture failures documented, final suite passed unchanged assertions. Publication tracked separately in Git/PR history. G2/F2 owner gates stay Review. |
 | 22 | Fix false quality blocks caused by capture accounting and stale errors | Done | Owner: Copilot, implementation/local acceptance. v0.4.2/build 42; real four-window pre-fix regression reproduces failure at Low/Auto. Include shadow allocation, skip over-budget additional windows, retain hard memory limits and mandatory own exclusions; separate error causes and clear stale messages. Complete Release 380 passed (196 app + 36 Effects + 148 Core), zero failures/skips, including actual desktop Ripple/Incinerate and restoration. Universal app/saver, signatures, bundle and disabled smoke passed; exact logs/coverage above. |
 | 21 | Relax effect quality gate and protect Settings exclusion | Done | Owner: Copilot. 12-step resource-only Auto ladder, expensive effects allowed at Low/serious thermal pressure, critical thermal and memory/capture safety retained; protected Kinetiq rule enforced in UI, settings and runtime. Complete Release 376 passed (192 app + 36 Effects + 148 Core), zero failures/skips, including actual captured-README rendering and protected rule persistence. Universal app/saver, strict signatures, bundle and disabled smoke passed. Exact logs/Lines coverage above. |

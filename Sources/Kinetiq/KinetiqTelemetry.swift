@@ -86,6 +86,7 @@ final class KinetiqTelemetry: ObservableObject {
     static weak var application: KinetiqTelemetry?
     nonisolated static let maximumPendingUsageTasks = 4
     nonisolated static let usageConsentRevision = 2
+    nonisolated static let ga4UsageConsentRevision = 3
     nonisolated static let usageConsentRevisionKey = "kinetiq.telemetry.firebase.usageConsentRevision"
     nonisolated static let ga4UsageConsentRevisionKey = "kinetiq.telemetry.ga4.usageConsentRevision"
     nonisolated static let consentKey = "kinetiq.telemetry.firebase.analytics"
@@ -97,6 +98,7 @@ final class KinetiqTelemetry: ObservableObject {
     private var activeConsentKey: String { mode == .ga4 ? Self.ga4ConsentKey : Self.consentKey }
     private var activeDecisionKey: String { mode == .ga4 ? Self.ga4ConsentDecisionKey : Self.consentDecisionKey }
     private var activeRevisionKey: String { mode == .ga4 ? Self.ga4UsageConsentRevisionKey : Self.usageConsentRevisionKey }
+    private var activeConsentRevision: Int { mode == .ga4 ? Self.ga4UsageConsentRevision : Self.usageConsentRevision }
     @Published private(set) var ready = false
     @Published private(set) var busy = false
     @Published private(set) var analyticsConsent = false
@@ -110,6 +112,7 @@ final class KinetiqTelemetry: ObservableObject {
     private let injectedProvider: (any AnalyticsProvider)?
     private let identityStore: any InstallationIdentityStore
     private let purgeFailed: @Sendable () async -> Bool
+    private let ga4CountrySource: @MainActor () -> GA4ConfiguredCountry?
     private var provider: (any AnalyticsProvider)?
     private var client: TelemetryClient?
     private var attemptedInitialization = false
@@ -145,7 +148,8 @@ final class KinetiqTelemetry: ObservableObject {
             productID: String = "kinetiq",
          provider: (any AnalyticsProvider)? = nil,
          identityStore: (any InstallationIdentityStore)? = nil,
-         purgeFailed: @escaping @Sendable () async -> Bool = { false }) {
+         purgeFailed: @escaping @Sendable () async -> Bool = { false },
+         ga4CountrySource: @escaping @MainActor () -> GA4ConfiguredCountry? = { GA4ConfiguredCountry.current() }) {
         self.defaults = defaults
         self.productID = productID
         self.configuration = configuration
@@ -159,10 +163,11 @@ final class KinetiqTelemetry: ObservableObject {
         self.identityStore = identityStore ?? TelemetryPreferenceIdentityStore(
             defaults: defaults, productID: usesGA4 ? productID + ".ga4" : productID)
         self.purgeFailed = purgeFailed
+        self.ga4CountrySource = ga4CountrySource
         // UserDefaults.bool accepts strings/numbers. Consent must be an actual plist Boolean.
         if let stored = defaults.object(forKey: activeConsentKey) as? NSNumber,
            CFGetTypeID(stored) == CFBooleanGetTypeID() {
-            needsUpdatedConsent = stored.boolValue && (defaults.object(forKey: activeRevisionKey) as? Int) != Self.usageConsentRevision
+            needsUpdatedConsent = stored.boolValue && (defaults.object(forKey: activeRevisionKey) as? Int) != activeConsentRevision
             analyticsConsent = stored.boolValue && !needsUpdatedConsent
         }
     }
@@ -214,7 +219,7 @@ final class KinetiqTelemetry: ObservableObject {
             if provider == nil, let ga4 = host.ga4 {
                 provider = GA4MeasurementProtocolProvider(configuration: ga4, statusChanged: { [weak self] status in
                     self?.transportStatus = status.message
-                })
+                }, countrySource: ga4CountrySource)
             } else if provider == nil, let options = host.options {
                 guard FirebaseAnalyticsProvider.hasPrivateKeychainAccess else {
                     denyConsent()
@@ -257,7 +262,7 @@ final class KinetiqTelemetry: ObservableObject {
             if !granted, await hasPurgeFailure() { await failClosed(); return }
             let diagnostics = await client.diagnostics()
             guard !granted || diagnostics.analyticsAvailable else { throw TelemetryHostConfiguration.Invalid.configuration }
-            defaults.set(Self.usageConsentRevision, forKey: activeRevisionKey)
+            defaults.set(activeConsentRevision, forKey: activeRevisionKey)
             needsUpdatedConsent = false
             analyticsConsent = granted
             defaults.set(granted, forKey: activeConsentKey)
