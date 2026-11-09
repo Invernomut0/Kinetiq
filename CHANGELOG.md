@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] — Build 45
+
 ### Fixed
 
 - Wobbly drag selection now includes small app-owned floating, modal and popup-level
@@ -40,8 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overlay 97.44% (`/tmp/kinetiq-wobbly-unlocked-coverage.txt`, matching binary/profile
   saved before the focused rerun). Not exhaustive or Metal shader coverage.
 - Actual Telegram, TextEdit and Teams versions have not been tested directly.
-  Version/build remain 0.5.1/44; existing release/tag/DMG are unchanged. PR #9 began
-  as draft while locked; normal publication is tracked in Git/PR history.
+  The implementation-only acceptance above used 0.5.1/44 without changing its
+  published tag/DMG. PR #9 merged normally; task 27 separately tracks the new
+  0.5.2/45 package and release. Earlier release assets remain unchanged.
 - Universal app/saver build, both architectures, strict signatures, resource verifier
   and the correct `--telemetry-smoke-test` passed. Final serial non-graphical Release
   suites passed **184 = 36 Effects + 148 Core**, zero failures, exit 0
@@ -53,6 +56,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disabled smoke were reverified after unlocked acceptance (`/tmp/kinetiq-wobbly-unlocked-build.log`,
   `-bundle.log`, `-smoke.log`). No normal app start, consent automation or live probe
   in this final verification; hosted CI and owner privacy/distribution gates remain separate.
+
+### Build 45 release packaging — task 27
+
+- Complete serial Release **421 = 237 app + 36 Effects + 148 Core**, zero failures/skips,
+  including all seven real native wobbly cases and actual captured-README optics
+  (2.500 s), passed after the final README edit (`/tmp/kinetiq-v052-final-release.log`).
+  Earlier full/focused runs failed helper-frontmost/capture and obstacle assertions;
+  final suite passed without source/test edits or weakened assertions. Exact failures
+  are retained in task 27; no definitive transient-environment root cause is claimed.
+- Fresh universal **0.5.2/45** app and saver, strict signatures, bundle verifier and
+  correct disabled CLI smoke passed (`/tmp/kinetiq-v052-build.log`, `-bundle.log`, `-smoke.log`).
+  Matching LLVM **Lines**: AXBridge 81.00%, locator 87.08%, controller 50.17%, overlay
+  97.44% (`/tmp/kinetiq-v052-coverage.txt`); not exhaustive/Metal coverage.
+- New `Kinetiq-0.5.2.dmg` integrity, read-only mounted bundle byte comparison,
+  metadata/signatures and checksum passed (`/tmp/kinetiq-v052-dmg.log`). SHA-256:
+  `4662ed5dd0616a6a1d90d8fa9cdfe003fd7531cdbac598b7b752d4bd38725997`.
+  Existing v0.5.1 DMG unchanged. Remote publication remains tracked separately.
+- No normal user-app startup, real consent automation or live analytics in this
+  verification. No telemetry/schema/SDK change, named third-party app certification,
+  hosted CI success or notarization claim. G2/F2 owner review stays open.
 
 ## [0.5.1] — Build 44
 

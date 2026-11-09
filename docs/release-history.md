@@ -2,7 +2,33 @@
 
 Detailed per-release notes and verification evidence previously kept at the top of the README. The [CHANGELOG](../CHANGELOG.md) is the concise record.
 
-## Current: v0.5.1 · build 44 — consented configured country for GA4
+## Current: v0.5.2 · build 45 — broader safe wobbly compatibility
+
+Wobbly drag selection now includes movable app-owned floating/modal/popup panels,
+small windows and safe title strips without a close button. Use **⌃⌘ + drag** for
+custom or borderless surfaces. Exact AX/CG identity and writable position are required;
+a popup never substitutes its parent. Native controls, resize borders, exclusions,
+system/security surfaces and full-screen refusal remain protected. Drag overlays follow
+their target's level; AX lookup is bounded without shortening movement timeouts.
+
+PR #9 merged normally. Seven disposable real-AppKit regressions exercise actual
+capture, Metal deformation, parking and exact restoration; named Telegram/TextEdit/
+Teams versions have not been directly certified. The implementation acceptance is
+recorded in [CHANGELOG](../CHANGELOG.md#052--build-45); new package/publication
+verification is tracked as task 27 in [TODO](../TODO.md). Telemetry, consent revisions,
+SDK pin and privacy gates are unchanged. This release is not notarized.
+
+**Build 45 local acceptance:** final complete Release **421 = 237 app + 36 Effects +
+148 Core**, zero failures/skips, including seven native wobbly cases and real README
+optics (2.500 s). Earlier helper-frontmost/capture/obstacle failures and the unchanged
+passing final run are recorded in task 27. Universal arm64/x86_64 app/saver, strict
+signatures, bundle verifier, disabled CLI smoke, DMG integrity and read-only mounted
+bundle byte equality passed. DMG SHA-256:
+`4662ed5dd0616a6a1d90d8fa9cdfe003fd7531cdbac598b7b752d4bd38725997`.
+Existing v0.5.1 assets remain unchanged; remote publication is separate from local
+acceptance. No normal user-app lifecycle, real consent automation or live probe.
+
+## v0.5.1 · build 44 — consented configured country for GA4
 
 **Task 24 Done — Copilot; implementation and verified local acceptance.**
 The owner explicitly authorized the macOS configured country for GA4's standard
