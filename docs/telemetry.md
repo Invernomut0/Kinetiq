@@ -1,6 +1,137 @@
 # Kinetiq telemetry integration
 
-## Current: renewed opt-in product usage — v0.5.0 / build 43 (2026-11-09)
+## Current: configured country for GA4 — v0.5.1 / build 44 (2026-11-09)
+
+**Task 24 Done — Copilot, implementation and verified local acceptance only.**
+The owner's explicit request to use the macOS configured region for GA4 Country
+supersedes the earlier no-`user_location`/no-Locale-inference restriction **only for
+configured country**, not physical position, citizenship or City.
+
+### Country-only payload and consent lifecycle
+
+- Read only `Locale.current.region?.identifier`, inside consented `provider.start`
+  after `configuration.enabled && privacy.analyticsEnabled`; not at construction,
+  prompt presentation, denied startup or in the static payload builder.
+- Typed optional `GA4ConfiguredCountry` accepts only the **249 assigned ISO 3166-1
+  alpha-2** country/territory codes, not merely arbitrary two letters. Foundation's
+  larger regional catalog includes macroregions and reserved/user-assigned codes;
+  `EU`, `001`, `UK`, `XK` and `ZZ` are omitted, without alias invention. The provider snapshots it
+  only in memory until stop/withdrawal, clears it there, and refreshes it on the next
+  consented start. No persistence or per-event Locale lookup is authorized.
+- Pass that optional country explicitly to the static builder, whose country argument
+  defaults to `nil`. A valid country yields only top-level JSON
+  `user_location: {country_id: <ISO 3166-1 alpha-2>}`. Nil/invalid input omits the whole
+  object, without language/time-zone fallback or lookup.
+- Use standard **Country**, **no custom country event parameter, user property or
+  custom definition**. Existing six events/five custom keys are unchanged. No GPS,
+  IP lookup, external geolocation service, new network permission, `ip_override`,
+  fabricated city or `region_id` is introduced.
+- Google's [Measurement Protocol reference](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference#payload_geo_info)
+  marks geographic fields optional: `country_id` alone is valid. Its recommendation
+  to provide `country_id` and `region_id` is not a requirement or permission to invent
+  a subdivision. Property-level granular-location settings still apply.
+- Configured region is **not citizenship or physical geolocation**. This explicit
+  country can override GA4's country attribution and distort reports/maps. No real
+  City/position or ingestion is claimed. If omitted, Google's documented tagging-
+  history derivation may leave this MP-only identity's geography `(not set)`;
+  connection IP alone is not promised to populate reports. Native geography remains
+  conditional on actual enablement behind its unchanged gates.
+
+GA4 requires **consent revision 3** at `kinetiq.telemetry.ga4.usageConsentRevision`,
+disclosing configured country. A prior revision-2 grant stays runtime **off** until
+a new explicit prompt/Settings choice; **Don't Share** remains default. Native
+Firebase stays at **revision 2** at `kinetiq.telemetry.firebase.usageConsentRevision`.
+Preserve existing consent/decision/identity namespaces and UUID retention, without
+migration or cross-mode grants. Configuration/kill switch never grants consent.
+Stop/revocation clears country memory, not transmitted bytes or server records.
+
+The host `PrivacyInfo.xcprivacy` conservatively declares **CoarseLocation**, analytics,
+non-tracking and linked to the stable pseudonymous client identifier for this Country
+field. This is a declaration of transmitted country data, not permission to measure
+physical location. No precise-location type or new required-reason API is added.
+The source is still a regional preference, not GPS. App Store labels, Google processing
+and distribution privacy remain owner review, not a compliance certification.
+
+### Local acceptance — task 24
+
+| Local gate | Verified result | Evidence |
+|---|---|---|
+| Complete final Release | **414 = 230 app + 36 Effects + 148 Core; zero failures/skips, exit 0** | `/tmp/kinetiq-country-final-release.log` |
+| Analytics included above | **89 = 34 GA4 + 50 owner/native + 5 taxonomy**; seven new Country/manifest contracts | Same complete suite |
+| ISO and consent | All 249 assigned codes; unsupported/missing omitted; event properties cannot spoof geography; consent-only read/snapshot/clear/refresh; revision-2 off, revision-3 relaunch identity retained, native revision 2 unchanged | Same complete suite, public ISO/Locale data and isolated storage only |
+| Universal packaging | Actual **0.5.1 / 44**, app and saver each **x86_64 + arm64**, build exit 0 | `/tmp/kinetiq-country-build.log`; direct version/architecture checks |
+| Strict signatures / bundle / disabled smoke | Both signatures passed; `KINETIQ_TELEMETRY_BUNDLE_CHECK_SUCCESS`, `KINETIQ_TELEMETRY_DISABLED_SMOKE_SUCCESS` | Direct fixed-success checks |
+
+Actual matching LLVM **Lines**, not Regions:
+
+| Component | Total lines | Missed lines | Line coverage |
+|---|---:|---:|---:|
+| `GA4ConfiguredCountry.swift` | 7 | 1 | **85.71%** |
+| `GA4MeasurementProtocolProvider.swift` | 282 | 64 | **77.30%** |
+| `KinetiqTelemetry.swift` | 290 | 8 | **97.24%** |
+| `TelemetryPrivacyView.swift` | 97 | 10 | **89.69%** |
+| `KinetiqUsageEvent.swift` | 54 | 0 | **100.00%** |
+| `FirebaseAnalyticsProvider.swift` | 60 | 48 | **20.00%** |
+
+Report `/tmp/kinetiq-country-coverage.txt`; profile
+`/tmp/kinetiq-country-final-release.profdata`; matching binary
+`/tmp/kinetiq-country-final-KinetiqTests`, preserved before the post-doc run.
+The actual `Locale.current` getter/default closures are intentionally unexecuted in
+tests, which must not read the user's configured region. Live requests/responses,
+30-minute session boundary and native Firebase startup/delivery/reset remain unverified.
+No ingestion, exhaustive integration, Debug suite or Metal branch coverage claim.
+
+The owner subsequently requested a GitHub release and installation/first-launch
+instructions (task 25). Final post-edit captured-README optics and release asset
+verification are tracked there, not inferred from this suite. The earlier focused
+compile had two negative test events missing mandatory properties; corrected before
+the 88-test focused pass and the final 414-test suite. The first complete 413-test
+suite passed before adding the seventh manifest test; final acceptance is 414.
+
+### Release preparation — task 25
+
+**Doing — Copilot, remote publication pending.** The owner explicitly requested
+GitHub release/tag/DMG publication, superseding the earlier no-release scope for
+publication only. No live analytics, real preferences, normal user-app lifecycle,
+billing settings or branch protections are changed.
+
+- Final post-documentation **90 passed = 89 analytics + 1 actual captured-README
+  optics**, zero failures/skips, exit 0 (`/tmp/kinetiq-country-postdocs.log`). The
+  actual optics Test Case passed in **2.672 seconds**, with unchanged assertions.
+- `Kinetiq-0.5.1.dmg` created from the verified app, checked by `hdiutil verify`,
+  mounted read-only and compared byte-for-byte with the packaged app. Both app/saver
+  signatures, actual version/build **0.5.1/44** and both **x86_64 + arm64** slices
+  passed. Image detached afterward (`/tmp/kinetiq-country-dmg.log`). No app launch.
+- `SHA256SUMS.txt` matches the actual image; `shasum -a 256 -c` reports **OK**.
+  Source and private owner files are not release assets. The authorized bundled
+  GA4 ingestion secret remains extractable; no server-only secrecy is claimed.
+- README installation explains DMG versus source archives, required permissions,
+  menu-bar lifecycle and non-notarized/ad-hoc limitations. Prefer **Open Anyway**;
+  targeted `xattr -dr com.apple.quarantine` removes only quarantine within the trusted
+  app, unlike `xattr -cr` which clears all extended attributes. No global Gatekeeper
+  disabling, elevation or malicious/damaged-app warning bypass is recommended.
+- Normal branch/PR merge, annotated tag and remote release/asset digest verification
+  remain publication steps, not inferred from the local DMG. Hosted CI remains
+  separately verified/reported; historical PR #6 billing failure is not a new pass.
+
+**Current PR #7 hosted CI — not started:** GitHub's `host` annotation again reports
+failed recent account payments or a spending-limit increase requirement. No hosted
+tests/build ran; the arm64 capacity notice is additional context, not a pass. Lorenzo
+must review Billing & plans and rerun Actions. Local 414/90-test/package evidence is
+separate; no account settings, checks or branch protections are bypassed or changed.
+
+No normal app start, real consent/preferences change, live probe or console automation
+is authorized here. **G2/F2 Review — Lorenzo** retain live ingestion, privacy/distribution
+and native signing review. **PR #6 is merged**; its hosted job was **not started**
+because of account billing/spending limits. Owner Billing & plans review and Actions
+rerun remain open, not hosted CI success or evidence for a new PR.
+
+## Historical scope and local acceptance: product usage — v0.5.0 / build 43 (2026-11-09)
+
+The revision-2 consent and no-country-override policy below describe task 23, not
+build 44. Its six-event/five-key taxonomy and ownership/transport bounds remain the
+current baseline; task 24 changes only the authorized country field and GA4 consent
+revision. All task-23 tests, coverage and packaging evidence remain historical.
 
 **Task 23 Done — Copilot, implementation and local acceptance only.** The owner explicitly
 authorized broader categorical product analytics, superseding the earlier
@@ -8,7 +139,7 @@ privacy-settings-only scope, **not** its consent, transport or native-signing ga
 The production implementation uses `KinetiqUsageEvent.swift`; the generic TelemetrySDK
 core is unchanged. Earlier acceptance sections below are historical records only.
 
-### Consent revision 2, separate modes and retained ownership
+### Historical consent revision 2, separate modes and retained ownership
 
 The existing Boolean consent/decision keys remain separate for GA4 and Firebase.
 Revision **2** is required at `kinetiq.telemetry.ga4.usageConsentRevision` or
@@ -31,7 +162,7 @@ census**, even with consent. The core pin and native fallback signing/Keychain g
 are unchanged. No SDK, analytics owner or telemetry configuration is added to the
 screen saver host.
 
-### Exact current event taxonomy
+### Retained current event taxonomy (introduced in v0.5.0)
 
 Both provider boundaries validate the same typed, closed allowlist. The only custom
 property keys are `feature`, `effect_id`, `trigger`, `action` and `quality`; only the
@@ -64,9 +195,9 @@ actual session/positive consented foreground timing, not fabricated engagement.
 Native Firebase's possible automatic metadata, **if actually enabled** after its
 existing gates, remains separately disclosed; this scope does not enable that fallback.
 
-### Geography: least collection, not a location promise
+### Historical geography policy — v0.5.0/build 43 only
 
-The owner was unavailable when asked about an external geolocation service; the
+At task 23, the owner was unavailable when asked about an external geolocation service; the
 least-collection option was chosen. **No new external geolocation service**, GPS,
 IP lookup, `ip_override` or `user_location` is used. Locale and time zone are not
 location evidence and are not substituted for City/Country.
@@ -81,7 +212,7 @@ connection IP alone populates these reports. Native Firebase may derive geograph
 granular-location restrictions, reporting thresholds and VPN/proxy routing can also
 limit, suppress or distort geographic results. No precise or reliable city is promised.
 
-### Practical GA4 report setup
+## Practical GA4 report setup
 
 These are **manual owner steps**, not performed console changes. No administrator
 credentials, console automation, new collection service or fabricated charts are
@@ -116,14 +247,19 @@ required or supplied by this task.
   **`studio_action`**, rows Action. Filter **`screensaver_action`** by Action for
   app-side enable/disable/preview, never as a system saver-run count. Use
   **`quality_changed`**, rows Quality for explicit quality choices only.
-5. **City and Country are built-in dimensions**, not custom definitions. Add them
-  only when investigating available geographic data, retaining `(not set)` and
-  checking the date range, property granular-location settings, thresholds and
-  VPN/proxy limitations. Do not enable more collection to fill empty charts by
+5. **Country is built-in**, not a custom definition: use standard **Country** with
+  Event count to inspect the consented configured-country field. Do not add a custom
+  country event parameter/definition. It can override GA4 attribution and distort
+  maps; it is not citizenship or physical position. **City is also built-in but is
+  not supplied or promised by this change.** Retain `(not set)` and check date range,
+  granular-location settings, thresholds and attribution limits. Do not enable more
+  collection to fill empty charts by
   default. HTTP **2xx/204 only acknowledges HTTP receipt, not GA4 ingestion**;
   submitted counts and debug validation are not proof of report availability.
 
-### Local acceptance — task 23
+## Local acceptance — task 23
+
+**Historical v0.5.0/build 43 only; not task-24/build-44 acceptance.**
 
 | Local gate | Verified result | Evidence |
 |---|---|---|
@@ -164,12 +300,12 @@ unexecuted at runtime. Taxonomy 100% Lines does not imply exhaustive integration
 native lifecycle or Metal shader branch coverage. No new complete Debug claim is made.
 
 No normal user-app restart, real consent/preferences change, live event/probe or
-console automation was performed. Reopen the actual `build/Kinetiq.app` manually
-for build 43 and the updated consent choice. G2/F2 live-ingestion/privacy/distribution
+console automation was performed. The task-23 instruction to reopen build 43 is
+historical, not an instruction to launch the current app. G2/F2 live-ingestion/privacy/distribution
 gates remain owner Review; no native fallback enablement, report ingestion, hosted CI
 success, new DMG or release publication is implied by these local checks.
 
-**Hosted CI — blocked before execution (PR #6):** GitHub's `host` annotation says
+**Hosted CI — blocked before execution (merged PR #6):** GitHub's `host` annotation says
 the job was not started because recent account payments failed or the spending limit
 must be increased. This is not a test result: no hosted build/test pass is claimed.
 Owner Lorenzo must review **Billing & plans** and rerun Actions after resolving the
@@ -179,9 +315,9 @@ changed or bypassed by this task; local acceptance above remains separate eviden
 ## Historical: privacy-settings-only GA4 Web transport — v0.3.4 / build 39 (2026-11-08)
 
 Everything in this section through its acceptance table and coverage records
-describes the **earlier scope and verification**, not v0.5.0 acceptance. References
+describes the **earlier scope and verification**, not v0.5.1/build 44 acceptance. References
 to “current”, the lone Privacy & Analytics action, dates, configuration checks and
-owner instructions below are historical statements. The current revision-2 scope,
+owner instructions below are historical statements. The current mode-specific consent scope,
 geography limits and remaining owner gates above take precedence; no old grant is extended.
 
 **VERIFIED LOCAL — G1 Done, owner Copilot, for implementation and offline/local

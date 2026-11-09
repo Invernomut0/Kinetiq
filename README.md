@@ -6,13 +6,14 @@ Kinetiq is a native menu bar app, forked from [Wobbly](https://github.com/jsgrrc
 
 https://github.com/user-attachments/assets/40bc5530-d253-4d47-bc57-3eccdac83d70
 
-## Current: v0.5.0 · build 43 — renewed opt-in product analytics
+## Current: v0.5.1 · build 44 — consented configured country for GA4
 
-The implemented product-usage scope requires **consent revision 2**, separately for
-GA4 and native Firebase modes. An older grant does **not** silently authorize the
-broader scope: analytics stays off until a new explicit choice in the disclosed
-prompt or Settings. **Don't Share** remains the default. Legacy consent/identity
-namespaces are preserved, not transferred between modes.
+**Task 24 Done — Copilot; implementation and verified local acceptance.**
+The owner explicitly authorized the macOS configured country for GA4's standard
+**Country** dimension. GA4 requires fresh **consent revision 3**; a prior revision-2
+grant stays off until a new disclosed choice. Native Firebase remains at **revision 2**
+with unchanged signing gates. **Don't Share** remains default. Existing mode-specific
+consent/identity namespaces are preserved, not transferred.
 
 The closed vocabulary in `KinetiqUsageEvent.swift` permits only these custom events:
 
@@ -38,13 +39,24 @@ retained, without a disk queue, retry or replay, and the existing GA4 **four-req
 Busy/denied/overflow actions can be dropped: counters are best-effort, not an exact
 usage census. Native fallback signing gates are unchanged; no saver SDK is added.
 
-No external geolocation service is introduced: the owner was unavailable when asked,
-so the least-collection option was retained. No GPS, IP lookup, `ip_override` or
-`user_location` is sent, and Locale/time zone is not treated as location. Google
-documents MP geography from tagging history when overrides are absent; **City/Country
-may remain `(not set)`** for this MP-only identity. Native Firebase may derive
-geography **if actually enabled** behind its existing gates; this release does not
-claim to have enabled it.
+The authorized GA4 contract reads only `Locale.current.region?.identifier`, inside
+consented `provider.start` after `configuration.enabled && privacy.analyticsEnabled`.
+A country from the closed **249 assigned ISO 3166-1 alpha-2** codes is snapshotted in memory until stop/withdrawal,
+then cleared and refreshed on the next consented start. It enters JSON only as
+top-level `user_location: {country_id: <ISO 3166-1 alpha-2>}`, never an event parameter
+or custom definition. Missing/invalid country omits `user_location`; no language/
+time-zone fallback, GPS, IP lookup, external geolocation service or new network
+permission. No `ip_override`, fabricated city or `region_id` is sent. Google's fields
+are optional: country alone is valid; its region recommendation does not authorize
+invention. This is a **configured country, not citizenship or physical location**:
+it can override GA4's country and distort maps. City is not supplied or promised;
+without the override, MP-only geography can remain `(not set)`. Native geography
+remains conditional on actual gated enablement, not enabled by this change. The six
+events/five custom keys above are unchanged.
+
+The host privacy manifest conservatively declares non-tracking coarse-country
+analytics linked to the pseudonymous client identifier; this does not add physical
+location measurement, a location permission or an App Store compliance guarantee.
 
 For usable reports, manually create **Event-scoped** custom definitions for the five
 keys above in **GA4 Admin → Custom definitions**, then use Explore with
@@ -56,7 +68,18 @@ City/Country are built-in dimensions, not custom definitions. See the
 [complete report setup and geography limitations](docs/telemetry.md#practical-ga4-report-setup).
 HTTP 2xx is receipt of the request, **not proof of ingestion**.
 
-**Verified local acceptance (2026-11-09): 407 Release tests passed** — 223 app +
+**v0.5.1/build 44 local acceptance:** **414 Release tests passed = 230 app +
+36 Effects + 148 Core**, zero failures/skips, including **89 analytics contracts**
+(`/tmp/kinetiq-country-final-release.log`). Universal app/saver, strict signatures,
+bundle verification and signed disabled smoke passed (`/tmp/kinetiq-country-build.log`).
+LLVM **Lines**: country validator **85.71%**, provider **77.30%**, owner **97.24%**,
+privacy UI **89.69%**, taxonomy **100%**, native adapter **20%**. The actual Mac region
+getter and live delivery remain unexecuted; this is not ingestion or exhaustive coverage.
+No normal app restart, real consent change or live event was automated. See
+[task 24 evidence](docs/telemetry.md#local-acceptance--task-24). Release preparation
+and the final post-edit README optics recheck are tracked separately as task 25.
+
+**Historical v0.5.0/build 43 local acceptance (2026-11-09): 407 Release tests passed** — 223 app +
 36 Effects + 148 Core, zero failures/skips (`/tmp/kinetiq-usage-final-acceptance.log`).
 This includes **82 analytics contracts** and same-turn save/assignment and layer/import
 regressions. Earlier runs encountered native capture/window-origin failures; all 15
@@ -67,7 +90,9 @@ Universal **x86_64 + arm64** app/saver **0.5.0/build 43**, strict signatures, bu
 verification and signed disabled smoke passed (`/tmp/kinetiq-usage-build.log`).
 No normal user-app restart, real consent change or live probe was automated.
 See [detailed evidence and remaining owner gates](docs/telemetry.md#local-acceptance--task-23).
-Reopen `build/Kinetiq.app` manually to use build 43 and make the updated consent choice.
+Those checks do not certify build 44. PR #6 is merged; its hosted job never started
+because of account billing/spending limits. G2/F2 remain **Review — Lorenzo** for
+live ingestion/privacy/distribution and account review/rerun, not a hosted CI pass.
 All release verification below belongs to its stated historical version.
 
 **v0.3.1 · build 36** fixes the management sidebar and Animation Studio controls disappearing outside the window. Navigation columns now use their actual viewport; after **Add Layer**, the inspector, transport and timeline stay in the editor. The startup guide remains inline for an empty document and is available from **?** without covering the populated editor. Event-based discovery and all 65 effects are unchanged.
@@ -117,9 +142,79 @@ the current source version or a request to restart the user's app.
 
 ## Installing
 
-Requires macOS 14 or later, on Apple Silicon or Intel.
+Requires **macOS 14 or later**, on Apple Silicon or Intel. The universal DMG contains
+both architectures; no Xcode, Python or terminal build is needed to run it.
 
-Download the DMG from Releases and drag Kinetiq to `/Applications`. The app is not notarized, so the first time you open it macOS will block it: go to **System Settings → Privacy & Security** and click **Open Anyway**.
+### Download, install and launch
+
+1. Download `Kinetiq-0.5.1.dmg` and `SHA256SUMS.txt` from the project's
+	[v0.5.1 GitHub release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.1).
+	Choose the DMG asset, **not** GitHub's **Source code** ZIP/TAR, which has no ready-to-run app.
+2. Optionally verify the download in Terminal from the folder containing both files:
+
+	```sh
+	cd ~/Downloads
+	shasum -a 256 -c SHA256SUMS.txt
+	```
+
+	The DMG must report **OK**. Stop and download it again if verification fails.
+	A checksum detects changed/corrupted bytes; it is not a malware-free certification.
+3. Open the DMG, drag **Kinetiq.app** onto **Applications**, then eject the disk image.
+	Run the installed copy, not the app inside the mounted DMG.
+4. Double-click `/Applications/Kinetiq.app`. If macOS cannot verify its developer,
+	follow the first-launch steps below. Once approved, you can also launch it with:
+
+	```sh
+	open "/Applications/Kinetiq.app"
+	```
+
+5. Grant **Accessibility** and **Screen Recording** in **System Settings → Privacy &
+	Security** when requested. Accessibility lets Kinetiq watch drags and restore/move
+	windows; Screen Recording supplies the captured pixels for effects. macOS may
+	require you to quit and reopen Kinetiq after granting them. The app lives in the
+	menu bar; closing its management window does not quit it. Reopen Settings from
+	the menu bar, and quit from **Kinetiq → Quit**.
+
+Analytics is optional and off by default. Build 44 asks for updated **GA4 revision-3
+consent** before reading/sending the configured country. Declining does not disable
+effects. Installing the app does **not** enable or install the system screen saver;
+that remains a separate explicit opt-in.
+
+### First launch: why macOS may block the app
+
+This release is **not notarized by Apple**. Its app and embedded saver have verified
+local signatures, but an **ad-hoc signature is not an Apple Developer ID or notarization**.
+macOS can therefore show “developer cannot be verified” or “Apple cannot check it
+for malicious software”. Downloaded apps are marked with `com.apple.quarantine`,
+which tells Gatekeeper to perform first-launch checks. A warning is not proof that
+the app is safe—or that it is malicious.
+
+**Recommended:** after trying to open the installed copy, go to **System Settings →
+Privacy & Security**, find Kinetiq under Security and select **Open Anyway**, then
+confirm **Open**. Only do this for the original release you intentionally downloaded
+and verified. See [Apple's first-launch guidance](https://support.apple.com/en-us/102445).
+No `xattr` command is normally necessary when this route works.
+
+**Terminal alternative, only for that trusted copy:** if the quarantine warning still
+prevents opening it, remove **only the quarantine attribute**, recursively within
+this app bundle, and then open it:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Kinetiq.app"
+open "/Applications/Kinetiq.app"
+```
+
+Here `-d` deletes the named attribute and `-r` includes bundled files. The often-shared
+`xattr -cr` command instead clears **all** extended attributes recursively; that is
+broader than needed and can discard unrelated metadata, so it is not recommended.
+Neither command notarizes the app, verifies its origin, grants Accessibility/Screen
+Recording or fixes an invalid signature. An absent quarantine attribute means no
+removal is needed. Do not apply these commands to `/Applications` as a whole, disable
+Gatekeeper globally, or use them to ignore “will damage your computer”, revoked
+authorization or a genuinely damaged/tampered app: stop and verify/re-download instead.
+On managed Macs, follow your administrator's policy. If the installed copy is not
+writable, use a writable app folder such as `~/Applications` and adjust the quoted
+path; do not blindly run commands with elevated privileges.
 
 ## Usage
 
@@ -312,8 +407,9 @@ features usable.
 
 GA4 uses Boolean preferences `kinetiq.telemetry.ga4.analytics` and
 `kinetiq.telemetry.ga4.analyticsDecision`. Previous Firebase/PostHog consent and UUIDs
-are untouched and **not carried over**. Revision **2** is additionally required at
-`kinetiq.telemetry.ga4.usageConsentRevision` (native mode has its own revision key).
+are untouched and **not carried over**. Revision **3** is required at
+`kinetiq.telemetry.ga4.usageConsentRevision`; native mode retains revision **2** at
+`kinetiq.telemetry.firebase.usageConsentRevision`.
 An old grant without the current revision leaves analytics off and requires the
 updated prompt; it is not extended silently. The separate pseudonymous UUID is created
 only on consented startup and stored in app-local UserDefaults at
@@ -326,9 +422,12 @@ Privacy & Analytics. That section's actual visit still uses the readiness/enable
 consent-keyed cancellable 100 ms task, not busy state. GA4 sends only allowlisted
 actions and the separate `client_id`, not window titles, screenshots, documents,
 crash reports, OS/hardware metadata or automatic native/core lifecycle events.
-Google receives connection IP and network metadata, but MP-only City/Country is
-not guaranteed without tagging history; no location override is sent. This is not
-network anonymity. Advertising user data and
+Google receives connection IP and network metadata. After fresh revision-3 consent,
+the configured-country-only override above targets standard Country, not actual
+position or City; invalid/missing country omits it without fallback. Its memory
+snapshot clears on stop/withdrawal and refreshes on the next consented start. Reports
+can remain incomplete and configured country can distort maps. This is not network
+anonymity. Advertising user data and
 personalization are explicitly denied. A positive `session_id` uses the actual `Date`
 and refreshes after 30 minutes without approved actions. `ContinuousClock` measures
 actual foreground time only after consent, using NSApp activation notifications;
@@ -618,7 +717,7 @@ Liquid physics lives in `Sources/KinetiqCore/LiquidWorld.swift`; `KinetiqEffects
 
 Native-resolution optical tests compare transported text edges against the actual captured pixels, isolate refraction/reflection without changing coverage, and compare the manual float32 filter to hardware filtering when supported. Set `KINETIQ_LIQUID_BENCHMARK=1` to print GPU timings for 40 warmed frames at three fluid states (simulation and readback excluded). With the temporary dump directory above, `KINETIQ_LIQUID_TEST_DUMP_FRAMES=1` also saves individual native-resolution test-document PNGs. Timings depend on GPU, display and current load; they are diagnostics, not fixed CI performance thresholds.
 
-The graphical Liquid test displays this actual README in a disposable native text window; it requires more than 32 coherent edge samples at 1.5 s, a contrast ratio above 0.65 and material RGB error below 0.18. Text/layout changes can affect this real-capture regression and should be rechecked, not worked around with a fabricated image.
+The graphical Liquid test displays this actual README in a disposable native text window; it requires more than 32 coherent edge samples at 1.5 s, a contrast ratio above 0.65 and material RGB error below 0.18. Text/layout changes can affect this real-capture regression and must be rechecked after documentation changes, not worked around with a fabricated image. The post-edit release-preparation recheck is recorded in `docs/telemetry.md`, separately from historical results.
 
 ### Source map and API reference
 
