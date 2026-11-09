@@ -31,6 +31,9 @@ City/Country may be `(not set)`. Report setup is documented, not automated.
 	captured-README optics), zero failures/skips (`/tmp/kinetiq-usage-postdocs.log`).
 	Publication is tracked separately in Git/PR history, on a dedicated firebase branch
 	followed by a normal merge; no new DMG/tag/release is requested.
+- **Review — Lorenzo:** hosted `host` CI on PR #6 was blocked before job startup by
+	GitHub account billing/spending limits. Review Billing & plans and rerun Actions;
+	this is not a hosted test pass. No account settings or protections were changed.
 
 **Layouts capture admission — v0.4.2 / build 42:** task 22 Done (Copilot, implementation/local acceptance).
 Reproduced the exact quality-budget error at nominal thermal pressure with four

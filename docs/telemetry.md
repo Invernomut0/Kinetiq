@@ -169,6 +169,13 @@ for build 43 and the updated consent choice. G2/F2 live-ingestion/privacy/distri
 gates remain owner Review; no native fallback enablement, report ingestion, hosted CI
 success, new DMG or release publication is implied by these local checks.
 
+**Hosted CI — blocked before execution (PR #6):** GitHub's `host` annotation says
+the job was not started because recent account payments failed or the spending limit
+must be increased. This is not a test result: no hosted build/test pass is claimed.
+Owner Lorenzo must review **Billing & plans** and rerun Actions after resolving the
+account restriction. No billing settings, workflow checks or branch protections are
+changed or bypassed by this task; local acceptance above remains separate evidence.
+
 ## Historical: privacy-settings-only GA4 Web transport — v0.3.4 / build 39 (2026-11-08)
 
 Everything in this section through its acceptance table and coverage records
