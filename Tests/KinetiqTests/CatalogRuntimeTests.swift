@@ -14,13 +14,17 @@ import XCTest
 final class CatalogRuntimeTests: XCTestCase {
     @MainActor private static var preparedApplication = false
 
-    @MainActor private func runtime(enabled: Bool = true, quality: RenderQuality = .high) throws -> CatalogRuntime {
+    @MainActor private func runtime(enabled: Bool = true, quality: RenderQuality = .high,
+                                    thermalState: RenderQualityPolicy.ThermalState = .nominal) throws -> CatalogRuntime {
         let suite = "io.github.invernomut0.Kinetiq.catalog-tests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let settings = Settings(defaults: defaults)
         settings.enabled = enabled
-        return CatalogRuntime(settings: settings, budget: { .forQuality(quality) },
+        var policy = RenderQualityPolicy(selection: quality)
+        policy.refreshEnvironment(thermalState: thermalState, lowPowerMode: false)
+        let budget = policy.budget
+        return CatalogRuntime(settings: settings, budget: { budget },
                       qualityManager: RenderQualityManager(defaults: defaults))
     }
 
@@ -214,11 +218,25 @@ final class CatalogRuntimeTests: XCTestCase {
         XCTAssertEqual(window.frame, original)
     }
 
-    @MainActor func testLowBudgetRejectsExpensiveCaptureWithoutChangingLiveDocument() async throws {
+    @MainActor func testLowBudgetPlaysExpensiveCaptureWithoutChangingLiveDocument() async throws {
         let window = try documentWindow(); defer { window.close() }
         let original = window.frame
         let (frame, rect) = try await captured(window)
         let runtime = try runtime(quality: .low); defer { runtime.stop() }
+        XCTAssertTrue(runtime.playCaptured(frame, windowFrame: rect, preset: EffectPreset(effect: .shatter)))
+        XCTAssertTrue(runtime.isPlaying)
+        XCTAssertTrue(runtime.hasScene)
+        XCTAssertNil(runtime.errorMessage)
+        try await Task.sleep(for: .milliseconds(60))
+        runtime.stop()
+        XCTAssertEqual(window.frame, original)
+    }
+
+    @MainActor func testCriticalThermalBudgetRejectsExpensiveCaptureWithoutChangingLiveDocument() async throws {
+        let window = try documentWindow(); defer { window.close() }
+        let original = window.frame
+        let (frame, rect) = try await captured(window)
+        let runtime = try runtime(quality: .ultra, thermalState: .critical); defer { runtime.stop() }
         XCTAssertFalse(runtime.playCaptured(frame, windowFrame: rect, preset: EffectPreset(effect: .shatter)))
         XCTAssertFalse(runtime.isPlaying)
         XCTAssertFalse(runtime.hasScene)

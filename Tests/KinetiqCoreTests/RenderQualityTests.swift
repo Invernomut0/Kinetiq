@@ -18,6 +18,7 @@ final class RenderQualityTests: XCTestCase {
             XCTAssertTrue((0.25...1).contains(budget.textureScale))
             XCTAssertTrue((1...1500).contains(budget.maxParticles))
             XCTAssertTrue((15...120).contains(budget.secondaryFPS))
+            XCTAssertTrue(budget.allowsExpensive, "Quality choices reduce fidelity, not effect availability")
         }
         let policy = RenderQualityPolicy()
         XCTAssertNil(policy.gpuMilliseconds)
@@ -43,7 +44,9 @@ final class RenderQualityTests: XCTestCase {
             XCTAssertLessThanOrEqual(b.secondaryFPS, a.secondaryFPS)
         }
         XCTAssertEqual(resources, resources.sorted())
-        XCTAssertEqual(Set(resources), Set(0...5))
+        XCTAssertEqual(Set(resources), Set(0...4))
+        XCTAssertEqual(budgets.count - 1, 12)
+        XCTAssertTrue(budgets.allSatisfy(\.allowsExpensive))
     }
 
     func testSustainedOverloadTraversesEntireLadderWithCooldown() {
@@ -61,7 +64,7 @@ final class RenderQualityTests: XCTestCase {
         }
         XCTAssertEqual(transitions, RenderQualityPolicy.autoBudgets)
         for (a, b) in zip(changedAt, changedAt.dropFirst()) { XCTAssertGreaterThanOrEqual(b - a, 3 - 1e-9) }
-        XCTAssertFalse(policy.budget.allowsExpensive)
+        XCTAssertTrue(policy.budget.allowsExpensive, "Overload must not stop the work needed for recovery")
         XCTAssertEqual(policy.resolvedQuality, .low)
     }
 
@@ -127,10 +130,11 @@ final class RenderQualityTests: XCTestCase {
             policy.refreshEnvironment(thermalState: .nominal, lowPowerMode: true)
             XCTAssertLessThanOrEqual(policy.budget.secondaryFPS, 60)
             policy.refreshEnvironment(thermalState: .serious, lowPowerMode: false)
-            XCTAssertFalse(policy.budget.allowsExpensive)
+            XCTAssertTrue(policy.budget.allowsExpensive)
             XCTAssertEqual(policy.resolvedQuality, .low)
             policy.refreshEnvironment(thermalState: .critical, lowPowerMode: true)
             XCTAssertEqual(policy.budget.secondaryFPS, 15)
+            XCTAssertFalse(policy.budget.allowsExpensive)
             XCTAssertEqual(policy.selection, quality)
             policy.refreshEnvironment(thermalState: .nominal, lowPowerMode: false)
             XCTAssertEqual(policy.budget, .forQuality(quality))
@@ -149,6 +153,23 @@ final class RenderQualityTests: XCTestCase {
         policy.select(.auto)
         policy.refreshEnvironment(thermalState: .nominal, lowPowerMode: false)
         XCTAssertEqual(policy.budget, .forQuality(.high))
+    }
+
+    func testCriticalThermalGateRecoversWithoutAnotherGPUCompletion() {
+        for quality in RenderQuality.allCases {
+            var policy = RenderQualityPolicy(selection: quality)
+            for state in [RenderQualityPolicy.ThermalState.nominal, .fair, .serious] {
+                for lowPower in [false, true] {
+                    policy.refreshEnvironment(thermalState: .critical, lowPowerMode: lowPower)
+                    XCTAssertFalse(policy.budget.allowsExpensive)
+                    XCTAssertEqual(policy.budget.secondaryFPS, 15)
+                    policy.refreshEnvironment(thermalState: state, lowPowerMode: lowPower)
+                    XCTAssertTrue(policy.budget.allowsExpensive, "Recovery must not require blocked GPU work")
+                    XCTAssertNil(policy.gpuMilliseconds)
+                    XCTAssertEqual(policy.selection, quality)
+                }
+            }
+        }
     }
 
     func testParticleLimitClampsAndDefaultRemainsBackwardsCompatible() {

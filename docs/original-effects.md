@@ -1,4 +1,4 @@
-# Original (built-in) effects — v0.4.0 (build 40)
+# Original (built-in) effects — v0.4.1 (build 41)
 
 Every prior effect is discoverable by the window event it reacts to: the menu bar's **Open**, **Close** and **Minimize** submenus and the matching Effects sections list each built-in next to the compatible Studio presets, with a live preview and a **Use when…** button. The six legacy categories below remain as metadata (they group the **Try an Effect** menu and the Studio's Add Layer menu). Nothing here replaces the original engines or migrates preferences. Since v0.4.0 the 45 non-Liquid built-ins can also be **Animation Studio layers** (schema 2 `builtin` field), forwards or in reverse, and combined into My Effects; **Try an Effect** in the menu bar plays any of them, Liquid and Window Destruction included, once on the front window without closing it.
 
@@ -136,7 +136,7 @@ Previews never move, park, close or minimize a live window. Liquid's local stage
 - Each source capture is capped at **32,000,000 pixels and 16384 pixels per dimension**, including capture/shadow allocation checks. Real target eligibility and unchanged frame are checked around capture/render completion.
 - At most **two preview requests are in flight** per renderer. New work invalidates stale generations; cancellation, hidden/closed detail panels and disabled effects prevent stale results from being displayed. Bounded simulation loops yield and check cancellation.
 - The captured pixel buffer, IOSurface/CoreVideo mapping and `CVMetalTexture` backing remain retained through committed GPU command completion, even if the requesting task disappears or is superseded. Captures stay in memory, not Studio JSON or a new disk cache.
-- Mesh/particle/texture budgets still apply. When `allowsExpensive` is false, **original close shader, Liquid and Window Destruction previews refuse playback**; there is no fallback to Glide or another misleading substitute. This preview rule does not redefine native engine lifecycle behavior.
+- Mesh/particle/texture budgets still apply. Low and all Auto budgets keep effects available with reduced resources. Only critical thermal pressure closes `allowsExpensive`: **original close shader, Liquid and Window Destruction previews then refuse playback**; there is no fallback to Glide or another misleading substitute. Cooling below critical reopens the gate without needing another GPU completion. This preview rule does not redefine native engine lifecycle behavior. Kinetiq's own Settings/management windows are always excluded from native effects, with a locked Rules entry; other app rules remain editable.
 
 ## Native trigger lifecycle remains unchanged
 

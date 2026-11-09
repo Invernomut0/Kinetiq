@@ -5,6 +5,20 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — Build 41
+
+### Fixed
+
+- Low quality and the entire Auto ladder now reduce resource use without disabling expensive effects. The former final Auto gate could prevent further GPU work and thus the samples needed to recover, leaving effects unavailable. Adaptation now has 12 resource-only steps; the existing GPU thresholds and memory/capture limits are unchanged.
+- Serious thermal pressure still caps quality at Low but permits effects. Critical thermal pressure retains the expensive-effects block and 15 Hz secondary ceiling, including for manual Ultra; cooling below critical reopens the gate without needing a GPU sample.
+- Kinetiq's own Settings/management windows are permanently excluded. The Rules entry is locked, model removal is rejected, settings reads/writes preserve the mandatory rule, and runtime checks protect Kinetiq even with legacy or externally edited exclusion lists. Other app rules and internal previews remain available.
+
+### Verification
+
+- Complete Release suite: **376 passed — 192 app + 36 Effects + 148 Core; zero failures/skips**, with real capture/Metal playback, Low-quality heavy-effect previews, critical thermal refusals, recovery and isolated persisted exclusion tests. Log: `/tmp/kinetiq-budget-release.log`.
+- Universal app and embedded saver: **x86_64 + arm64**, version **0.4.1 / 41**, both deep/strict signatures passed. Bundle verification and signed disabled smoke passed; no normal consented app launch or live analytics probe. Build log: `/tmp/kinetiq-budget-build.log`.
+- LLVM **Lines**: quality policy **98.75%**, Settings **94.09%**, SetupWindow **78.61%**, PerformanceView **96.46%** (`/tmp/kinetiq-budget-coverage.txt`). Not exhaustive integration or Metal shader branch coverage.
+
 ## [0.4.0] — Build 40
 
 ### Added

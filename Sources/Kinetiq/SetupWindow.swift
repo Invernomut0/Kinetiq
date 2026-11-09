@@ -217,6 +217,7 @@ final class SetupModel: ObservableObject {
     }
 
     func removeExclusion(_ bundleID: String) {
+        guard bundleID != Settings.protectedExclusionID else { return }
         settings.excludedApps.removeAll { $0 == bundleID }
         refresh()
     }
@@ -444,7 +445,8 @@ struct SetupControlsView: View {
                     Text("No excluded apps").foregroundStyle(.secondary)
                 }
                 ForEach(settings.excludedApps, id: \.self) { id in
-                    AppRow(bundleID: id, remove: { model.removeExclusion(id) }) { EmptyView() }
+                    AppRow(bundleID: id, canRemove: id != Settings.protectedExclusionID,
+                           remove: { model.removeExclusion(id) }) { EmptyView() }
                 }
                 HStack {
                     Menu("Add Running App") {
@@ -457,7 +459,7 @@ struct SetupControlsView: View {
             } header: {
                 Text("Exclusions")
             } footer: {
-                Text("Windows of these apps get no wobble, resize, maximize or close effect. Kinetiq's own windows (this one) are excluded by default.")
+                Text("Windows of these apps get no effects. Kinetiq's own windows (including Settings) are always excluded; this protection cannot be removed.")
             }
         }
     }
@@ -517,11 +519,14 @@ private struct SliderRow: View {
 
 private struct AppRow<Accessory: View>: View {
     let bundleID: String
+    let canRemove: Bool
     let remove: () -> Void
     @ViewBuilder let accessory: () -> Accessory
 
-    init(bundleID: String, remove: @escaping () -> Void, @ViewBuilder accessory: @escaping () -> Accessory) {
+    init(bundleID: String, canRemove: Bool = true, remove: @escaping () -> Void,
+         @ViewBuilder accessory: @escaping () -> Accessory) {
         self.bundleID = bundleID
+        self.canRemove = canRemove
         self.remove = remove
         self.accessory = accessory
     }
@@ -539,9 +544,11 @@ private struct AppRow<Accessory: View>: View {
             }
             Spacer()
             accessory()
-            Button(role: .destructive, action: remove) { Image(systemName: "minus.circle") }
+            Button(role: .destructive, action: remove) { Image(systemName: canRemove ? "minus.circle" : "lock.fill") }
                 .buttonStyle(.borderless)
-                .help("Remove app rule")
+                .disabled(!canRemove)
+                .accessibilityLabel(canRemove ? "Remove app rule" : "Kinetiq is always excluded")
+                .help(canRemove ? "Remove app rule" : "Kinetiq's Settings window must remain excluded")
         }
     }
 }

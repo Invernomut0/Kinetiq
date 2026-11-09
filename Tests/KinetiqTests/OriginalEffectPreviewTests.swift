@@ -235,12 +235,26 @@ final class OriginalEffectPreviewTests: XCTestCase {
             XCTAssertGreaterThan(try alphaMass(image), 10)
         }
         let low = OriginalPreviewRenderer(budget: { .forQuality(.low) })
+        let original = window.frame
+        let expensive = [LibraryEffect.close(.fire), .liquid, .destruction]
+            + EffectCatalog.effects.filter(\.expensive).map { LibraryEffect.catalog($0.id) }
+        for effect in expensive {
+            let output = try await low.previewCaptured(effect: effect, frame: frame,
+                windowFrame: rect, progress: 0.3, settings: preferences)
+            XCTAssertGreaterThan(try alphaMass(pixels(output)), 10, effect.id)
+            XCTAssertEqual(window.frame, original)
+            XCTAssertFalse(window.isMiniaturized)
+        }
+        XCTAssertEqual(low.inFlight, 0)
+        var policy = RenderQualityPolicy(selection: .ultra)
+        policy.refreshEnvironment(thermalState: .critical, lowPowerMode: false)
+        let critical = OriginalPreviewRenderer(budget: { policy.budget })
         do {
-            _ = try await low.previewCaptured(effect: .close(.fire), frame: frame, windowFrame: rect, progress: 0.3, settings: preferences)
-            XCTFail("Budget must refuse an unscalable shader, never substitute another effect")
+            _ = try await critical.previewCaptured(effect: .close(.fire), frame: frame, windowFrame: rect, progress: 0.3, settings: preferences)
+            XCTFail("Critical thermal pressure must still refuse expensive effects")
         } catch { XCTAssertTrue(error.localizedDescription.contains("budget")) }
         do {
-            _ = try await low.previewCaptured(effect: .liquid, frame: frame, windowFrame: rect, progress: 0.3, settings: preferences)
+            _ = try await critical.previewCaptured(effect: .liquid, frame: frame, windowFrame: rect, progress: 0.3, settings: preferences)
             XCTFail("Liquid must respect the same expensive-effects gate as native playback")
         } catch { XCTAssertTrue(error.localizedDescription.contains("budget")) }
         XCTAssertEqual(preferences.physics, savedPhysics)
