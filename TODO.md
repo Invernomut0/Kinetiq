@@ -2,11 +2,115 @@
 
 Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (implementation).
 
-**Published release — v0.5.1 / build 44:** task **25 Done**, owner **Copilot**.
+**Published release — v0.5.2 / build 45: task 27 Done**, owner **Copilot**.
+Package the normally merged PR #9 wobbly fix; telemetry, consent, dependencies and
+runtime sources/tests are unchanged. README/install/release records updated.
+
+- **Done — Copilot (local acceptance):** complete serial Release **421 = 237 app +
+	36 Effects + 148 Core**, zero failures/skips (`/tmp/kinetiq-v052-final-release.log`).
+	All seven real native compatibility cases and actual captured-README optics passed
+	(2.500 s), after the last README edit. No test assertions or source changes.
+- **Historical failed attempts:** first full run had three app assertions (one
+	unexpected), while Effects/Core passed (`/tmp/kinetiq-v052-release.log`). Two
+	Liquid cases failed: helper-frontmost/`windowNotShareable` and real-obstacle geometry.
+	Focused two-case rerun retained two assertions in the helper case; obstacle passed
+	(`/tmp/kinetiq-v052-focused.log`). Final complete suite passed unchanged. Session
+	blocking was false; a definitive transient-environment root cause is not claimed.
+- **Done — Copilot:** universal arm64 + x86_64 app/saver **0.5.2/45**, strict signatures,
+	bundle verifier and correct disabled `--telemetry-smoke-test` passed. Logs:
+	`/tmp/kinetiq-v052-build.log`, `-bundle.log`, `-smoke.log`. No normal user-app
+	lifecycle, real consent automation or live analytics in this release verification.
+- **Done — Copilot:** matching LLVM **Lines** AXBridge 81.00%, WindowLocator 87.08%,
+	controller 50.17%, overlay 97.44% (`/tmp/kinetiq-v052-coverage.txt`, matching
+	`-KinetiqTests` and `-release.profdata` saved before build). Not exhaustive/Metal coverage.
+- **Done — Copilot:** new DMG integrity, read-only mounted app/saver byte comparison,
+	versions/architectures/signatures and SHA-256 verification passed (`/tmp/kinetiq-v052-dmg.log`).
+	`Kinetiq-0.5.2.dmg`: 13,961,781 bytes; SHA-256
+	`4662ed5dd0616a6a1d90d8fa9cdfe003fd7531cdbac598b7b752d4bd38725997`.
+	`SHA256SUMS.txt`: 84 bytes; file SHA-256
+	`c59eeeb464b15ced2797739ff4065ac338251391b0d05eeb70ae05437f8b93ad`.
+	Existing v0.5.1 DMG hash is unchanged.
+- **Done — Copilot (remote publication):** PR #10 merged normally from exact release
+	head `f0cd7d0ea87df77e81b8525e3f546301a6551c77` at
+	`e28f22dfa2adaea24d07a99d87399d41cfa5c611`. Annotated `v0.5.2` tag object
+	`629bd4e2060bac762f84f16951ac6df87884acd2` peels to that exact merge commit.
+	[GitHub v0.5.2 release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.2)
+	is verified published, non-draft, non-prerelease and Latest; both assets' uploaded
+	states, sizes and server SHA-256 digests match the local bytes recorded above.
+	Repository metadata reports PUBLIC and anonymous webpage access was confirmed;
+	we did not change visibility. Initial release notes inherited the historical private
+	assumption; only release/PR descriptions were corrected to public downloads,
+	without changing the tag or assets.
+- **Done — Copilot (historical release preservation):** v0.5.1 annotated tag object
+	`0677bd429ad88876a95eef1986804ac879248a6c` and target
+	`2a8d3f4d937111f5602d1a50424cec53a37a4d30` are unchanged. Local and remote
+	old DMG SHA-256 both remain
+	`2c5a8074501d4af32d52643731fb6a7997e015e75e97590eed63e697a2ba040f`.
+- **Review — Lorenzo:** the new tagged `Release` workflow was observed IN_PROGRESS,
+	not passed. No checks, protections or billing settings changed. G2/F2 privacy,
+	live ingestion, distribution and native signing gates remain Review; not notarized.
+	User launch settings, `.serena` and audio excluded.
+
+**Wobbly window compatibility — task 26 Done**, owner **Copilot**
+(implementation and local acceptance; publication tracked in PR #9).
+Drag-only admission supports app-owned floating/modal/popup levels, small windows,
+safe missing-close-button title strips and modifier drags on movable custom/borderless
+windows. Require exact AX/CG identity and writable position; never move a popup's
+parent. Native controls, resize borders, user/own exclusions and security surfaces
+remain protected. Drag overlays follow the target level; lookup queries are bounded,
+movement keeps normal IPC timeouts. No analytics/schema/consent/version changes.
+
+- **Done — Copilot (initial run):** seven genuine AppKit helper regressions initially passed,
+	zero failures/skips (`/tmp/kinetiq-wobbly-focused-3.log`), before the final AX
+	identity/timeout refinements. Editor diagnostics are clear.
+- **Done — Copilot:** universal app/saver build exit 0, both arm64 + x86_64,
+	strict signatures passed (`/tmp/kinetiq-wobbly-build.log`). Resource verifier
+	and correct `--telemetry-smoke-test` passed, exit 0
+	(`/tmp/kinetiq-wobbly-bundle-check.log`, `/tmp/kinetiq-wobbly-disabled-smoke.log`).
+	Independent source review found no concrete P0/P1 issue; this is not native acceptance.
+- **Done — Copilot (earlier non-graphical run):** serial Release suites: **184 passed =
+	36 Effects + 148 Core**, zero failures, exit 0
+	(`/tmp/kinetiq-wobbly-nongraphical-final.log`); superseded by complete acceptance below.
+- **Review — Copilot/Lorenzo:** an incorrectly invoked smoke used an unrecognized
+	environment flag and briefly entered normal startup. Its separate test-owned
+	process was closed; the preexisting instance was preserved. No consent was
+	automated or live probe intentionally sent; zero automatic traffic is not asserted.
+- **Historical blocked run — Copilot:** graphical acceptance was blocked by the locked
+	macOS session. Full Release: 237 app tests / 43 assertion failures (13 unexpected),
+	plus 36 Effects and 148 Core passed (`/tmp/kinetiq-wobbly-release.log`);
+	isolated seven-test rerun: 12 assertion failures / six readiness errors
+	(`/tmp/kinetiq-wobbly-strict-focused.log`). Metadata-only diagnostic confirmed
+	full-screen `loginwindow` layers above owned helpers. No assertions weakened,
+	lock-screen bypass or real consent manipulation in these test runs.
+- **Done — Copilot (unlocked acceptance):** complete Release **421 = 237 app +
+	36 Effects + 148 Core**, zero failures/skips, exit 0
+	(`/tmp/kinetiq-wobbly-unlocked-release.log`). All seven native compatibility tests,
+	actual capture/Metal/parking/exact restore and README optics passed unchanged assertions.
+- **Done — Copilot (final README):** remote documentation through `188fd2d` merged;
+	final focused **8 passed = 7 wobbly + 1 actual captured-README optics**, zero
+	failures/skips, exit 0 (`/tmp/kinetiq-wobbly-unlocked-postdocs.log`; optics 2.683 s).
+- **Done — Copilot:** fresh universal app/saver build exit 0, both arm64 + x86_64,
+	strict signatures, resource verifier and correct disabled CLI smoke all passed.
+	Logs `/tmp/kinetiq-wobbly-unlocked-build.log`, `-bundle.log`, `-smoke.log`.
+	No normal user-app lifecycle, consent automation or live probe in this acceptance run.
+- **Done — Copilot:** matching LLVM **Lines** AXBridge 81.00%, WindowLocator 87.08%,
+	KinetiqController 48.89%, OverlayWindow 97.44%
+	(`/tmp/kinetiq-wobbly-unlocked-coverage.txt`, matching `-release.profdata` and
+	`-KinetiqTests` saved before focused rerun). Not exhaustive, named third-party app
+	runtime certification or Metal shader coverage. Version/build remain 0.5.1/44;
+	existing release/tag/DMG and G2/F2 owner gates unchanged.
+- **Publication — Copilot:** committed/pushed on `firebase-wobbly-windows`;
+	[PR #9](https://github.com/Invernomut0/Kinetiq/pull/9) began as draft while locked.
+	Native acceptance now permits normal review/merge, recorded in Git/PR history.
+	User launch settings, `.serena` and untracked marketing audio remain excluded;
+	concurrent main documentation/video retained. Hosted CI is not claimed green.
+
+**Historical published release — v0.5.1 / build 44:** task **25 Done**, owner **Copilot**.
 README installation/first-launch instructions, final captured-README optics and
 DMG/checksum verification are complete; PR #7 normal merge, annotated tag and
 [GitHub Latest release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.1)
-with matching server asset digests are verified. Repository stays private; login required.
+with matching server asset digests are verified. At publication, the repository was
+private and required authorized login; this is historical access evidence.
 Prefer Open Anyway; targeted quarantine removal only for a trusted, verified copy,
 not broad `xattr -cr`, global Gatekeeper disablement or damaged/malware-warning bypass.
 
@@ -183,6 +287,8 @@ pin, without SDK source edits.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
+| 27 | Publish v0.5.2/build 45 with the wobbly compatibility fix | Done | Owner: Copilot. Final Release421, zero failures/skips, actual README optics and seven real wobbly cases; matching Lines, universal app/saver, strict signatures, bundle/disabled smoke and read-only byte-verified DMG/checksum passed. Initial failed attempts retained above. PR #10 normal exact-head merge, annotated tag on e28f22dfa2adaea24d07a99d87399d41cfa5c611 and Latest non-draft/non-prerelease release with matching uploaded asset sizes/server digests verified. Public access confirmed without visibility changes; only release/PR descriptions corrected. Old v0.5.1 tag/assets and user files preserved. Tagged Release CI observed IN_PROGRESS, not passed; G2/F2 remain Review, not notarized. |
+| 26 | Broaden safe wobbly window compatibility | Done | Owner: Copilot, implementation/local acceptance. Unlocked complete Release421 (237 app + 36 Effects + 148 Core), zero failures/skips; all seven real native regressions pass. Final README optics + wobbly8 passed; universal app/saver, strict signatures, bundle/disabled smoke and matching Lines verified above. Historical loginwindow failures and incorrect-smoke incident retained. PR #9 normal publication tracked in Git history. No named third-party app certification, exclusion/security bypass or new release. |
 | 25 | GitHub v0.5.1 release and safe first-launch instructions | Done | Owner: Copilot. README installation, checksum, Gatekeeper and targeted quarantine guidance implemented; post-doc90 including real optics, DMG integrity/read-only byte comparison/universal metadata/signatures and checksum passed. PR #7 normal merge 2a8d3f4, annotated v0.5.1 and Latest publication with matching uploaded asset digests verified. Private repository requires authorized login; no visibility, real consent/live analytics, normal app lifecycle or billing/protection changes. Hosted CI failures remain separate owner Review. |
 | 24 | Consented macOS configured country for standard GA4 Country | Done | Owner: Copilot, implementation/local acceptance only. v0.5.1/build 44; GA4 revision 3/native 2, country-only top-level user_location, closed ISO249, no custom country key or fabricated location. Final Release414, 89 analytics; matching Lines and universal package/signatures/bundle/disabled smoke verified in docs/telemetry.md. Actual Mac-region getter/live delivery unexecuted. Final post-edit README optics and publication tracked in task25; G2/F2 remain owner Review. |
 | 23 | Revision-2 opt-in product analytics and practical GA4 reporting | Done | Owner: Copilot, implementation/local acceptance only. v0.5.0/build 43; six typed events/five-property allowlist, finite IDs, actual starts vs selections, Studio actions, app-side saver actions and manual quality; old grants require updated consent. Complete Release 407 passed, 82 analytics contracts; post-documentation 83 passed including actual README optics. Universal package/signatures/bundle/disabled smoke and matching Lines verified above. Earlier native capture failures documented, final suite passed unchanged assertions. Publication tracked separately in Git/PR history. G2/F2 owner gates stay Review. |

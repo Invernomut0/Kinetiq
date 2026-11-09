@@ -17,7 +17,7 @@
   <a href="https://buymeacoffee.com/invernomut0"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy%20me%20a%20coffee-ffdd00?logo=buymeacoffee&logoColor=000"></a>
 </p>
 
-https://github.com/user-attachments/assets/a0a1cb90-5acb-4949-8daf-f1a8077bc120
+https://github.com/user-attachments/assets/96e8ca2d-131d-411c-ab5c-c8943e25a40a
 
 <p align="center"><sub>Music: <i>Eternity</i> by Pufino · Free To Use Music (freetouse.com)</sub></p>
 
@@ -61,6 +61,14 @@ Kinetiq lives in the menu bar; closing its window does not quit it. The [install
 | See all windows in 3D | **⌃⌥↑**, or menu bar → **Arrange Windows** |
 | Try any effect on the front window | Menu bar → **Try an Effect on the Front Window** |
 | Exclude an app or give it its own close effect | **Rules** |
+
+Wobbly also targets movable floating/modal panels, small windows and windows without
+a close button. For custom or borderless windows, use **⌃⌘ + drag**; ordinary title-bar
+drags leave buttons, tabs and text fields native. Accessibility and Screen Recording
+must be granted, and the target must expose its exact movable window to macOS.
+App exclusions (including Kinetiq itself), menus, locked-screen surfaces, full-screen
+windows and nonmovable/protected popovers remain outside this support. These
+compatibility improvements are included starting with **v0.5.2**.
 
 The **[Wiki](https://github.com/Invernomut0/Kinetiq/wiki)** walks through every feature step by step. The [user guide](docs/user-guide.md) explains every page, effect and setting. See also the [Animation Studio guide](docs/animation-studio.md) and the [list of built-in effects](docs/original-effects.md).
 

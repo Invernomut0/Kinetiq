@@ -9,8 +9,9 @@ both architectures; no Xcode, Python or terminal build is needed to run it.
 
 ### Download, install and launch
 
-1. Download `Kinetiq-0.5.1.dmg` and `SHA256SUMS.txt` from the project's
-	[v0.5.1 GitHub release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.1).
+1. Download `Kinetiq-0.5.2.dmg` and `SHA256SUMS.txt` from the project's
+	[v0.5.2 GitHub release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.2).
+	If the repository is private, sign in with an account that has access.
 	Choose the DMG asset, **not** GitHub's **Source code** ZIP/TAR, which has no ready-to-run app.
 2. Optionally verify the download in Terminal from the folder containing both files:
 
@@ -37,7 +38,7 @@ both architectures; no Xcode, Python or terminal build is needed to run it.
 	menu bar; closing its management window does not quit it. Reopen Settings from
 	the menu bar, and quit from **Kinetiq → Quit**.
 
-Analytics is optional and off by default. Build 44 asks for updated **GA4 revision-3
+Analytics is optional and off by default. Since build 44, it requires **GA4 revision-3
 consent** before reading/sending the configured country. Declining does not disable
 effects. Installing the app does **not** enable or install the system screen saver;
 that remains a separate explicit opt-in.

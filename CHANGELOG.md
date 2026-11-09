@@ -5,6 +5,89 @@ All notable changes to Kinetiq are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.5.2] — Build 45
+
+### Fixed
+
+- Wobbly drag selection now includes small app-owned floating, modal and popup-level
+  windows, independently of the stricter locator used by other effects. Exact AX/CG
+  identity and writable position are required; a popup never falls back to its parent.
+- Recognize safe title strips without a close button and additional noninteractive
+  title-bar containers; buttons, tabs and editable fields retain native input. Custom
+  or borderless movable surfaces can use the configured modifier (default ⌃⌘).
+- Place drag overlays above their target's level. Preserve own-app/user exclusions,
+  resize borders, system/menu/security surfaces and full-screen refusal. Bound AX
+  lookup queries while retaining normal messaging timeouts for movement.
+
+### Verification status
+
+- Seven real, disposable README-backed AppKit compatibility regressions passed in
+  the final complete Release suite (`/tmp/kinetiq-wobbly-unlocked-release.log`).
+  They cover native controls, floating/modal/popup panels, a 70×35 panel, missing close
+  button, borderless movability, own-process exclusion and actual capture/parking/restore.
+- **Historical locked-session run:** the earlier complete
+  Release run executed 237 app tests with 43 assertion failures (13 unexpected),
+  while 36 Effects and 148 Core tests passed (`/tmp/kinetiq-wobbly-release.log`).
+  The isolated seven-test rerun also failed readiness. A bounded metadata-only
+  diagnostic confirmed full-screen `loginwindow` layers above the test helpers.
+  No lock-screen bypass or consent manipulation in those test runs.
+- **Final unlocked local acceptance: 421 passed = 237 app + 36 Effects + 148 Core**,
+  zero failures/skips, exit 0 (`/tmp/kinetiq-wobbly-unlocked-release.log`). No assertions
+  weakened. After integrating the latest README through `188fd2d`, final focused
+  **8 passed = 7 native wobbly + 1 actual captured-README optics**, zero failures/skips,
+  exit 0 (`/tmp/kinetiq-wobbly-unlocked-postdocs.log`; optics 2.683 seconds).
+- Matching LLVM **Lines**: AXBridge 81.00%, WindowLocator 87.08%, controller 48.89%,
+  overlay 97.44% (`/tmp/kinetiq-wobbly-unlocked-coverage.txt`, matching binary/profile
+  saved before the focused rerun). Not exhaustive or Metal shader coverage.
+- Actual Telegram, TextEdit and Teams versions have not been tested directly.
+  The implementation-only acceptance above used 0.5.1/44 without changing its
+  published tag/DMG. PR #9 merged normally; task 27 separately tracks the new
+  0.5.2/45 package and release. Earlier release assets remain unchanged.
+- Universal app/saver build, both architectures, strict signatures, resource verifier
+  and the correct `--telemetry-smoke-test` passed. Final serial non-graphical Release
+  suites passed **184 = 36 Effects + 148 Core**, zero failures, exit 0
+  (`/tmp/kinetiq-wobbly-nongraphical-final.log`). An earlier incorrect smoke command
+  briefly entered normal startup; its separate process was closed, preserving the
+  preexisting instance. No consent automation or intentional live probe; no guarantee
+  of zero automatic traffic. See task 26 in `TODO.md` for exact local logs and gates.
+- Fresh universal packaging, strict app/saver signatures, bundle verifier and correct
+  disabled smoke were reverified after unlocked acceptance (`/tmp/kinetiq-wobbly-unlocked-build.log`,
+  `-bundle.log`, `-smoke.log`). No normal app start, consent automation or live probe
+  in this final verification; hosted CI and owner privacy/distribution gates remain separate.
+
+### Build 45 release packaging — task 27
+
+- Complete serial Release **421 = 237 app + 36 Effects + 148 Core**, zero failures/skips,
+  including all seven real native wobbly cases and actual captured-README optics
+  (2.500 s), passed after the final README edit (`/tmp/kinetiq-v052-final-release.log`).
+  Earlier full/focused runs failed helper-frontmost/capture and obstacle assertions;
+  final suite passed without source/test edits or weakened assertions. Exact failures
+  are retained in task 27; no definitive transient-environment root cause is claimed.
+- Fresh universal **0.5.2/45** app and saver, strict signatures, bundle verifier and
+  correct disabled CLI smoke passed (`/tmp/kinetiq-v052-build.log`, `-bundle.log`, `-smoke.log`).
+  Matching LLVM **Lines**: AXBridge 81.00%, locator 87.08%, controller 50.17%, overlay
+  97.44% (`/tmp/kinetiq-v052-coverage.txt`); not exhaustive/Metal coverage.
+- New `Kinetiq-0.5.2.dmg` integrity, read-only mounted bundle byte comparison,
+  metadata/signatures and checksum passed (`/tmp/kinetiq-v052-dmg.log`). SHA-256:
+  `4662ed5dd0616a6a1d90d8fa9cdfe003fd7531cdbac598b7b752d4bd38725997`.
+  Existing v0.5.1 DMG unchanged.
+- Verified [v0.5.2 Latest release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.2),
+  non-draft/non-prerelease, after PR #10's normal exact-head merge of release head
+  `f0cd7d0ea87df77e81b8525e3f546301a6551c77` at
+  `e28f22dfa2adaea24d07a99d87399d41cfa5c611`. Annotated tag object
+  `629bd4e2060bac762f84f16951ac6df87884acd2` peels to that exact merge commit;
+  uploaded DMG/checksum states, sizes and server SHA-256 digests match local bytes.
+  Repository metadata reports PUBLIC and anonymous access was confirmed, without
+  changing visibility. Only release/PR descriptions corrected an inherited private
+  assumption to actual public downloads; tags/assets, including v0.5.1, are unchanged.
+  The new tagged `Release` workflow was observed IN_PROGRESS, not passed;
+  no checks, protections or billing settings changed.
+- No normal user-app startup, real consent automation or live analytics in this
+  verification. No telemetry/schema/SDK change, named third-party app certification,
+  hosted CI success or notarization claim. G2/F2 owner review stays open.
+
 ## [0.5.1] — Build 44
 
 ### Changed
