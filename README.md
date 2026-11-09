@@ -16,11 +16,9 @@
   <a href="https://buymeacoffee.com/invernomut0"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy%20me%20a%20coffee-ffdd00?logo=buymeacoffee&logoColor=000"></a>
 </p>
 
-<!-- KINETIQ-VIDEO: replace the linked poster below with the GitHub user-attachments URL of marketing/Kinetiq-promo-web.mp4 to get the inline player. -->
-<p align="center">
-  <a href="marketing/Kinetiq-promo-web.mp4"><img src="marketing/Kinetiq-hero-2560x1440.png" alt="Watch the Kinetiq promo" width="100%"></a>
-  <br><sub>▶ Watch the 47-second promo · music: <i>Eternity</i> by Pufino (Free To Use Music)</sub>
-</p>
+https://github.com/user-attachments/assets/bdc6f7c0-842a-468f-934c-ed94370ca43c
+
+<p align="center"><sub>Music: <i>Eternity</i> by Pufino · Free To Use Music (freetouse.com)</sub></p>
 
 ## What it does
 
