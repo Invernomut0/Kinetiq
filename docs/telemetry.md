@@ -88,9 +88,9 @@ compile had two negative test events missing mandatory properties; corrected bef
 the 88-test focused pass and the final 414-test suite. The first complete 413-test
 suite passed before adding the seventh manifest test; final acceptance is 414.
 
-### Release preparation — task 25
+### Release publication — task 25
 
-**Doing — Copilot, remote publication pending.** The owner explicitly requested
+**Done — Copilot, GitHub publication verified.** The owner explicitly requested
 GitHub release/tag/DMG publication, superseding the earlier no-release scope for
 publication only. No live analytics, real preferences, normal user-app lifecycle,
 billing settings or branch protections are changed.
@@ -98,6 +98,9 @@ billing settings or branch protections are changed.
 - Final post-documentation **90 passed = 89 analytics + 1 actual captured-README
   optics**, zero failures/skips, exit 0 (`/tmp/kinetiq-country-postdocs.log`). The
   actual optics Test Case passed in **2.672 seconds**, with unchanged assertions.
+- After the final private-download/publication README clarification, the actual
+  capture-to-Metal regression passed again: **1 test, zero failures/skips, exit 0**,
+  **2.867 seconds** (`/tmp/kinetiq-country-publication-readme.log`). No assertions changed.
 - `Kinetiq-0.5.1.dmg` created from the verified app, checked by `hdiutil verify`,
   mounted read-only and compared byte-for-byte with the packaged app. Both app/saver
   signatures, actual version/build **0.5.1/44** and both **x86_64 + arm64** slices
@@ -110,9 +113,20 @@ billing settings or branch protections are changed.
   targeted `xattr -dr com.apple.quarantine` removes only quarantine within the trusted
   app, unlike `xattr -cr` which clears all extended attributes. No global Gatekeeper
   disabling, elevation or malicious/damaged-app warning bypass is recommended.
-- Normal branch/PR merge, annotated tag and remote release/asset digest verification
-  remain publication steps, not inferred from the local DMG. Hosted CI remains
-  separately verified/reported; historical PR #6 billing failure is not a new pass.
+- Branch `firebase-country` merged normally through **PR #7** at
+  `2a8d3f4d937111f5602d1a50424cec53a37a4d30`; local/remote main and reviewed trees
+  matched. Annotated **v0.5.1** targets that exact commit (tag object
+  `0677bd429ad88876a95eef1986804ac879248a6c`). No force/protection bypass.
+- [Kinetiq 0.5.1](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.1) is
+  published, non-draft/non-prerelease and verified **Latest** via GitHub API. Both
+  uploaded asset sizes/states and server SHA-256 digests match actual local bytes:
+  - `Kinetiq-0.5.1.dmg`: `2c5a8074501d4af32d52643731fb6a7997e015e75e97590eed63e697a2ba040f`
+  - `SHA256SUMS.txt`: `5f52564a25bcc18086b5ae6a4bd534936147f2b987af16c60c0abd92c03726d5`
+- Repository visibility is **private**, unchanged. Downloads require an authorized
+  GitHub login; anonymous 404 is expected, not missing authenticated publication.
+  Hosted tag `Release` and `Telemetry host gates` workflows report failure, not a
+  hosted test pass; verified local artifacts were published independently. The tag
+  and binary assets remain unchanged by subsequent publication-record documentation.
 
 **Current PR #7 hosted CI — not started:** GitHub's `host` annotation again reports
 failed recent account payments or a spending-limit increase requirement. No hosted
