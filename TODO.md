@@ -37,6 +37,11 @@ movement keeps normal IPC timeouts. No analytics/schema/consent/version changes.
 - **To Do — Copilot after manual unlock:** rerun complete Release plus real final
 	captured-README optics; only then consider normal PR merge. No named third-party
 	app runtime acceptance or new release/DMG is claimed.
+- **Done — Copilot (publication only):** committed and pushed on
+	`firebase-wobbly-windows`; [PR #9](https://github.com/Invernomut0/Kinetiq/pull/9)
+	deliberately remains **draft**, not merged. Concurrent main documentation/video
+	changes through `24f259b` were merged into the branch; user launch settings,
+	`.serena` and untracked marketing audio remain excluded. Hosted CI is not claimed green.
 
 **Published release — v0.5.1 / build 44:** task **25 Done**, owner **Copilot**.
 README installation/first-launch instructions, final captured-README optics and
