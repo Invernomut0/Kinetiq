@@ -62,6 +62,14 @@ Kinetiq lives in the menu bar; closing its window does not quit it. The [install
 | Try any effect on the front window | Menu bar → **Try an Effect on the Front Window** |
 | Exclude an app or give it its own close effect | **Rules** |
 
+Wobbly also targets movable floating/modal panels, small windows and windows without
+a close button. For custom or borderless windows, use **⌃⌘ + drag**; ordinary title-bar
+drags leave buttons, tabs and text fields native. Accessibility and Screen Recording
+must be granted, and the target must expose its exact movable window to macOS.
+App exclusions (including Kinetiq itself), menus, locked-screen surfaces, full-screen
+windows and nonmovable/protected popovers remain outside this support. This source
+change is not included in the already-published v0.5.1 DMG.
+
 The **[Wiki](https://github.com/Invernomut0/Kinetiq/wiki)** walks through every feature step by step. The [user guide](docs/user-guide.md) explains every page, effect and setting. See also the [Animation Studio guide](docs/animation-studio.md) and the [list of built-in effects](docs/original-effects.md).
 
 ## Privacy

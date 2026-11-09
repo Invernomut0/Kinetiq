@@ -76,6 +76,11 @@ final class OverlayWindow: NSObject, MTKViewDelegate {
 
     var displayLinkWindow: NSWindow { window }
 
+    /// Keep the drag surface above its floating/modal target without lifting other effects.
+    func setLevel(_ level: NSWindow.Level) {
+        window.level = level
+    }
+
     func show() {
         window.orderFrontRegardless()
     }

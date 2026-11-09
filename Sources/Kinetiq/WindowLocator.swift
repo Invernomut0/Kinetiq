@@ -12,6 +12,15 @@ struct WindowInfo {
     let pid: pid_t
     /// Frame in global CoreGraphics coordinates (origin at the top left of the main screen).
     let frame: CGRect
+    /// WindowServer stacking level; existing non-drag callers default to normal.
+    let layer: Int
+
+    init(id: CGWindowID, pid: pid_t, frame: CGRect, layer: Int = 0) {
+        self.id = id
+        self.pid = pid
+        self.frame = frame
+        self.layer = layer
+    }
 }
 
 /// One CGWindowList query (several ms with many windows) shared by every lookup made for the same event.
@@ -21,6 +30,31 @@ final class WindowList {
 
 enum WindowLocator {
     private static let ownPID = ProcessInfo.processInfo.processIdentifier
+
+    /// Frontmost application surface for dragging, including small floating panels.
+    /// AX identity/movability is checked separately before consuming input. Menus
+    /// and unmovable popovers therefore keep their native gesture, never a parent fallback.
+    static func dragWindow(at point: CGPoint, in list: WindowList = WindowList()) -> WindowInfo? {
+        for entry in list.entries {
+            guard let info = parse(entry), info.frame.contains(point),
+                  (entry[kCGWindowAlpha as String] as? Double ?? 1) >= 0.01 else { continue }
+            if info.pid == ownPID, info.layer != 0 { continue }
+            let owner = entry[kCGWindowOwnerName as String] as? String ?? ""
+            let bundleID = NSRunningApplication(processIdentifier: info.pid)?.bundleIdentifier
+            let knownOverlay = captureOverlayOwners.contains(owner)
+                || bundleID.map(captureOverlayBundleIDs.contains) == true
+                || owner == "Window Server" || owner == "Dock"
+            if info.layer != 0, knownOverlay,
+               isPassThroughOverlay(entry, frame: info.frame, layer: info.layer, point: point) { continue }
+            guard !["Window Server", "Dock", "SystemUIServer", "Control Center", "NotificationCenter"].contains(owner),
+                  !blockingOwners.contains(owner), info.layer >= 0,
+                  info.layer <= Int(CGWindowLevelForKey(.popUpMenuWindow)),
+                  info.frame.width > 1, info.frame.height > 1,
+                  !AppExclusions.contains(pid: info.pid) else { return nil }
+            return info
+        }
+        return nil
+    }
 
     /// Frontmost normal window (layer 0) under `point`. If the first thing there is a menu,
     /// the Dock or another special layer, returns nil so the click isn't hijacked.
@@ -174,7 +208,8 @@ enum WindowLocator {
               let pid = entry[kCGWindowOwnerPID as String] as? Int,
               let bounds = entry[kCGWindowBounds as String] as? NSDictionary,
               let frame = CGRect(dictionaryRepresentation: bounds) else { return nil }
-        return WindowInfo(id: CGWindowID(number), pid: pid_t(pid), frame: frame)
+        return WindowInfo(id: CGWindowID(number), pid: pid_t(pid), frame: frame,
+                  layer: entry[kCGWindowLayer as String] as? Int ?? 0)
     }
 }
 
