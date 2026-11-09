@@ -76,8 +76,8 @@ LLVM **Lines**: country validator **85.71%**, provider **77.30%**, owner **97.24
 privacy UI **89.69%**, taxonomy **100%**, native adapter **20%**. The actual Mac region
 getter and live delivery remain unexecuted; this is not ingestion or exhaustive coverage.
 No normal app restart, real consent change or live event was automated. See
-[task 24 evidence](docs/telemetry.md#local-acceptance--task-24). Release preparation
-and the final post-edit README optics recheck are tracked separately as task 25.
+[task 24 evidence](docs/telemetry.md#local-acceptance--task-24). The published
+v0.5.1 release and post-edit README optics verification are tracked as task 25.
 
 **Historical v0.5.0/build 43 local acceptance (2026-11-09): 407 Release tests passed** — 223 app +
 36 Effects + 148 Core, zero failures/skips (`/tmp/kinetiq-usage-final-acceptance.log`).
@@ -149,6 +149,8 @@ both architectures; no Xcode, Python or terminal build is needed to run it.
 
 1. Download `Kinetiq-0.5.1.dmg` and `SHA256SUMS.txt` from the project's
 	[v0.5.1 GitHub release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.1).
+	The repository is currently **private**: sign in to GitHub with an authorized
+	account. Without access, GitHub returns 404; publication does not change visibility.
 	Choose the DMG asset, **not** GitHub's **Source code** ZIP/TAR, which has no ready-to-run app.
 2. Optionally verify the download in Terminal from the folder containing both files:
 
@@ -493,7 +495,8 @@ The two root `.env` keys are ignored and local only: credentials have **not been
 uploaded or provisioned in GitHub CI**. A workflow build without the owner's `.env`
 uses the safe native fallback, currently `KINETIQ_FIREBASE_SIGNING_BLOCKED_OFF`; it
 does **not** produce a configured GA4 release app. Hosted CI execution is unverified.
-Local packaging is not publication of a new DMG.
+The owner-requested v0.5.1 DMG was instead published from the verified local package;
+tag and uploaded SHA-256 digests are recorded in [task 25](docs/telemetry.md#release-publication--task-25).
 
 **Deployment risk, explicitly authorized by the owner:** bundling the ingestion
 secret makes it extractable and enables forged/spam events. This direct desktop

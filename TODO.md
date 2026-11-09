@@ -2,9 +2,11 @@
 
 Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (implementation).
 
-**Current release preparation — v0.5.1 / build 44:** task **25 Doing**, owner **Copilot**.
+**Published release — v0.5.1 / build 44:** task **25 Done**, owner **Copilot**.
 README installation/first-launch instructions, final captured-README optics and
-DMG/checksum verification are complete; GitHub tag/release publication is in progress.
+DMG/checksum verification are complete; PR #7 normal merge, annotated tag and
+[GitHub Latest release](https://github.com/Invernomut0/Kinetiq/releases/tag/v0.5.1)
+with matching server asset digests are verified. Repository stays private; login required.
 Prefer Open Anyway; targeted quarantine removal only for a trusted, verified copy,
 not broad `xattr -cr`, global Gatekeeper disablement or damaged/malware-warning bypass.
 
@@ -34,8 +36,13 @@ consent/identity namespaces and six-event/five-key schema remain unchanged; no s
 	including real README optics (2.672 seconds); DMG integrity, read-only byte comparison,
 	universal 0.5.1/44 metadata and app/saver signatures passed, SHA-256 checksum OK.
 	Logs `/tmp/kinetiq-country-postdocs.log`, `/tmp/kinetiq-country-dmg.log`.
-- **Doing — Copilot (task 25 remote):** normal branch/PR merge followed by annotated
-	version tag and GitHub release/asset digest verification; publication not yet claimed.
+- **Done — Copilot:** final private-download/publication README optical recheck:
+	**1 actual capture-to-Metal test passed**, zero failures/skips, exit 0, 2.867 seconds
+	(`/tmp/kinetiq-country-publication-readme.log`), unchanged assertions.
+- **Done — Copilot (task 25 remote):** PR #7 normal merge at `2a8d3f4`, annotated
+	`v0.5.1` on that exact commit, Latest published/non-draft/non-prerelease verified.
+	DMG/checksum uploaded states, sizes and SHA-256 match local bytes; exact evidence
+	in [task 25](docs/telemetry.md#release-publication--task-25). Tag/assets unchanged.
 - **Review — Lorenzo:** current PR **#7** `host` CI did not start due to account
 	billing/spending limits; no hosted build/tests. Review Billing & plans and rerun
 	Actions; local verification is separate and no protections/account settings change.
@@ -176,7 +183,7 @@ pin, without SDK source edits.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 25 | GitHub v0.5.1 release and safe first-launch instructions | Doing | Owner: Copilot. README installation, checksum, Gatekeeper and targeted quarantine guidance implemented; post-doc90 including real optics, DMG integrity/read-only byte comparison/universal metadata/signatures and checksum passed. Normal PR merge, annotated tag and remote release/assets verification pending. No real consent/live analytics, normal app lifecycle or billing/protection changes. |
+| 25 | GitHub v0.5.1 release and safe first-launch instructions | Done | Owner: Copilot. README installation, checksum, Gatekeeper and targeted quarantine guidance implemented; post-doc90 including real optics, DMG integrity/read-only byte comparison/universal metadata/signatures and checksum passed. PR #7 normal merge 2a8d3f4, annotated v0.5.1 and Latest publication with matching uploaded asset digests verified. Private repository requires authorized login; no visibility, real consent/live analytics, normal app lifecycle or billing/protection changes. Hosted CI failures remain separate owner Review. |
 | 24 | Consented macOS configured country for standard GA4 Country | Done | Owner: Copilot, implementation/local acceptance only. v0.5.1/build 44; GA4 revision 3/native 2, country-only top-level user_location, closed ISO249, no custom country key or fabricated location. Final Release414, 89 analytics; matching Lines and universal package/signatures/bundle/disabled smoke verified in docs/telemetry.md. Actual Mac-region getter/live delivery unexecuted. Final post-edit README optics and publication tracked in task25; G2/F2 remain owner Review. |
 | 23 | Revision-2 opt-in product analytics and practical GA4 reporting | Done | Owner: Copilot, implementation/local acceptance only. v0.5.0/build 43; six typed events/five-property allowlist, finite IDs, actual starts vs selections, Studio actions, app-side saver actions and manual quality; old grants require updated consent. Complete Release 407 passed, 82 analytics contracts; post-documentation 83 passed including actual README optics. Universal package/signatures/bundle/disabled smoke and matching Lines verified above. Earlier native capture failures documented, final suite passed unchanged assertions. Publication tracked separately in Git/PR history. G2/F2 owner gates stay Review. |
 | 22 | Fix false quality blocks caused by capture accounting and stale errors | Done | Owner: Copilot, implementation/local acceptance. v0.4.2/build 42; real four-window pre-fix regression reproduces failure at Low/Auto. Include shadow allocation, skip over-budget additional windows, retain hard memory limits and mandatory own exclusions; separate error causes and clear stale messages. Complete Release 380 passed (196 app + 36 Effects + 148 Core), zero failures/skips, including actual desktop Ripple/Incinerate and restoration. Universal app/saver, signatures, bundle and disabled smoke passed; exact logs/coverage above. |
