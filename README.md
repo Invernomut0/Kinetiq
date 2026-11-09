@@ -16,6 +16,18 @@ https://github.com/user-attachments/assets/40bc5530-d253-4d47-bc57-3eccdac83d70
 
 **v0.4.0 · build 40** makes the Animation Studio a real effect maker and Layouts a real feature. Studio layers can now be any of the **45 built-in effects** (close shaders like Incinerate, spring entrances, Dock morphs) next to the 19 Studio effects, played forwards or in reverse; a composition saved to **My Effects** can be used when a window opens, closes or is minimized, from the Studio, the Effects library or the menu bar. **Try an Effect** covers every effect, Liquid and Window Destruction included. **Layouts** (Exposé 3D, Orbit, Cube) now animate windows in and out, react to hover, clicks, arrows and scrolling, and open anywhere with **⌃⌥↑**. See the [Studio guide](docs/animation-studio.md) and the [original-effects guide](docs/original-effects.md).
 
+**v0.4.1 · build 41** keeps expensive effects available at Low quality and throughout
+Auto adaptation, reducing fidelity instead of disabling playback. Critical thermal
+pressure still blocks expensive effects; allocation/capture limits are unchanged.
+Kinetiq's own Settings/management windows are now permanently excluded from effects,
+including when loading older exclusion lists that removed Kinetiq.
+
+Local verification: **376 Release tests passed** (192 app + 36 Effects + 148 Core),
+zero failures/skips, including real captured-README rendering at Low and critical
+thermal refusals. Universal app/saver signatures, bundle checks and disabled smoke
+passed. Logs: `/tmp/kinetiq-budget-release.log`, `/tmp/kinetiq-budget-build.log`.
+No live analytics or user-window mutations were automated.
+
 ## Installing
 
 Requires macOS 14 or later, on Apple Silicon or Intel.
@@ -56,7 +68,7 @@ analytics or unlock effects.
 | **Diagnostics** | Actual Metal renderer and event-tap state, permission grants, physics preset, mesh, rule counts, OS and app version. |
 | **Settings** | Enable state, title-bar drag, shortcut modifier, permissions, default-off Privacy & Analytics and confirmed reset of effect settings. Reset preserves the enable state and drag controls. |
 
-The **Exclusions** list under Rules holds apps whose windows get no effects. Kinetiq's own management window is excluded by default; remove that exclusion to let it wobble. Catalog targets always exclude Kinetiq itself. Window titles may be unavailable without Screen Recording. Permission checks refresh when the app becomes active or when you press Refresh; macOS may require restarting the app after a grant. The existing launch-time permission prompts are unchanged. Navigation does not start or stop the engine.
+The **Exclusions** list under Rules holds apps whose windows get no effects. Kinetiq's own Settings/management windows are **always excluded**: the locked rule cannot be removed, even through settings writes or older saved lists without Kinetiq. Other app exclusions remain editable. Catalog targets also always exclude Kinetiq itself. Window titles may be unavailable without Screen Recording. Permission checks refresh when the app becomes active or when you press Refresh; macOS may require restarting the app after a grant. The existing launch-time permission prompts are unchanged. Navigation does not start or stop the engine.
 
 ### Effects library: 66 effects, organized by what you do
 
@@ -112,14 +124,14 @@ Choose **Auto**, **Low**, **Balanced**, **High** or **Ultra** in the menu or Per
 
 | Quality | Intermediate scale | Particle cap | Blur sampling rings | Mesh cap/axis | Secondary rate ceiling | Expensive effects |
 |---|---:|---:|---:|---:|---:|---|
-| Low | 0.50× | 400 | 0 | 16 | 30 Hz | Refused |
+| Low | 0.50× | 400 | 0 | 16 | 30 Hz | Allowed |
 | Balanced | 0.75× | 1000 | 1 | 32 | 60 Hz | Allowed |
 | High / Auto start | 1.00× | 1500 | 2 | 48 | 90 Hz | Allowed |
 | Ultra | 1.00× | 1500 | 3 | 64 | 120 Hz | Allowed |
 
-Auto starts at High and reduces one resource at a time across **13 steps**: texture scale 0.75→0.5; particles 1000→700→400; blur rings 1→0; mesh 32→24→16; secondary rate 60→30; then expensive effects off. Recovery reverses the ladder, at most back to High; Ultra is manual opt-in. Smoothed successful GPU command-buffer durations above 12 ms for at least 0.5 s/8 samples reduce quality (3 s cooldown); below 6 ms for 5 s/30 samples recover it (8 s cooldown). Idle gaps break evidence streaks. These are actual completed GPU timings, **not GPU utilization or inferred FPS**; the last sample remains visible while idle.
+Auto starts at High and reduces one resource at a time across **12 steps**: texture scale 0.75→0.5; particles 1000→700→400; blur rings 1→0; mesh 32→24→16; secondary rate 60→30. Effects stay available at every step: disabling them could also stop the GPU completions needed for recovery. Recovery reverses the ladder, at most back to High; Ultra is manual opt-in. Smoothed successful GPU command-buffer durations above 12 ms for at least 0.5 s/8 samples reduce quality (3 s cooldown); below 6 ms for 5 s/30 samples recover it (8 s cooldown). Idle gaps break evidence streaks. These are actual completed GPU timings, **not GPU utilization or inferred FPS**; the last sample remains visible while idle.
 
-Thermal/power safety caps also apply to manual choices: fair thermal pressure or Low Power Mode caps at Balanced, serious/critical at Low, with a 15 Hz secondary ceiling at critical. Budget fields, not the summary quality label, are authoritative. Original captures and desktop output remain native resolution. Studio preview/composition intermediates follow `textureScale`, with at most 8,000,000 pixels and 8192 pixels per dimension per target texture, two ping-pong targets and at most two in-flight compositions. Liquid's separate cropped geometry field is capped at 1280 pixels on its longest edge before quality scaling. Its original particle cap remains 1500 per source/display (Balanced 1000, Low budget 400); Low refuses new expensive Liquid playback. The UI label “Blur passes” means concentric eight-tap shader sampling rings for catalog DOF, **not multiple full-screen render passes**.
+Thermal/power safety caps also apply to manual choices: fair thermal pressure or Low Power Mode caps at Balanced, serious/critical at Low. **Only critical thermal pressure closes the expensive-effects gate**, with a 15 Hz secondary ceiling, even for manual Ultra. Cooling below critical reopens the gate without requiring a GPU sample. In **Performance**, check the reason under **Resolved quality** and **Expensive effects → Allowed/Limited**. Budget fields, not the summary quality label, are authoritative. Original captures and desktop output remain native resolution. Studio preview/composition intermediates follow `textureScale`, with at most 8,000,000 pixels and 8192 pixels per dimension per target texture, two ping-pong targets and at most two in-flight compositions. Liquid's separate cropped geometry field is capped at 1280 pixels on its longest edge before quality scaling. Its original particle cap remains 1500 per source/display (Balanced 1000, Low budget 400); Low permits playback with these reduced resources. The UI label “Blur passes” means concentric eight-tap shader sampling rings for catalog DOF, **not multiple full-screen render passes**.
 
 ### Glide and bounce
 

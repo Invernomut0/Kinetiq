@@ -117,6 +117,46 @@ final class ManagementTests: XCTestCase {
         XCTAssertFalse(settings.excludedApps.contains(id))
     }
 
+    @MainActor
+    func testKinetiqExclusionCannotBeRemovedButOtherRulesRemainEditable() throws {
+        let settings = try isolatedSettings()
+        let model = model(settings: settings)
+        let ownID = Settings.protectedExclusionID
+        let finderURL = try XCTUnwrap(NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.finder"))
+        let finderID = try XCTUnwrap(Bundle(url: finderURL)?.bundleIdentifier)
+        model.addExclusion(finderID)
+        model.removeExclusion(ownID)
+        XCTAssertEqual(settings.excludedApps, [ownID, finderID])
+        model.removeExclusion(finderID)
+        XCTAssertEqual(settings.excludedApps, [ownID])
+        settings.excludedApps = []
+        XCTAssertEqual(settings.excludedApps, [ownID])
+        settings.excludedApps.removeAll { $0 == ownID }
+        XCTAssertEqual(settings.excludedApps, [ownID])
+        model.addExclusion(ownID)
+        XCTAssertEqual(settings.excludedApps, [ownID], "The mandatory rule must not be duplicated")
+    }
+
+    func testLegacyAndExternallyEditedExclusionsAlwaysProtectKinetiq() throws {
+        let suite = "io.github.invernomut0.Kinetiq.exclusions.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let ownID = Settings.protectedExclusionID
+        for saved in [[], ["com.apple.finder"], ["com.apple.finder", ownID]] {
+            defaults.set(saved, forKey: "excludedApps")
+            let settings = Settings(defaults: defaults)
+            XCTAssertTrue(settings.excludedApps.contains(ownID))
+            XCTAssertEqual(settings.excludedApps.filter { $0 != ownID }, saved.filter { $0 != ownID })
+            XCTAssertTrue(AppExclusions.contains(bundleID: ownID, defaults: defaults))
+            XCTAssertEqual(AppExclusions.contains(bundleID: "com.apple.finder", defaults: defaults), saved.contains("com.apple.finder"))
+            XCTAssertFalse(AppExclusions.contains(bundleID: nil, defaults: defaults))
+            settings.excludedApps = saved.filter { $0 != ownID }
+            XCTAssertTrue(try XCTUnwrap(defaults.stringArray(forKey: "excludedApps")).contains(ownID))
+            XCTAssertEqual(Settings(defaults: defaults).excludedApps, settings.excludedApps)
+        }
+        XCTAssertTrue(AppExclusions.contains(pid: ProcessInfo.processInfo.processIdentifier))
+    }
+
     func testResetPreservesGeneralControlsAndRestoresEffectDefaults() throws {
         let settings = try isolatedSettings()
         settings.enabled = false
@@ -311,7 +351,7 @@ final class ManagementTests: XCTestCase {
         let (window, shell) = try hostingWindow(model: model)
         defer { window.close() }
         XCTAssertFalse(CatalogRuntime.shared.isPlaying)
-        for page in [ManagementPage.overview, .effects, .animationStudio, .performance, .settings] {
+        for page in [ManagementPage.overview, .effects, .animationStudio, .performance, .rules, .settings] {
             model.requestedPage = page
             await settleLayout(shell, window: window)
             XCTAssertEqual(window.title, "Kinetiq — \(page.title)")

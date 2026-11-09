@@ -52,7 +52,7 @@ public struct RenderBudget: Equatable, Sendable {
                                 meshLimit: 32, secondaryFPS: 60, allowsExpensive: true)
         case .low:
             return RenderBudget(textureScale: 0.5, maxParticles: 400, blurPasses: 0,
-                                meshLimit: 16, secondaryFPS: 30, allowsExpensive: false)
+                                meshLimit: 16, secondaryFPS: 30, allowsExpensive: true)
         }
     }
 
@@ -85,8 +85,9 @@ public struct RenderQualityPolicy: Sendable {
     private var evidenceCount = 0
     private var direction = 0
 
-    /// Each transition changes exactly one resource, in priority order. Recovery
-    /// reverses this ladder, so an effect is re-enabled before quality is restored.
+    /// Each transition changes exactly one resource, in priority order. Auto
+    /// reduces fidelity, not effect availability: blocking playback would also
+    /// stop the GPU completions needed to recover from the lowest budget.
     public static let autoBudgets: [RenderBudget] = {
         var budget = RenderBudget.forQuality(.high)
         var result = [budget]
@@ -95,8 +96,6 @@ public struct RenderQualityPolicy: Sendable {
         for count in [1, 0] { budget.blurPasses = count; result.append(budget) }
         for limit in [32, 24, 16] { budget.meshLimit = limit; result.append(budget) }
         for fps in [60, 30] { budget.secondaryFPS = fps; result.append(budget) }
-        budget.allowsExpensive = false
-        result.append(budget)
         return result
     }()
 
@@ -127,7 +126,10 @@ public struct RenderQualityPolicy: Sendable {
     public var budget: RenderBudget {
         var result = selection == .auto ? Self.autoBudgets[degradationStep] : .forQuality(selection)
         if let quality = environmentQuality { result = result.capped(by: .forQuality(quality)) }
-        if thermalState == .critical { result.secondaryFPS = min(result.secondaryFPS, 15) }
+        if thermalState == .critical {
+            result.secondaryFPS = min(result.secondaryFPS, 15)
+            result.allowsExpensive = false
+        }
         return result
     }
 

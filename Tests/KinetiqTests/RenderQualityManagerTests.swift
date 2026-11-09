@@ -126,7 +126,7 @@ final class RenderQualityManagerTests: XCTestCase {
                 XCTAssertFalse(manager.budget.allowsExpensive)
             case .serious:
                 XCTAssertLessThanOrEqual(manager.budget.secondaryFPS, 30)
-                XCTAssertFalse(manager.budget.allowsExpensive)
+                XCTAssertTrue(manager.budget.allowsExpensive)
             case .fair:
                 XCTAssertLessThanOrEqual(manager.budget.secondaryFPS, 60)
             case .nominal:

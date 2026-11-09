@@ -2,6 +2,18 @@
 
 Statuses: To Do, Doing, Review, Done. Owner: Lorenzo (requests) / Copilot (implementation).
 
+**Budget and protected Settings — v0.4.1 / build 41:** task 21 Done (Copilot).
+Low/Auto keep expensive effects available with bounded reduced resources; only
+critical thermal pressure closes the gate. Kinetiq's exclusion is mandatory in
+UI, settings and runtime, including legacy lists. Focused policy/exclusion tests:
+20 passed; rendering/window suites: 55 executed, zero failures, one optional
+screenshot skip. Complete Release: **376 passed** (192 app + 36 Effects + 148 Core),
+zero failures/skips with native UI captures enabled. Universal app/saver both
+x86_64 + arm64, deep/strict signatures, bundle verification and signed disabled
+smoke passed. Logs: `/tmp/kinetiq-budget-release.log`, `/tmp/kinetiq-budget-build.log`.
+LLVM Lines: quality 98.75%, Settings 94.09%, SetupWindow 78.61%, Performance 96.46%
+(`/tmp/kinetiq-budget-coverage.txt`), not exhaustive integration/Metal coverage.
+
 **Current GA4 Web transport — v0.3.4 / build 39:** **G1 Done (Copilot)** for verified
 implementation and offline/local acceptance only; **G2 Review (Lorenzo)** for actual
 Web-stream ingestion and distribution/privacy.
@@ -72,6 +84,7 @@ pin, without SDK source edits.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
+| 21 | Relax effect quality gate and protect Settings exclusion | Done | Owner: Copilot. 12-step resource-only Auto ladder, expensive effects allowed at Low/serious thermal pressure, critical thermal and memory/capture safety retained; protected Kinetiq rule enforced in UI, settings and runtime. Complete Release 376 passed (192 app + 36 Effects + 148 Core), zero failures/skips, including actual captured-README rendering and protected rule persistence. Universal app/saver, strict signatures, bundle and disabled smoke passed. Exact logs/Lines coverage above. |
 | 20 | v0.4.0 Studio built-ins, My Effects, complete Try menu, interactive Layouts | Done | Owner: Copilot. Built-in close/open/minimize engines as Studio layers through `LayerCompositor`, reverse playback, saved compositions owning Open/Close/Minimize, Try menu with every effect, animated hover/keyboard/scroll overview with ⌃⌥↑ and five-window demos. See CHANGELOG 0.4.0 for verification. |
 | G1 | Owner-authorized GA4 Web transport and current offline/local acceptance | Done | Owner: Copilot. Implementation and offline/local acceptance only, 0.3.4/build 39. Single retained owner/core, fresh consent/identity, GA4 precedence, native fallback unchanged. Ready/enabled/consent-keyed cancellable 100 ms actual Settings task, not busy state; real denied mount/grant while visible without navigation/exactly one event/revoke exercised with retained owner and recording boundary. GA4 disclosure tested, no normal consented app GUI launch/live collection automated. Complete Release/Debug each 361 (179 app + 36 Effects + 146 Core), 0 failures/skips, exit 0; Debug app completed in ~1928 seconds. Focused 55 (21 GA4 Swift + 34 native), 0 failures. Python GA4 26 passed/0 failures/errors/skips; parser 19 passed/0 skips; signing 5 ran/4 passed/1 real-Team skip. Current session-aware debug probe 0 messages/exit 0, structure only; probe timing is not app engagement. Universal app+saver arm64+x86_64 build exit 0; both deep/strict signatures, resource verifier and signed disabled smoke verified 0 directly. Lines and exact artifacts above; live data tasks/response/cancellation/30-minute session boundary unexecuted at runtime, not ingestion/exhaustive coverage. Full suites include README optics; focused post-doc slash-filter rerun verified 1 test, 0 failures/skips, exit 0, actual Test Case passed in 2.618 seconds (/tmp/kinetiq-ga4-fix-postdocs.log). |
 | G2 | GA4 Web ingestion, consented transport and distribution/privacy review | Review | Owner: Lorenzo. Actual Web-stream credentials/console ingestion, IP/location/retention/access/erasure/privacy, extractable-secret spam risk, terms, notarization and release provisioning remain open; hosted CI unverified. Root .env two ignored keys are local only, not uploaded/provisioned in GitHub CI; builds without owner .env use safe native blocked-off fallback, not a configured GA4 release app. Reopen actual build/Kinetiq.app containing owner configuration, then manually visit Settings → Privacy & Analytics with explicit consent and check Reports → Realtime. Home November 1–7 excludes Today November 8. HTTP acceptance/204 and debug validation do not prove authentication/ingestion. Use Web G- measurement ID and its own ingestion secret, not numeric/native app IDs; tagging banner alone is not MP failure. Consented cold/relaunch/live cancellation/offline/revocation remain owner review; no fake engagement/realtime guarantee. KINETIQ_FIREBASE_SIGNING_BLOCKED_OFF is native fallback status, not GA4 unavailability; no Keychain in configured GA4. Publication follows the standing workflow above. |
